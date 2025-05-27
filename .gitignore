@@ -177,4 +177,5 @@ venv
 .venv
 
 # build artifacts
-planner/build
+planmt/cpp/build
+planmt/bin/planmt

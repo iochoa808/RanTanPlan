@@ -36,6 +36,5 @@ target_include_directories(planmt PRIVATE
     ${Protobuf_INCLUDE_DIRS} # Add protobuf include directories
 )
 
-# Install the executable (optional, but useful for packaging)
-install(TARGETS planmt DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
-set(CMAKE_INSTALL_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/install)
+# Install the executable to the bin directory
+install(TARGETS planmt DESTINATION .)
