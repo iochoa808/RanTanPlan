@@ -1,0 +1,6 @@
+# Assuming your C++ executable is built into cpp_planner/build/
+# And you copy it to a location within your Python package, e.g. my_planner_pkg/bin/
+# For this example, we'll assume the user builds it and planner_wrapper.py knows its path.
+# If you were to bundle it, you'd use something like:
+# graft my_planner_pkg/bin
+# include my_planner_pkg/bin/my_planner_cpp
