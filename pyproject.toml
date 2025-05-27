@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "cmake"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "planmt"
+version = "0.0.1"
+authors = [
+  { name="Joan Espasa Arxer", email="foo@bar.com" },
+]
+description = "An automated planner based on planning modulo theories"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "unified-planning>=1.2.0",
+    "protobuf<6.0"
+]
+
+[project.scripts]
+planmt = "planmt.cli:main"
+
+[project.entry-points."unified_planning.engines"]
+planMT = "planmt.planner_wrapper:planMTPlanner"
+
+[project.urls]
+"Homepage" = "https://github.com/pyPMT/planMT"
+"Repository" = "https://github.com/pyPMT/planMT"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["planmt*"]
+
+[tool.setuptools.package-data]
+planmt = ["bin/*", "cpp/**/*"]

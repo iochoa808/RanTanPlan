@@ -1,0 +1,23 @@
+# Include the README and license
+include README.md
+include LICENSE*
+
+# Include all C++ source files and build files
+recursive-include planmt/cpp *.cpp *.h *.hpp *.c *.cc *.proto *.txt
+recursive-include planmt/cpp CMakeLists.txt
+recursive-include planmt/bin *
+
+# Include all Python files
+recursive-include planmt *.py
+
+# Include examples
+recursive-include examples *.pddl *.py
+
+# Exclude build artifacts and cache files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude *.o
+recursive-exclude planmt/cpp/build *
+prune planmt/cpp/build
