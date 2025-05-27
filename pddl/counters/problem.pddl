@@ -1,3 +1,4 @@
+;; Enrico Scala (enricos83@gmail.com) and Miquel Ramirez (miquel.ramirez@gmail.com)
 (define (problem instance_2)
   (:domain fn-counters)
   (:objects
@@ -11,6 +12,11 @@
   )
 
   (:goal (and 
-            (<= (+ (value c0) 1) (value c1))
-        ))
+(<= (+ (value c0) 1) (value c1))
+  ))
+
+  
+  
+
+  
 )
