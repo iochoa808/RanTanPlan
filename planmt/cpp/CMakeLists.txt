@@ -1,40 +1,114 @@
 cmake_minimum_required(VERSION 3.10)
+
+# ==============================================================================
+# PROJECT CONFIGURATION
+# ==============================================================================
 project(planmt)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find Protobuf
+# Set default output directory
+if(NOT DEFINED OUTPUT_DIR)
+    set(OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../bin" CACHE STRING "Output directory for executable")
+endif()
+
+# ==============================================================================
+# PROTOBUF SETUP
+# ==============================================================================
 find_package(Protobuf REQUIRED)
 
-# Specify the location of .proto files
+# Define proto files and generate C++ sources
 set(PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/proto/unified_planning.proto)
-
-# Generate C++ sources from .proto files
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
 
-# Add the executable
+# Abseil (Google's C++ common libraries) for protobuf
+find_package(absl REQUIRED)
+
+# ==============================================================================
+# Z3 SOLVER SETUP
+# ==============================================================================
+# Try to find Z3 using modern CMake first
+find_package(Z3 QUIET)
+
+if(Z3_FOUND)
+    message(STATUS "Found Z3 using CMake package config")
+    set(Z3_LINK_LIBRARY z3::libz3)
+else()
+    # Fallback to manual Z3 setup (original approach)
+    message(STATUS "Using manual Z3 setup")
+    
+    # Z3 paths are set by setup.py during Python package installation
+    set(Z3_INCLUDE_DIR ${Z3_INCLUDE_DIR} CACHE STRING "Z3 include directory")
+    set(Z3_LIB_DIR ${Z3_LIB_DIR} CACHE STRING "Z3 library directory")
+
+    # Locate Z3 library
+    find_library(Z3_LIBRARY
+        NAMES z3 libz3
+        PATHS ${Z3_LIB_DIR}
+        NO_DEFAULT_PATH
+    )
+
+    if(NOT Z3_LIBRARY)
+        message(FATAL_ERROR "Z3 library not found in ${Z3_LIB_DIR}")
+    endif()
+
+    message(STATUS "Found Z3 library: ${Z3_LIBRARY}")
+    set(Z3_LINK_LIBRARY ${Z3_LIBRARY}) # Use the full path to the library
+endif()
+
+
+# ==============================================================================
+# TARGET DEFINITION
+# ==============================================================================
+# Create main executable
 add_executable(planmt
     src/main.cpp
     ${PROTO_SRCS}
     ${PROTO_HDRS}
 )
 
-# Link with Protobuf libraries - use modern target
-target_link_libraries(planmt PRIVATE protobuf::libprotobuf)
-
-# Also try to link with required dependencies
-find_package(absl QUIET)
-if(absl_FOUND)
-    target_link_libraries(planmt PRIVATE absl::base absl::log absl::check)
-endif()
-
-# Ensure generated headers can be found
+# ==============================================================================
+# TARGET CONFIGURATION
+# ==============================================================================
+# Include directories
 target_include_directories(planmt PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR} # For generated headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${Protobuf_INCLUDE_DIRS} # Add protobuf include directories
+    ${CMAKE_CURRENT_BINARY_DIR}    # Generated protobuf headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src # Source headers
+    ${Protobuf_INCLUDE_DIRS}       # Protobuf headers
+    ${Z3_INCLUDE_DIR}              # Z3 headers
 )
 
-# Install the executable to the bin directory
-install(TARGETS planmt DESTINATION .)
+# Link libraries
+target_link_libraries(planmt PRIVATE
+    protobuf::libprotobuf
+    ${Z3_LINK_LIBRARY} # Ensure this uses the full path from Z3_LIBRARY
+    absl::base
+    absl::log
+    absl::check
+)
+
+# ==============================================================================
+# PLATFORM-SPECIFIC FIXES
+# ==============================================================================
+# Fix Z3 library reference on macOS
+if(APPLE AND NOT Z3_FOUND)
+    # This applies only when Z3 is found manually (NOT Z3_FOUND is true).
+    # Z3_LIBRARY holds the full path to libz3.dylib.
+    # Z3_LIB_DIR holds the directory containing libz3.dylib.
+
+    # Instead of relying on RPATH, use install_name_tool to change the recorded
+    # dependency path in the 'planmt' executable from 'libz3.dylib'
+    # to the absolute path ${Z3_LIBRARY}.
+    message(STATUS "macOS manual Z3: Using install_name_tool to set absolute path for libz3.dylib in 'planmt'")
+    add_custom_command(TARGET planmt POST_BUILD
+        COMMAND ${CMAKE_INSTALL_NAME_TOOL} -change libz3.dylib ${Z3_LIBRARY} $<TARGET_FILE:planmt>
+        COMMENT "Fixing Z3 dylib reference in planmt executable to absolute path"
+        VERBATIM
+    )
+endif()
+
+# ==============================================================================
+# INSTALLATION
+# ==============================================================================
+install(TARGETS planmt DESTINATION ${OUTPUT_DIR})

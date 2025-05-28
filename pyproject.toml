@@ -17,7 +17,8 @@ classifiers = [
 ]
 dependencies = [
     "unified-planning>=1.2.0",
-    "protobuf<6.0"
+    "protobuf<6.0",
+    "z3-solver"
 ]
 
 [project.scripts]
