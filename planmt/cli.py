@@ -60,11 +60,7 @@ For more information, visit: https://github.com/pyPMT/planMT
         help="Enable verbose output"
     )
     
-    parser.add_argument(
-        "-q", "--quiet",
-        action="store_true", 
-        help="Suppress planner output (only show final result)"
-    )
+
     
     parser.add_argument(
         "--output-plan",
@@ -148,9 +144,9 @@ def solve_problem(problem, args):
     if args.executable:
         planner_options['executable_path'] = args.executable
     
-    output_stream = None if args.quiet else sys.stdout
+    output_stream = sys.stdout
     
-    if args.verbose and not args.quiet:
+    if args.verbose:
         print(f"\n--- Starting planMT solver ---")
         print(f"Timeout: {args.timeout} seconds")
         if args.executable:
@@ -162,11 +158,11 @@ def solve_problem(problem, args):
                 print("Error: Could not create planMT planner. Is it properly installed?")
                 return None
             
-            if args.verbose and not args.quiet:
+            if args.verbose:
                 print(f"Successfully created planner: {planner.name}")
             
             # Solve the problem
-            result = planner.solve(
+            result = planner.solve( # type: ignore
                 problem,
                 output_stream=output_stream,
                 timeout=args.timeout
