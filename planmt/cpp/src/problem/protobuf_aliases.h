@@ -1,0 +1,35 @@
+#pragma once
+
+#include "unified_planning.pb.h"
+
+/**
+ * @brief Protobuf type aliases using pb:: namespace for clean separation
+ * 
+ * This file creates aliases for all protobuf types in the pb:: namespace,
+ * allowing our custom classes to use clean, natural names.
+ * This approach works regardless of whether the protobuf file has a package
+ * declaration or not, and survives protobuf regeneration.
+ */
+
+namespace pb {
+    // Core protobuf types
+    using Action = ::Action;
+    using Effect = ::Effect;
+    using EffectExpression = ::EffectExpression;
+    using Expression = ::Expression;
+    using Condition = ::Condition;
+    using Parameter = ::Parameter;
+    using Fluent = ::Fluent;
+    using Goal = ::Goal;
+    using Assignment = ::Assignment;
+    using Problem = ::Problem;
+    using ObjectDeclaration = ::ObjectDeclaration;
+    
+    // Basic types
+    using Atom = ::Atom;
+    using Real = ::Real;
+    
+    // Enums
+    using ExpressionKind = ::ExpressionKind;
+    using EffectExpression_EffectKind = ::EffectExpression_EffectKind;
+}

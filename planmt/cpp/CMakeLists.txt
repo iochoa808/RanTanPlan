@@ -61,6 +61,19 @@ endif()
 # Create main executable
 add_executable(planmt
     src/main.cpp
+    src/problem/real.cpp
+    src/problem/atom.cpp
+    src/problem/parameter.cpp
+    src/problem/expression.cpp
+    src/problem/visitors/expression_visitor.cpp
+    src/problem/effect_expression.cpp
+    src/problem/effect.cpp
+    src/problem/object.cpp
+    src/problem/fluent.cpp
+    src/problem/goal.cpp
+    src/problem/assignment.cpp
+    src/problem/action.cpp
+    src/problem/problem.cpp
 )
 
 # Define proto files and generate C++ sources
@@ -77,11 +90,13 @@ protobuf_generate(TARGET planmt
 # ==============================================================================
 # Include directories
 target_include_directories(planmt PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}        # generated protobuf sources
-    ${CMAKE_CURRENT_BINARY_DIR}/proto  # generated protobuf headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/src    # our source headers
-    ${Protobuf_INCLUDE_DIRS}           # protobuf lib headers
-    ${Z3_INCLUDE_DIR}                  # Z3 headers
+    ${CMAKE_CURRENT_BINARY_DIR}                      # generated protobuf sources
+    ${CMAKE_CURRENT_BINARY_DIR}/proto                # generated protobuf headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src                  # our source headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/problem          # problem representation headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/problem/visitors # visitor headers
+    ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
+    ${Z3_INCLUDE_DIR}                                # Z3 headers
 )
 
 # Link libraries

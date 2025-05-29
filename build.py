@@ -28,7 +28,7 @@ def build_ext(make_clean=False):
     
     # Run the CMake config step, build and install the native module
     subprocess.run(["cmake", "-G", "Unix Makefiles", ".."] + cmake_args, cwd=build_dir, check=True)
-    subprocess.run(["cmake", "--build", "."], cwd=build_dir, check=True)
+    subprocess.run(["cmake", "--build", ".", "-j", "4"], cwd=build_dir, check=True)
     subprocess.run(["cmake", "--install", "."], cwd=build_dir, check=True)
 
 if __name__ == "__main__":
