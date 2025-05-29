@@ -16,14 +16,11 @@ endif()
 # ==============================================================================
 # PROTOBUF SETUP
 # ==============================================================================
-find_package(Protobuf REQUIRED)
-
-# Define proto files and generate C++ sources
-set(PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/proto/unified_planning.proto)
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
-
+# https://github.com/protocolbuffers/protobuf/issues/12637
+find_package(Protobuf CONFIG REQUIRED)
 # Abseil (Google's C++ common libraries) for protobuf
-find_package(absl REQUIRED)
+#find_package(absl REQUIRED)
+# no longer needed, protobuf now uses absl internally
 
 # ==============================================================================
 # Z3 SOLVER SETUP
@@ -64,8 +61,15 @@ endif()
 # Create main executable
 add_executable(planmt
     src/main.cpp
-    ${PROTO_SRCS}
-    ${PROTO_HDRS}
+)
+
+# Define proto files and generate C++ sources
+set(PROTO_FILES ${CMAKE_CURRENT_SOURCE_DIR}/proto/unified_planning.proto)
+message(STATUS "PROTO_FILES: ${PROTO_FILES}")
+# generate protobuf files for the target
+protobuf_generate(TARGET planmt
+    PROTOS ${PROTO_FILES}
+    LANGUAGE cpp
 )
 
 # ==============================================================================
@@ -73,19 +77,17 @@ add_executable(planmt
 # ==============================================================================
 # Include directories
 target_include_directories(planmt PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}    # Generated protobuf headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/src # Source headers
-    ${Protobuf_INCLUDE_DIRS}       # Protobuf headers
-    ${Z3_INCLUDE_DIR}              # Z3 headers
+    ${CMAKE_CURRENT_BINARY_DIR}        # generated protobuf sources
+    ${CMAKE_CURRENT_BINARY_DIR}/proto  # generated protobuf headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src    # our source headers
+    ${Protobuf_INCLUDE_DIRS}           # protobuf lib headers
+    ${Z3_INCLUDE_DIR}                  # Z3 headers
 )
 
 # Link libraries
 target_link_libraries(planmt PRIVATE
     protobuf::libprotobuf
     ${Z3_LINK_LIBRARY} # Ensure this uses the full path from Z3_LIBRARY
-    absl::base
-    absl::log
-    absl::check
 )
 
 # ==============================================================================
