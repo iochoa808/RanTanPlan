@@ -10,10 +10,9 @@
 namespace planmt {
 
 /**
- * @brief Simple fluent representation
+ * @brief Fluent
  * 
  * Represents a state-dependent variable (fluent) in the planning domain.
- * Much simpler than protobuf Fluent - focuses on essential functionality.
  */
 class Fluent {
 public:

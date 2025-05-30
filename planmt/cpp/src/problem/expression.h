@@ -9,11 +9,9 @@
 namespace planmt {
 
 /**
- * @brief Simple expression representation
+ * @brief Expression
  * 
  * Represents either an atom or a list of sub-expressions.
- * Much simpler than protobuf Expression - focuses on essential functionality.
- * Omits temporal planning features.
  */
 class Expression {
 public:

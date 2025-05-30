@@ -6,10 +6,9 @@
 namespace planmt {
 
 /**
- * @brief Simple parameter representation
+ * @brief Parameter
  * 
  * Represents a typed parameter for actions or fluents.
- * Much simpler than protobuf Parameter - focuses on essential functionality.
  */
 class Parameter {
 public:

@@ -7,10 +7,9 @@
 namespace planmt {
 
 /**
- * @brief Simple real number representation
+ * @brief Simple real number
  * 
  * Represents a rational number as numerator/denominator fraction.
- * Much simpler than protobuf Real - focuses on essential functionality.
  */
 class Real {
 public:

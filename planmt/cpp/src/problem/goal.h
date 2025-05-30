@@ -6,11 +6,9 @@
 namespace planmt {
 
 /**
- * @brief Simple goal representation
+ * @brief Goal
  * 
  * Represents a goal condition in the planning problem.
- * Much simpler than protobuf Goal - focuses on essential functionality.
- * Omits temporal planning features and goal weights.
  */
 class Goal {
 public:

@@ -6,10 +6,9 @@
 namespace planmt {
 
 /**
- * @brief Simple object declaration representation
+ * @brief Object declaration
  * 
  * Represents a typed object in the planning domain.
- * Much simpler than protobuf ObjectDeclaration - focuses on essential functionality.
  */
 class Object {
 public:

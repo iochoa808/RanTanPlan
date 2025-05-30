@@ -8,11 +8,9 @@
 namespace planmt {
 
 /**
- * @brief Simple effect expression representation
+ * @brief Effect expression
  * 
  * Represents an effect of the form "FLUENT OP VALUE" with optional condition.
- * Much simpler than protobuf EffectExpression - focuses on essential functionality.
- * Omits temporal planning features.
  */
 class EffectExpression {
 public:

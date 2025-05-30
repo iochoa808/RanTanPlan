@@ -74,6 +74,7 @@ add_executable(planmt
     src/problem/assignment.cpp
     src/problem/action.cpp
     src/problem/problem.cpp
+    src/encoders/smt_encoding_visitor.cpp
 )
 
 # Define proto files and generate C++ sources
@@ -95,6 +96,7 @@ target_include_directories(planmt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src                  # our source headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem          # problem representation headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem/visitors # visitor headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/encoders/        # encoders headers
     ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
     ${Z3_INCLUDE_DIR}                                # Z3 headers
 )

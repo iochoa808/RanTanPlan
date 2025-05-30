@@ -23,7 +23,6 @@ namespace planmt {
  * 
  * This is the central class that represents a complete planning problem.
  * It contains all objects, fluents, actions, initial state, and goals.
- * Much simpler than protobuf Problem - focuses on essential functionality.
  */
 class Problem {
 public:

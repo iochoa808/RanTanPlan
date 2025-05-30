@@ -8,8 +8,8 @@ namespace planmt {
 /**
  * @brief Effect
  * 
- * Wraps an EffectExpression. In the protobuf definition this also handles temporal timing,
- * but we omit that for non-temporal planning.
+ * Wraps an EffectExpression, to represent an effect in a planning problem.
+ * Supports conditional and quantified effects.
  */
 class Effect {
 public:
