@@ -21,7 +21,7 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     log_message->set_level(LogMessage_LogLevel_INFO);
 
     //std::cout << "Problem received by C++ planner:" << std::endl;
-    //std::cout << problem.to_string() << std::endl;
+    std::cout << problem.to_string() << std::endl;
 
     // Create Z3 context
     z3::context ctx;

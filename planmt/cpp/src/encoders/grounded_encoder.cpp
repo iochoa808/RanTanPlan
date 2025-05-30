@@ -20,9 +20,9 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
         const Expression& value = assignment.value();
         
         // print the expression and the type of both operands
-        std::cout << "Fluent = " << fluent.to_string() 
-                  << ", Value = " << value.to_string() 
-                  << ", Kinds = (" << fluent.kind() << "," << value.kind() << ")" << std::endl;
+//        std::cout << "Fluent = " << fluent.to_string() 
+//                  << ", Value = " << value.to_string() 
+//                  << ", Kinds = (" << fluent.kind() << "," << value.kind() << ")" << std::endl;
 
         // use the encoding visitor to encode the fluent
         // z3::expr fluent_var = get_fluent_var(fluent, assignment.parameters(), 0);

@@ -4,7 +4,7 @@ namespace planmt {
 
 void accept_visitor(const Expression& expr, ExpressionVisitor& visitor) {
     if (expr.is_atom()) {
-        const Atom& atom = expr.atom();
+        const Atom& atom = expr.value();
         
         if (atom.is_symbol()) {
             visitor.visit_symbol(atom.symbol(), expr.kind());
@@ -22,8 +22,8 @@ void accept_visitor(const Expression& expr, ExpressionVisitor& visitor) {
         // Determine what kind of list this is based on the kind
         switch (expr.kind()) {
             case Expression::Kind::FUNCTION_APPLICATION:
-                if (!list.empty() && list[0].is_atom() && list[0].atom().is_symbol()) {
-                    std::string function_name = list[0].atom().symbol();
+                if (!list.empty() && list[0].is_atom() && list[0].value().is_symbol()) {
+                    std::string function_name = list[0].value().symbol();
                     std::vector<Expression> args(list.begin() + 1, list.end());
                     visitor.visit_function_application(function_name, args, expr.kind());
                 } else {
@@ -32,8 +32,8 @@ void accept_visitor(const Expression& expr, ExpressionVisitor& visitor) {
                 break;
                 
             case Expression::Kind::STATE_VARIABLE:
-                if (!list.empty() && list[0].is_atom() && list[0].atom().is_symbol()) {
-                    std::string fluent_name = list[0].atom().symbol();
+                if (!list.empty() && list[0].is_atom() && list[0].value().is_symbol()) {
+                    std::string fluent_name = list[0].value().symbol();
                     std::vector<Expression> args(list.begin() + 1, list.end());
                     visitor.visit_fluent_application(fluent_name, args, expr.kind());
                 } else {
