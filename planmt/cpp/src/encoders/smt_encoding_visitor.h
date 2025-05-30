@@ -27,12 +27,18 @@ private:
     std::optional<z3::expr> result_;
     SymbolCache& symbol_cache_;
     
+    // Cache for function declarations to avoid recreating them
+    std::unordered_map<std::string, std::shared_ptr<z3::func_decl>> functions_;
+    
+    // Cache for variables to avoid recreating them  
+    std::unordered_map<std::string, std::shared_ptr<z3::expr>> variables_;
+    
 public:
     // Constructor - cache must be provided externally
     SmtEncodingVisitor(z3::context& ctx, SymbolCache& symbol_cache) 
         : ctx_(ctx), symbol_cache_(symbol_cache) {}
     
-    // Visitor methods
+    // BaseExpressionVisitor interface methods
     void visit_symbol(const std::string& symbol, Expression::Kind kind) override;
     void visit_integer(int64_t value, Expression::Kind kind) override;
     void visit_real(const Real& value, Expression::Kind kind) override;
@@ -65,22 +71,20 @@ public:
     const SymbolCache& get_symbol_cache() const { return symbol_cache_; }
 
 private:
-    // Helper methods for arithmetic operations
-    void encode_addition(const std::vector<Expression>& args);
-    void encode_subtraction(const std::vector<Expression>& args);
-    void encode_multiplication(const std::vector<Expression>& args);
-    void encode_division(const std::vector<Expression>& args);
-    
-    // Helper methods for logical operations
-    void encode_and(const std::vector<Expression>& args);
-    void encode_or(const std::vector<Expression>& args);
-    void encode_not(const std::vector<Expression>& args);
-    void encode_implies(const std::vector<Expression>& args);
-    void encode_equals(const std::vector<Expression>& args);
-    void encode_less_than(const std::vector<Expression>& args);
-    void encode_less_equal(const std::vector<Expression>& args);
-    void encode_greater_than(const std::vector<Expression>& args);
-    void encode_greater_equal(const std::vector<Expression>& args);
+    // Helper methods for specific Z3 operations
+    std::optional<z3::expr> handle_and(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_or(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_not(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_equals(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_less_than(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_less_equal(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_greater_than(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_greater_equal(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_plus(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_minus(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_multiply(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_divide(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_uninterpreted_function(const std::string& name, const std::vector<z3::expr>& args);
     
     // Helper to get or create Z3 variable for symbol
     z3::expr get_or_create_variable(const std::string& symbol, Expression::Kind kind);

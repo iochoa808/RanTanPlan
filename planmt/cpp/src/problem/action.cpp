@@ -71,26 +71,6 @@ std::string Action::to_string() const {
     return oss.str();
 }
 
-pb::Action Action::to_protobuf() const {
-    pb::Action pb_action;
-    pb_action.set_name(name_);
-    
-    for (const auto& param : parameters_) {
-        *pb_action.add_parameters() = param.to_protobuf();
-    }
-    
-    for (const auto& precond : preconditions_) {
-        pb::Condition* pb_condition = pb_action.add_conditions();
-        *pb_condition->mutable_cond() = precond.to_protobuf();
-    }
-    
-    for (const auto& effect : effects_) {
-        *pb_action.add_effects() = effect.to_protobuf();
-    }
-    
-    return pb_action;
-}
-
 bool Action::operator==(const Action& other) const {
     return name_ == other.name_ &&
            parameters_ == other.parameters_ &&

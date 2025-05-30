@@ -2,7 +2,8 @@ import unified_planning as up
 from typing import Callable, IO, Optional
 from unified_planning.engines.results import PlanGenerationResult, LogMessage, LogLevel
 from unified_planning.engines.mixins import OneshotPlannerMixin
-from unified_planning.engines import PlanGenerationResultStatus, Engine
+from unified_planning.engines import PlanGenerationResultStatus, Engine, CompilationKind # Added CompilationKind
+from unified_planning.engines.compilers import Grounder # Added Grounder
 from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.exceptions import UPException
@@ -116,7 +117,14 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
               timeout: Optional[float] = None,
               output_stream: Optional[IO[str]] = None) -> 'up.engines.PlanGenerationResult':
 
-        pb_problem_msg = self._writer.convert(problem)
+        # TODO: implement a sequence of compiler applications depending on the problem kind and encoder capabilities
+        self._log_to_stream(output_stream, "Starting grounding process.")
+        grounder = Grounder()
+        grounding_result = grounder.compile(problem, CompilationKind.GROUNDING)
+        grounded_problem = grounding_result.problem
+        self._log_to_stream(output_stream, "Grounding process completed.")
+
+        pb_problem_msg = self._writer.convert(grounded_problem)
 
         with tempfile.NamedTemporaryFile(mode="wb", suffix=".pb", delete=False) as problem_file, \
              tempfile.NamedTemporaryFile(mode="rb", suffix=".pb", delete=False) as solution_file:
@@ -140,32 +148,57 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             if process.stderr:
                 self._log_to_stream(output_stream, f"planner stderr:\n{process.stderr}")
 
-            log_messages = self._create_log_messages(process)
+            log_messages_from_subprocess = self._create_log_messages(process)
 
             # Handle process errors
             if process.returncode != 0:
                 error_msg = f"The planner failed with return code {process.returncode}."
-                if process.returncode == -11:
-                    error_msg += " - The error might be a segmentation fault ..."
+                if process.returncode == -11: # Specific check for SIGSEGV
+                    error_msg += " - The error might be a segmentation fault (SIGSEGV)."
                 
-                log_messages.append(LogMessage(level=LogLevel.ERROR, message=error_msg))
+                log_messages_from_subprocess.append(LogMessage(level=LogLevel.ERROR, message=error_msg))
                 self._log_to_stream(output_stream, f"ERROR: {error_msg}")
                 
                 return PlanGenerationResult(
-                    PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name, log_messages=log_messages
+                    PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name, log_messages=log_messages_from_subprocess
                 )
 
             # Read and convert solution
             with open(solution_filepath, "rb") as f:
-                pb_plan_generation_result_msg = up_pb2.PlanGenerationResult()
+                pb_plan_generation_result_msg = up_pb2.PlanGenerationResult() # type: ignore
                 pb_plan_generation_result_msg.ParseFromString(f.read())
 
-            up_plan_result = self._reader.convert(pb_plan_generation_result_msg, problem)
-            
-            self._log_to_stream(output_stream, f"Plan found: {up_plan_result.plan is not None}")
-            self._log_to_stream(output_stream, f"Status: {up_plan_result.status}")
+            # Convert the protobuf result. This result is for the grounded_problem.
+            result_from_protobuf = self._reader.convert(pb_plan_generation_result_msg, grounded_problem)
 
-            return up_plan_result
+            # Combine log messages from subprocess and protobuf result
+            all_log_messages = log_messages_from_subprocess + (result_from_protobuf.log_messages or [])
+
+            final_plan = None
+            if result_from_protobuf.plan:
+                self._log_to_stream(output_stream, "Mapping plan back to original problem.")
+                try:
+                    final_plan = grounding_result.map_back_plan(result_from_protobuf.plan, problem)
+                    self._log_to_stream(output_stream, "Plan mapping complete.")
+                except Exception as e:
+                    self._log_to_stream(output_stream, f"Error mapping plan back: {e}")
+                    all_log_messages.append(LogMessage(level=LogLevel.ERROR, message=f"Error mapping plan back: {e}"))
+                    # Depending on severity, might change status or return error
+                    return PlanGenerationResult(
+                        PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
+                        log_messages=all_log_messages
+                    )
+            
+            self._log_to_stream(output_stream, f"Plan found (after mapping): {final_plan is not None}")
+            self._log_to_stream(output_stream, f"Status from planner: {result_from_protobuf.status}")
+
+            return PlanGenerationResult(
+                result_from_protobuf.status,
+                final_plan,
+                self.name,
+                log_messages=all_log_messages,
+                metrics=result_from_protobuf.metrics
+            )
 
         except subprocess.TimeoutExpired:
             self._log_to_stream(output_stream, "Planner timed out.")

@@ -1,4 +1,5 @@
 #include "smt_encoding_visitor.h"
+#include "../problem/visitors/expression_visitor.h"
 
 namespace planmt {
 
@@ -22,461 +23,225 @@ void SmtEncodingVisitor::visit_boolean(bool value, Expression::Kind kind) {
 void SmtEncodingVisitor::visit_function_application(const std::string& function_name, 
                                                   const std::vector<Expression>& args,
                                                   Expression::Kind kind) {
-    // Handle common arithmetic and logical operations
-    if (function_name == "+") {
-        encode_addition(args);
-    } else if (function_name == "-") {
-        encode_subtraction(args);
-    } else if (function_name == "*") {
-        encode_multiplication(args);
-    } else if (function_name == "/") {
-        encode_division(args);
-    } else if (function_name == "and") {
-        encode_and(args);
-    } else if (function_name == "or") {
-        encode_or(args);
-    } else if (function_name == "not") {
-        encode_not(args);
-    } else if (function_name == "=>" || function_name == "implies") {
-        encode_implies(args);
-    } else if (function_name == "=" || function_name == "==") {
-        encode_equals(args);
-    } else if (function_name == "<") {
-        encode_less_than(args);
-    } else if (function_name == "<=") {
-        encode_less_equal(args);
-    } else if (function_name == ">") {
-        encode_greater_than(args);
-    } else if (function_name == ">=") {
-        encode_greater_equal(args);
-    } else {
-        // Unknown function - create uninterpreted function
-        // For simplicity, we'll treat it as a boolean function for now
-        z3::func_decl func = ctx_.function(function_name.c_str(), ctx_.int_sort(), ctx_.bool_sort());
-        if (args.empty()) {
-            result_ = func();
-        } else {        // Convert first argument and apply function
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[0], arg_visitor);
-        if (arg_visitor.has_result()) {
-            result_ = func(arg_visitor.get_expression());
+    // Convert arguments
+    std::vector<z3::expr> z3_args;
+    for (const auto& arg : args) {
+        accept_visitor(arg, *this);
+        if (result_) {
+            z3_args.push_back(*result_);
         } else {
             result_ = std::nullopt;
+            return;
         }
-        }
+    }
+    
+    // Handle different operators
+    if (function_name == "and") {
+        result_ = handle_and(z3_args);
+    } else if (function_name == "or") {
+        result_ = handle_or(z3_args);
+    } else if (function_name == "not") {
+        result_ = handle_not(z3_args);
+    } else if (function_name == "=" || function_name == "==") {
+        result_ = handle_equals(z3_args);
+    } else if (function_name == "<") {
+        result_ = handle_less_than(z3_args);
+    } else if (function_name == "<=") {
+        result_ = handle_less_equal(z3_args);
+    } else if (function_name == ">") {
+        result_ = handle_greater_than(z3_args);
+    } else if (function_name == ">=") {
+        result_ = handle_greater_equal(z3_args);
+    } else if (function_name == "+") {
+        result_ = handle_plus(z3_args);
+    } else if (function_name == "-") {
+        result_ = handle_minus(z3_args);
+    } else if (function_name == "*") {
+        result_ = handle_multiply(z3_args);
+    } else if (function_name == "/") {
+        result_ = handle_divide(z3_args);
+    } else {
+        // Unknown function - create uninterpreted function
+        result_ = handle_uninterpreted_function(function_name, z3_args);
     }
 }
 
 void SmtEncodingVisitor::visit_fluent_application(const std::string& fluent_name,
                                                 const std::vector<Expression>& args,
                                                 Expression::Kind kind) {
-    // Treat fluent applications as uninterpreted predicates
-    // For now, assume they return boolean values
-    if (args.empty()) {
-        // Zero-arity fluent
-        result_ = get_or_create_variable(fluent_name, Expression::Kind::FLUENT_SYMBOL);
-    } else {
-        // Create uninterpreted predicate
-        z3::func_decl fluent = ctx_.function(fluent_name.c_str(), ctx_.int_sort(), ctx_.bool_sort());
-        
-        // Convert first argument
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[0], arg_visitor);
-        if (arg_visitor.has_result()) {
-            result_ = fluent(arg_visitor.get_expression());
-        } else {
-            result_ = std::nullopt;
-        }
-    }
+    // Fluent applications are similar to function applications
+    visit_function_application(fluent_name, args, kind);
 }
 
 void SmtEncodingVisitor::visit_list(const std::vector<Expression>& elements, 
                                    Expression::Kind kind) {
-    // For generic lists, we can't make assumptions about their meaning
-    // This should typically not be called for well-formed expressions
+    // For lists that aren't function applications, we can't easily convert to Z3
+    // This might represent a raw list structure
     result_ = std::nullopt;
 }
 
-void SmtEncodingVisitor::encode_addition(const std::vector<Expression>& args) {
+// Helper methods for handling specific operators
+std::optional<z3::expr> SmtEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
     if (args.empty()) {
-        result_ = ctx_.int_val(0); // Additive identity
-        return;
+        return ctx_.bool_val(true);
     }
     
-    // Convert first argument
-    SmtEncodingVisitor first_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], first_visitor);
-    if (!first_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    z3::expr sum = first_visitor.get_expression();
-    
-    // Add remaining arguments
+    z3::expr result = args[0];
     for (size_t i = 1; i < args.size(); ++i) {
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[i], arg_visitor);
-        if (!arg_visitor.has_result()) {
-            result_ = std::nullopt;
-            return;
-        }
-        sum = sum + arg_visitor.get_expression();
+        result = result && args[i];
     }
-    
-    result_ = sum;
+    return result;
 }
 
-void SmtEncodingVisitor::encode_subtraction(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
     if (args.empty()) {
-        result_ = std::nullopt;
-        return;
+        return ctx_.bool_val(false);
     }
     
-    // Unary minus
-    if (args.size() == 1) {
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[0], arg_visitor);
-        if (arg_visitor.has_result()) {
-            result_ = -arg_visitor.get_expression();
-        } else {
-            result_ = std::nullopt;
-        }
-        return;
-    }
-    
-    // Binary subtraction (left-associative for multiple args)
-    SmtEncodingVisitor first_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], first_visitor);
-    if (!first_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    z3::expr diff = first_visitor.get_expression();
-    
+    z3::expr result = args[0];
     for (size_t i = 1; i < args.size(); ++i) {
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[i], arg_visitor);
-        if (!arg_visitor.has_result()) {
-            result_ = std::nullopt;
-            return;
-        }
-        diff = diff - arg_visitor.get_expression();
+        result = result || args[i];
     }
-    
-    result_ = diff;
+    return result;
 }
 
-void SmtEncodingVisitor::encode_multiplication(const std::vector<Expression>& args) {
-    if (args.empty()) {
-        result_ = ctx_.int_val(1); // Multiplicative identity
-        return;
-    }
-    
-    SmtEncodingVisitor first_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], first_visitor);
-    if (!first_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    z3::expr product = first_visitor.get_expression();
-    
-    for (size_t i = 1; i < args.size(); ++i) {
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[i], arg_visitor);
-        if (!arg_visitor.has_result()) {
-            result_ = std::nullopt;
-            return;
-        }
-        product = product * arg_visitor.get_expression();
-    }
-    
-    result_ = product;
-}
-
-void SmtEncodingVisitor::encode_division(const std::vector<Expression>& args) {
-    if (args.size() != 2) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor left_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], left_visitor);
-    if (!left_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor right_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[1], right_visitor);
-    if (!right_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    result_ = left_visitor.get_expression() / right_visitor.get_expression();
-}
-
-void SmtEncodingVisitor::encode_and(const std::vector<Expression>& args) {
-    if (args.empty()) {
-        result_ = ctx_.bool_val(true); // Logical identity for AND
-        return;
-    }
-    
-    SmtEncodingVisitor first_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], first_visitor);
-    if (!first_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    z3::expr conjunction = first_visitor.get_expression();
-    
-    for (size_t i = 1; i < args.size(); ++i) {
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[i], arg_visitor);
-        if (!arg_visitor.has_result()) {
-            result_ = std::nullopt;
-            return;
-        }
-        conjunction = conjunction && arg_visitor.get_expression();
-    }
-    
-    result_ = conjunction;
-}
-
-void SmtEncodingVisitor::encode_or(const std::vector<Expression>& args) {
-    if (args.empty()) {
-        result_ = ctx_.bool_val(false); // Logical identity for OR
-        return;
-    }
-    
-    SmtEncodingVisitor first_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], first_visitor);
-    if (!first_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    z3::expr disjunction = first_visitor.get_expression();
-    
-    for (size_t i = 1; i < args.size(); ++i) {
-        SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-        accept_visitor(args[i], arg_visitor);
-        if (!arg_visitor.has_result()) {
-            result_ = std::nullopt;
-            return;
-        }
-        disjunction = disjunction || arg_visitor.get_expression();
-    }
-    
-    result_ = disjunction;
-}
-
-void SmtEncodingVisitor::encode_not(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
     if (args.size() != 1) {
-        result_ = std::nullopt;
-        return;
+        return std::nullopt;
     }
-    
-    SmtEncodingVisitor arg_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], arg_visitor);
-    if (arg_visitor.has_result()) {
-        result_ = !arg_visitor.get_expression();
-    } else {
-        result_ = std::nullopt;
-    }
+    return !args[0];
 }
 
-void SmtEncodingVisitor::encode_implies(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_equals(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        result_ = std::nullopt;
-        return;
+        return std::nullopt;
     }
-    
-    SmtEncodingVisitor left_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], left_visitor);
-    if (!left_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor right_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[1], right_visitor);
-    if (!right_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    result_ = z3::implies(left_visitor.get_expression(), right_visitor.get_expression());
+    return args[0] == args[1];
 }
 
-void SmtEncodingVisitor::encode_equals(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_less_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        result_ = std::nullopt;
-        return;
+        return std::nullopt;
     }
-    
-    SmtEncodingVisitor left_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], left_visitor);
-    if (!left_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor right_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[1], right_visitor);
-    if (!right_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    result_ = left_visitor.get_expression() == right_visitor.get_expression();
+    return args[0] < args[1];
 }
 
-void SmtEncodingVisitor::encode_less_than(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_less_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        result_ = std::nullopt;
-        return;
+        return std::nullopt;
     }
-    
-    SmtEncodingVisitor left_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], left_visitor);
-    if (!left_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor right_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[1], right_visitor);
-    if (!right_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    result_ = left_visitor.get_expression() < right_visitor.get_expression();
+    return args[0] <= args[1];
 }
 
-void SmtEncodingVisitor::encode_less_equal(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_greater_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        result_ = std::nullopt;
-        return;
+        return std::nullopt;
     }
-    
-    SmtEncodingVisitor left_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], left_visitor);
-    if (!left_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor right_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[1], right_visitor);
-    if (!right_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    result_ = left_visitor.get_expression() <= right_visitor.get_expression();
+    return args[0] > args[1];
 }
 
-void SmtEncodingVisitor::encode_greater_than(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_greater_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        result_ = std::nullopt;
-        return;
+        return std::nullopt;
     }
-    
-    SmtEncodingVisitor left_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], left_visitor);
-    if (!left_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor right_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[1], right_visitor);
-    if (!right_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    result_ = left_visitor.get_expression() > right_visitor.get_expression();
+    return args[0] >= args[1];
 }
 
-void SmtEncodingVisitor::encode_greater_equal(const std::vector<Expression>& args) {
+std::optional<z3::expr> SmtEncodingVisitor::handle_plus(const std::vector<z3::expr>& args) {
+    if (args.empty()) {
+        return ctx_.int_val(0);
+    }
+    
+    z3::expr result = args[0];
+    for (size_t i = 1; i < args.size(); ++i) {
+        result = result + args[i];
+    }
+    return result;
+}
+
+std::optional<z3::expr> SmtEncodingVisitor::handle_minus(const std::vector<z3::expr>& args) {
+    if (args.size() == 1) {
+        // Unary minus
+        return -args[0];
+    } else if (args.size() == 2) {
+        // Binary minus
+        return args[0] - args[1];
+    }
+    return std::nullopt;
+}
+
+std::optional<z3::expr> SmtEncodingVisitor::handle_multiply(const std::vector<z3::expr>& args) {
+    if (args.empty()) {
+        return ctx_.int_val(1);
+    }
+    
+    z3::expr result = args[0];
+    for (size_t i = 1; i < args.size(); ++i) {
+        result = result * args[i];
+    }
+    return result;
+}
+
+std::optional<z3::expr> SmtEncodingVisitor::handle_divide(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        result_ = std::nullopt;
-        return;
+        return std::nullopt;
     }
-    
-    SmtEncodingVisitor left_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[0], left_visitor);
-    if (!left_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    SmtEncodingVisitor right_visitor(ctx_, symbol_cache_);
-    accept_visitor(args[1], right_visitor);
-    if (!right_visitor.has_result()) {
-        result_ = std::nullopt;
-        return;
-    }
-    
-    result_ = left_visitor.get_expression() >= right_visitor.get_expression();
+    return args[0] / args[1];
 }
 
-z3::expr SmtEncodingVisitor::get_or_create_variable(const std::string& symbol, Expression::Kind kind) {
-    // Check if we already have this symbol cached
-    auto it = symbol_cache_.find(symbol);
-    if (it != symbol_cache_.end()) {
-        return *(it->second);
+std::optional<z3::expr> SmtEncodingVisitor::handle_uninterpreted_function(
+    const std::string& function_name, 
+    const std::vector<z3::expr>& args) {
+    
+    // Create or get function declaration
+    auto func_it = functions_.find(function_name);
+    if (func_it == functions_.end()) {
+        // Create new function declaration
+        // For simplicity, assume all arguments are integers and return type is integer
+        std::vector<z3::sort> domain;
+        for (size_t i = 0; i < args.size(); ++i) {
+            domain.push_back(ctx_.int_sort());
+        }
+        z3::func_decl func = ctx_.function(function_name.c_str(), static_cast<unsigned>(args.size()), domain.data(), ctx_.int_sort());
+        functions_[function_name] = std::make_shared<z3::func_decl>(func);
+        func_it = functions_.find(function_name);
     }
     
-    // Create new Z3 variable based on the kind and symbol name
-    z3::sort sort = get_sort_for_symbol(symbol, kind);
-    z3::expr var = ctx_.constant(symbol.c_str(), sort);
+    // Apply function
+    z3::expr_vector z3_args(ctx_);
+    for (const auto& arg : args) {
+        z3_args.push_back(arg);
+    }
     
-    // Cache for future use
-    symbol_cache_[symbol] = std::make_shared<z3::expr>(var);
-    return var;
+    return func_it->second->operator()(z3_args);
 }
 
-z3::sort SmtEncodingVisitor::get_sort_for_symbol(const std::string& symbol, Expression::Kind kind) {
-    // Determine sort based on expression kind and symbol naming conventions
+z3::expr SmtEncodingVisitor::get_or_create_variable(const std::string& name, Expression::Kind kind) {
+    auto var_it = variables_.find(name);
+    if (var_it != variables_.end()) {
+        return *var_it->second;
+    }
+    
+    // Create new variable based on kind
+    z3::expr var = ctx_.int_const(name.c_str());  // Default to integer
+    
+    // Could extend this to handle different types based on kind or type information
     switch (kind) {
-        case Expression::Kind::VARIABLE:
-        case Expression::Kind::PARAMETER:
         case Expression::Kind::CONSTANT:
-            // For variables/parameters, try to infer type from name or default to int
-            // This is a simple heuristic - in practice you might want more sophisticated type inference
-            if (symbol.find("bool") != std::string::npos || 
-                symbol.find("flag") != std::string::npos ||
-                symbol.find("_b") != std::string::npos) {
-                return ctx_.bool_sort();
-            } else if (symbol.find("real") != std::string::npos || 
-                       symbol.find("_r") != std::string::npos) {
-                return ctx_.real_sort();
-            } else {
-                return ctx_.int_sort(); // Default to integer
-            }
-            
-        case Expression::Kind::FLUENT_SYMBOL:
-        case Expression::Kind::STATE_VARIABLE:
-            // Fluents are typically boolean predicates
-            return ctx_.bool_sort();
-            
+        case Expression::Kind::PARAMETER:
+        case Expression::Kind::VARIABLE:
         case Expression::Kind::FUNCTION_SYMBOL:
-        case Expression::Kind::FUNCTION_APPLICATION:
-            // Functions could return any type - default to int
-            return ctx_.int_sort();
-            
+        case Expression::Kind::FLUENT_SYMBOL:
+            // For now, all variables are integers
+            var = ctx_.int_const(name.c_str());
+            break;
         default:
-            // Unknown kind - default to int
-            return ctx_.int_sort();
+            var = ctx_.int_const(name.c_str());
+            break;
     }
+    
+    variables_[name] = std::make_shared<z3::expr>(var);
+    return var;
 }
 
 } // namespace planmt

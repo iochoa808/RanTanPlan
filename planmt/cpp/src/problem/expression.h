@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <optional>
 #include "protobuf_aliases.h"
 #include "atom.h"
 
@@ -15,15 +16,15 @@ namespace planmt {
  */
 class Expression {
 public:
-    // Expression kinds (simplified from protobuf)
+    // Expression kinds
     enum class Kind {
         UNKNOWN = 0,
-        CONSTANT = 1,        // Constant atom
-        PARAMETER = 2,       // Parameter from outer scope
-        VARIABLE = 3,        // Variable from outer scope
-        FLUENT_SYMBOL = 4,   // Fluent symbol
-        FUNCTION_SYMBOL = 5, // Function symbol
-        STATE_VARIABLE = 6,  // Fluent application
+        CONSTANT = 1,            // Constant atom
+        PARAMETER = 2,           // Parameter from outer scope
+        VARIABLE = 3,            // Variable from outer scope
+        FLUENT_SYMBOL = 4,       // Fluent symbol
+        FUNCTION_SYMBOL = 5,     // Function symbol
+        STATE_VARIABLE = 6,      // Fluent application
         FUNCTION_APPLICATION = 7 // Function application
     };
     
@@ -65,6 +66,49 @@ public:
     bool is_state_variable() const { return kind_ == Kind::STATE_VARIABLE; }
     bool is_function_application() const { return kind_ == Kind::FUNCTION_APPLICATION; }
     
+    // Operator type identification for function applications
+    enum class OperatorType {
+        UNKNOWN,
+        // Logical operators
+        AND, OR, NOT, IMPLIES, IFF, EXISTS, FORALL,
+        // Comparison operators  
+        EQUALS, NOT_EQUALS, LESS_THAN, LESS_EQUAL, GREATER_THAN, GREATER_EQUAL,
+        // Arithmetic operators
+        PLUS, MINUS, MULTIPLY, DIVIDE, MODULO, POWER,
+        // Custom/unknown operator
+        CUSTOM
+    };
+
+    // Get operator type for function applications and function symbols
+    OperatorType get_operator_type() const;
+    
+    // Get operator symbol (for function symbols and applications)
+    std::string get_operator_symbol() const;
+    
+    // Check if this is a specific category of operator
+    bool is_logical_operator() const;
+    bool is_comparison_operator() const; 
+    bool is_arithmetic_operator() const;
+    
+    // Convenience methods for common operators
+    bool is_and() const { return get_operator_type() == OperatorType::AND; }
+    bool is_or() const { return get_operator_type() == OperatorType::OR; }
+    bool is_not() const { return get_operator_type() == OperatorType::NOT; }
+    bool is_equals() const { return get_operator_type() == OperatorType::EQUALS; }
+    bool is_plus() const { return get_operator_type() == OperatorType::PLUS; }
+    bool is_minus() const { return get_operator_type() == OperatorType::MINUS; }
+    bool is_multiply() const { return get_operator_type() == OperatorType::MULTIPLY; }
+    bool is_divide() const { return get_operator_type() == OperatorType::DIVIDE; }
+    bool is_less_than() const { return get_operator_type() == OperatorType::LESS_THAN; }
+    bool is_greater_than() const { return get_operator_type() == OperatorType::GREATER_THAN; }
+    
+    // Static utility methods for operator symbol mapping
+    static OperatorType symbol_to_operator_type(const std::string& symbol);
+    static std::string operator_type_to_symbol(OperatorType type);
+    static bool is_logical_operator_type(OperatorType type);
+    static bool is_comparison_operator_type(OperatorType type);
+    static bool is_arithmetic_operator_type(OperatorType type);
+    
     // String representation
     std::string to_string() const;
     
@@ -84,5 +128,20 @@ private:
     // Helper for string conversion
     std::string list_to_string() const;
 };
+
+// Operator overload for printing Kind enum
+inline std::ostream& operator<<(std::ostream& os, const Expression::Kind& kind) {
+    switch (kind) {
+        case Expression::Kind::UNKNOWN: return os << "UNKNOWN";
+        case Expression::Kind::CONSTANT: return os << "CONSTANT";
+        case Expression::Kind::PARAMETER: return os << "PARAMETER";
+        case Expression::Kind::VARIABLE: return os << "VARIABLE";
+        case Expression::Kind::FLUENT_SYMBOL: return os << "FLUENT_SYMBOL";
+        case Expression::Kind::FUNCTION_SYMBOL: return os << "FUNCTION_SYMBOL";
+        case Expression::Kind::STATE_VARIABLE: return os << "STATE_VARIABLE";
+        case Expression::Kind::FUNCTION_APPLICATION: return os << "FUNCTION_APPLICATION";
+        default: return os << "UNKNOWN";
+    }
+}
 
 } // namespace planmt

@@ -65,7 +65,6 @@ add_executable(planmt
     src/problem/atom.cpp
     src/problem/parameter.cpp
     src/problem/expression.cpp
-    src/problem/visitors/expression_visitor.cpp
     src/problem/effect_expression.cpp
     src/problem/effect.cpp
     src/problem/object.cpp
@@ -74,7 +73,10 @@ add_executable(planmt
     src/problem/assignment.cpp
     src/problem/action.cpp
     src/problem/problem.cpp
+    src/problem/visitors/expression_visitor.cpp
     src/encoders/smt_encoding_visitor.cpp
+    src/encoders/grounded_encoder.cpp
+    src/planners/sequential.cpp
 )
 
 # Define proto files and generate C++ sources
@@ -97,6 +99,7 @@ target_include_directories(planmt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem          # problem representation headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem/visitors # visitor headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/encoders/        # encoders headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/planners/        # encoders headers
     ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
     ${Z3_INCLUDE_DIR}                                # Z3 headers
 )
