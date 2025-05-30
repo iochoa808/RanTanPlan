@@ -7,9 +7,11 @@
 namespace planmt {
 
 /**
- * @brief Simple real number
+ * @brief Simple rational number for data transport
  * 
  * Represents a rational number as numerator/denominator fraction.
+ * Used only for data transport between protobuf and Z3 - all arithmetic 
+ * operations are delegated to the Z3 SMT solver.
  */
 class Real {
 public:
@@ -19,35 +21,21 @@ public:
     Real(double value);
     Real(const pb::Real& pb_real);
     
-    // Accessors
+    // Accessors (needed for Z3 conversion)
     int64_t numerator() const { return numerator_; }
     int64_t denominator() const { return denominator_; }
     
-    // Conversion
+    // Conversion utilities
     double to_double() const;
     std::string to_string() const;
     
-    // Convert to protobuf Real
-    pb::Real to_protobuf() const;
-    
-    // Operators
+    // Basic equality for debugging/testing
     bool operator==(const Real& other) const;
     bool operator!=(const Real& other) const { return !(*this == other); }
-    bool operator<(const Real& other) const;
-    bool operator<=(const Real& other) const;
-    bool operator>(const Real& other) const;
-    bool operator>=(const Real& other) const;
-    
-    Real operator+(const Real& other) const;
-    Real operator-(const Real& other) const;
-    Real operator*(const Real& other) const;
-    Real operator/(const Real& other) const;
 
 private:
     int64_t numerator_;
     int64_t denominator_;
-    
-    void normalize(); // Reduce to lowest terms
 };
 
 } // namespace planmt

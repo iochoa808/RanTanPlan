@@ -52,24 +52,6 @@ std::string Expression::list_to_string() const {
     return oss.str();
 }
 
-pb::Expression Expression::to_protobuf() const {
-    pb::Expression pb_expression;
-    
-    // Set type and kind
-    pb_expression.set_type(type_);
-    pb_expression.set_kind(static_cast<pb::ExpressionKind>(kind_));
-    
-    if (is_atom()) {
-        *pb_expression.mutable_atom() = atom_->to_protobuf();
-    } else if (is_list()) {
-        for (const auto& expr : list_) {
-            *pb_expression.add_list() = expr.to_protobuf();
-        }
-    }
-    
-    return pb_expression;
-}
-
 bool Expression::operator==(const Expression& other) const {
     if (kind_ != other.kind_ || type_ != other.type_) {
         return false;

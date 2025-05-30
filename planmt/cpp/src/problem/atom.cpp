@@ -38,22 +38,4 @@ std::string Atom::to_string() const {
     }, value_);
 }
 
-pb::Atom Atom::to_protobuf() const {
-    pb::Atom pb_atom;
-    
-    std::visit([&pb_atom](const auto& value) {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::string>) {
-            pb_atom.set_symbol(value);
-        } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, int64_t>) {
-            pb_atom.set_int_(value);
-        } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, Real>) {
-            *pb_atom.mutable_real() = value.to_protobuf();
-        } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, bool>) {
-            pb_atom.set_boolean(value);
-        }
-    }, value_);
-    
-    return pb_atom;
-}
-
 } // namespace planmt

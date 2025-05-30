@@ -151,34 +151,6 @@ std::string Problem::to_string() const {
     return oss.str();
 }
 
-pb::Problem Problem::to_protobuf() const {
-    pb::Problem pb_problem;
-    pb_problem.set_domain_name(domain_name_);
-    pb_problem.set_problem_name(problem_name_);
-    
-    for (const auto& obj : objects_) {
-        *pb_problem.add_objects() = obj.to_protobuf();
-    }
-    
-    for (const auto& fluent : fluents_) {
-        *pb_problem.add_fluents() = fluent.to_protobuf();
-    }
-    
-    for (const auto& action : actions_) {
-        *pb_problem.add_actions() = action.to_protobuf();
-    }
-    
-    for (const auto& assignment : initial_state_) {
-        *pb_problem.add_initial_state() = assignment.to_protobuf();
-    }
-    
-    for (const auto& goal : goals_) {
-        *pb_problem.add_goals() = goal.to_protobuf();
-    }
-    
-    return pb_problem;
-}
-
 bool Problem::operator==(const Problem& other) const {
     return domain_name_ == other.domain_name_ &&
            problem_name_ == other.problem_name_ &&

@@ -93,9 +93,6 @@ public:
     // String representation
     std::string to_string() const;
     
-    // Convert to protobuf Problem
-    pb::Problem to_protobuf() const;
-    
     // Operators
     bool operator==(const Problem& other) const;
     bool operator!=(const Problem& other) const { return !(*this == other); }

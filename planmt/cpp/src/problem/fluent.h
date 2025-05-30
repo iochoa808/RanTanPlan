@@ -50,9 +50,6 @@ public:
     // String representation
     std::string to_string() const;
     
-    // Convert to protobuf Fluent
-    pb::Fluent to_protobuf() const;
-    
     // Operators
     bool operator==(const Fluent& other) const;
     bool operator!=(const Fluent& other) const { return !(*this == other); }

@@ -43,9 +43,6 @@ public:
     // String representation
     std::string to_string() const;
     
-    // Convert to protobuf Atom
-    pb::Atom to_protobuf() const;
-    
     // Operators
     bool operator==(const Atom& other) const { return value_ == other.value_; }
     bool operator!=(const Atom& other) const { return !(*this == other); }

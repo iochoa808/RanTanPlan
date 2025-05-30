@@ -29,9 +29,6 @@ public:
     // String representation
     std::string to_string() const;
     
-    // Convert to protobuf Assignment
-    pb::Assignment to_protobuf() const;
-    
     // Operators
     bool operator==(const Assignment& other) const {
         return fluent_ == other.fluent_ && value_ == other.value_;

@@ -36,9 +36,6 @@ public:
     // String representation
     std::string to_string() const { return effect_expr_.to_string(); }
     
-    // Convert to protobuf Effect
-    pb::Effect to_protobuf() const;
-    
     // Operators
     bool operator==(const Effect& other) const { return effect_expr_ == other.effect_expr_; }
     bool operator!=(const Effect& other) const { return !(*this == other); }

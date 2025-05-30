@@ -57,9 +57,6 @@ public:
     std::string to_string() const;
     std::string kind_to_string() const;
     
-    // Convert to protobuf EffectExpression
-    pb::EffectExpression to_protobuf() const;
-    
     // Operators
     bool operator==(const EffectExpression& other) const;
     bool operator!=(const EffectExpression& other) const { return !(*this == other); }

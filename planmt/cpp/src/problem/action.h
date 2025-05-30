@@ -54,9 +54,6 @@ public:
     // String representation
     std::string to_string() const;
     
-    // Convert to protobuf Action
-    pb::Action to_protobuf() const;
-    
     // Operators
     bool operator==(const Action& other) const;
     bool operator!=(const Action& other) const { return !(*this == other); }

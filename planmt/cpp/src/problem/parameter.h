@@ -29,9 +29,6 @@ public:
     // String representation
     std::string to_string() const { return name_ + " : " + type_; }
     
-    // Convert to protobuf Parameter
-    pb::Parameter to_protobuf() const;
-    
     // Operators
     bool operator==(const Parameter& other) const {
         return name_ == other.name_ && type_ == other.type_;

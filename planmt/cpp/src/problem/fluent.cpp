@@ -37,22 +37,6 @@ std::string Fluent::to_string() const {
     return oss.str();
 }
 
-pb::Fluent Fluent::to_protobuf() const {
-    pb::Fluent pb_fluent;
-    pb_fluent.set_name(name_);
-    pb_fluent.set_value_type(value_type_);
-    
-    for (const auto& param : parameters_) {
-        *pb_fluent.add_parameters() = param.to_protobuf();
-    }
-    
-    if (default_value_.has_value()) {
-        *pb_fluent.mutable_default_value() = default_value_->to_protobuf();
-    }
-    
-    return pb_fluent;
-}
-
 bool Fluent::operator==(const Fluent& other) const {
     return name_ == other.name_ &&
            value_type_ == other.value_type_ &&

@@ -26,9 +26,6 @@ public:
     // String representation
     std::string to_string() const { return goal_expr_.to_string(); }
     
-    // Convert to protobuf Goal
-    pb::Goal to_protobuf() const;
-    
     // Operators
     bool operator==(const Goal& other) const { return goal_expr_ == other.goal_expr_; }
     bool operator!=(const Goal& other) const { return !(*this == other); }

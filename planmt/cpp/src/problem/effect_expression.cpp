@@ -60,24 +60,6 @@ std::string EffectExpression::kind_to_string() const {
     }
 }
 
-pb::EffectExpression EffectExpression::to_protobuf() const {
-    pb::EffectExpression pb_effect_expr;
-    
-    pb_effect_expr.set_kind(static_cast<pb::EffectExpression_EffectKind>(kind_));
-    *pb_effect_expr.mutable_fluent() = fluent_.to_protobuf();
-    *pb_effect_expr.mutable_value() = value_.to_protobuf();
-    
-    if (condition_.has_value()) {
-        *pb_effect_expr.mutable_condition() = condition_->to_protobuf();
-    }
-    
-    for (const auto& var : forall_variables_) {
-        *pb_effect_expr.add_forall() = var.to_protobuf();
-    }
-    
-    return pb_effect_expr;
-}
-
 bool EffectExpression::operator==(const EffectExpression& other) const {
     return kind_ == other.kind_ &&
            fluent_ == other.fluent_ &&

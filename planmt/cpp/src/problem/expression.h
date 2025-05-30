@@ -112,9 +112,6 @@ public:
     // String representation
     std::string to_string() const;
     
-    // Convert to protobuf Expression
-    pb::Expression to_protobuf() const;
-    
     // Operators
     bool operator==(const Expression& other) const;
     bool operator!=(const Expression& other) const { return !(*this == other); }
