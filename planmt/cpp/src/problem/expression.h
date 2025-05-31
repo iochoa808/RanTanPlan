@@ -16,16 +16,36 @@ namespace planmt {
  */
 class Expression {
 public:
-    // Expression kinds
+    // Expression kinds. For some reason the protobuf enum has weird numbering.
     enum class Kind {
-        UNKNOWN = 0,             // Unknown kind
-        CONSTANT = 1,            // Constant atom, for example "true", "false", "42"
-        PARAMETER = 2,           // Parameter from outer scope, for example "?x"of type robot from the action 
-        VARIABLE = 3,            // Variable from outer scope, for example "?y" from a quantifier
-        FLUENT_SYMBOL = 4,       // Fluent symbol, for example "at", "fuel_level"
-        FUNCTION_SYMBOL = 5,     // Function symbol, for example "+", "-", "<=", ">", "=", "and", "or"
-        STATE_VARIABLE = 6,      // Fluent application, for example "at(robot1, loc1)", "fuel_level(robot1)"
-        FUNCTION_APPLICATION = 7 // Function application, for example "(+ 1 2)", "(and (at robot1 loc1) (at robot2 loc2))"
+        // Default value, should not be used. Drop it if we are sure to never need it.
+        UNKNOWN = 0, 
+
+        // Constant atom. For instance, `true`, `3` or `kitchen` (where `kitchen` is
+        // an object defined in the problem)
+        CONSTANT = 1, 
+
+        // Atom symbol representing a parameter from an outer scope. For instance
+        // `from` that would appear inside a `(move from to - location)` action.
+        PARAMETER = 2,           
+
+        // Atom symbol representing a variable from an outer scope.
+        // This is typically used to represent the variables that are existentially or universally qualified in expressions.
+        VARIABLE = 7,
+
+        // Atom symbol representing a fluent of the problem. For instance `at-robot`.
+        FLUENT_SYMBOL = 3,
+
+        // Atom representing a function. For instance `+`, `=`, `and`, ...
+        FUNCTION_SYMBOL = 4, 
+
+        // List. Application of some parameters to a fluent symbol. For instance `(at-robot l1)` or `(battery-charged)`
+        // The first element of the list must be a FLUENT_SYMBOL
+        STATE_VARIABLE = 5,
+
+        // List. The expression is the application of some parameters to a function. For instance `(+ 1 3)`.
+        // The first element of the list must be a FUNCTION_SYMBOL
+        FUNCTION_APPLICATION = 6
     };
     
     // Constructors
