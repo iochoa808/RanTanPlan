@@ -9,6 +9,7 @@ namespace planmt {
 
     void SequentialPlanner::search() { 
         std::cout << "initial state:" << *encoder_.encode_initial_state() << std::endl;
+        std::cout << "goal:" << *encoder_.encode_goal(1) << std::endl;
     }
 
 }

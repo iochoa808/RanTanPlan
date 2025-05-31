@@ -7,7 +7,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
-#include <memory> // For std::shared_ptr in SymbolCache
+#include <memory>
 
 // This class is able to handle the encoding of grounded fluents and actions.
 namespace planmt {
@@ -21,10 +21,15 @@ public:
     std::shared_ptr<z3::expr> encode_initial_state();
     std::shared_ptr<z3::expr> encode_actions(int t); // Encodes actions layer_idx 
     std::shared_ptr<z3::expr> encode_frames(int t); // Encodes frame axioms for layer_idx to layer_idx+1
-    std::shared_ptr<z3::expr> encode_goal_state(int t);    // Encodes goal conditions at layer_idx
+    std::shared_ptr<z3::expr> encode_goal(int t);    // Encodes goal conditions at layer_idx
     std::shared_ptr<z3::expr> encode_parallelism(int t); // Encodes parallelism semantics
 
 private:
+    // Helper function to convert expression to Z3 using visitor
+    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr);
+    
+    // Helper function to print symbol table for debugging
+    void print_symbol_table(const std::string& context) const;
 
     // Gets or creates a Z3 variable for a grounded fluent at a specific step
     z3::expr get_fluent_var(const Fluent& fluent, const std::vector<Object>& params, int t);
@@ -40,7 +45,8 @@ private:
     const Problem& problem_; // The planning problem instance
     z3::context& ctx_;       // Z3 context (shared)
 
-    SmtEncodingVisitor::SymbolCache symbol_cache_; // Symbol table
+    SymbolTable symbol_table_; // Unified symbol table for Z3 variables and functions
+    SmtEncodingVisitor smt_visitor_; // SMT encoding visitor (reused across methods)
     
     // Storage for SMT variables - outer vector is indexed by timestep. Inner map's key is the base name.
     std::vector<std::unordered_map<std::string, std::shared_ptr<z3::expr>>> state_vars_; // for fluent and extra stuff

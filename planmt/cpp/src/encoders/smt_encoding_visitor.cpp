@@ -4,7 +4,9 @@
 namespace planmt {
 
 void SmtEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind) {
-    result_ = get_or_create_variable(symbol, kind);
+    // For symbols, we need to determine the appropriate type
+    // Default to integer for now, but this could be extended based on context
+    result_ = create_int_variable(symbol);
 }
 
 void SmtEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) {
@@ -194,18 +196,24 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_uninterpreted_function(
     const std::vector<z3::expr>& args) {
     
     // Create or get function declaration
-    auto func_it = functions_.find(function_name);
-    if (func_it == functions_.end()) {
+    auto func_it = symbol_table_.find(function_name);
+    
+    if (func_it == symbol_table_.end() || !std::holds_alternative<z3::func_decl>(func_it->second)) {
         // Create new function declaration
         // For simplicity, assume all arguments are integers and return type is integer
         std::vector<z3::sort> domain;
         for (size_t i = 0; i < args.size(); ++i) {
             domain.push_back(ctx_.int_sort());
         }
-        z3::func_decl func = ctx_.function(function_name.c_str(), static_cast<unsigned>(args.size()), domain.data(), ctx_.int_sort());
-        functions_[function_name] = std::make_shared<z3::func_decl>(func);
-        func_it = functions_.find(function_name);
+        z3::func_decl func_decl = ctx_.function(function_name.c_str(), 
+                                 static_cast<unsigned>(args.size()),
+                                 domain.data(), 
+                                 ctx_.int_sort());
+        symbol_table_.emplace(function_name, func_decl);
+        func_it = symbol_table_.find(function_name);
     }
+    
+    z3::func_decl func_decl = std::get<z3::func_decl>(func_it->second);
     
     // Apply function
     z3::expr_vector z3_args(ctx_);
@@ -213,34 +221,45 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_uninterpreted_function(
         z3_args.push_back(arg);
     }
     
-    return func_it->second->operator()(z3_args);
+    return func_decl(z3_args);
 }
 
-z3::expr SmtEncodingVisitor::get_or_create_variable(const std::string& name, Expression::Kind kind) {
-    auto var_it = variables_.find(name);
-    if (var_it != variables_.end()) {
-        return *var_it->second;
+z3::expr SmtEncodingVisitor::create_bool_variable(const std::string& name) {
+    auto it = symbol_table_.find(name);
+    if (it != symbol_table_.end()) {
+        if (std::holds_alternative<z3::expr>(it->second)) {
+            return std::get<z3::expr>(it->second);
+        }
     }
     
-    // Create new variable based on kind
-    z3::expr var = ctx_.int_const(name.c_str());  // Default to integer
-    
-    // Could extend this to handle different types based on kind or type information
-    switch (kind) {
-        case Expression::Kind::CONSTANT:
-        case Expression::Kind::PARAMETER:
-        case Expression::Kind::VARIABLE:
-        case Expression::Kind::FUNCTION_SYMBOL:
-        case Expression::Kind::FLUENT_SYMBOL:
-            // For now, all variables are integers
-            var = ctx_.int_const(name.c_str());
-            break;
-        default:
-            var = ctx_.int_const(name.c_str());
-            break;
+    z3::expr var = ctx_.bool_const(name.c_str());
+    symbol_table_.emplace(name, var);
+    return var;
+}
+
+z3::expr SmtEncodingVisitor::create_int_variable(const std::string& name) {
+    auto it = symbol_table_.find(name);
+    if (it != symbol_table_.end()) {
+        if (std::holds_alternative<z3::expr>(it->second)) {
+            return std::get<z3::expr>(it->second);
+        }
     }
     
-    variables_[name] = std::make_shared<z3::expr>(var);
+    z3::expr var = ctx_.int_const(name.c_str());
+    symbol_table_.emplace(name, var);
+    return var;
+}
+
+z3::expr SmtEncodingVisitor::create_real_variable(const std::string& name) {
+    auto it = symbol_table_.find(name);
+    if (it != symbol_table_.end()) {
+        if (std::holds_alternative<z3::expr>(it->second)) {
+            return std::get<z3::expr>(it->second);
+        }
+    }
+    
+    z3::expr var = ctx_.real_const(name.c_str());
+    symbol_table_.emplace(name, var);
     return var;
 }
 
