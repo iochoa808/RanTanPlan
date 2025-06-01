@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include "protobuf_aliases.h"
 #include "atom.h"
 
@@ -100,6 +101,180 @@ public:
     // Operators
     bool operator==(const Expression& other) const;
     bool operator!=(const Expression& other) const { return !(*this == other); }
+
+    // Operator enum for type safety and consistency
+    enum class Operator {
+        // Arithmetic operators
+        PLUS,           // + / up:plus
+        MINUS,          // - / up:minus
+        MULTIPLY,       // * / up:times
+        DIVIDE,         // / / up:div
+        MODULO,         // mod / up:mod
+        ABSOLUTE,       // abs / up:abs
+        MAXIMUM,        // max / up:max
+        MINIMUM,        // min / up:min
+        
+        // Comparison operators
+        EQUALS,         // = / up:equals
+        LESS_EQUAL,     // <= / up:le
+        LESS_THAN,      // < / up:lt
+        GREATER_EQUAL,  // >= / up:ge
+        GREATER_THAN,   // > / up:gt
+        
+        // Logical operators
+        AND,            // and / up:and
+        OR,             // or / up:or
+        NOT,            // not / up:not
+        IMPLIES,        // => / up:implies
+        IFF,            // = / up:iff
+        
+        // Unknown operator
+        UNKNOWN
+    };
+
+    // Static utility methods for operator handling
+    /**
+     * @brief Converts UP notation string to Operator enum
+     */
+    static Operator string_to_operator(const std::string& op_string) {
+        // UP notation
+        if (op_string == "up:plus") return Operator::PLUS;
+        if (op_string == "up:minus") return Operator::MINUS;
+        if (op_string == "up:times") return Operator::MULTIPLY;
+        if (op_string == "up:div") return Operator::DIVIDE;
+        if (op_string == "up:mod") return Operator::MODULO;
+        if (op_string == "up:abs") return Operator::ABSOLUTE;
+        if (op_string == "up:max") return Operator::MAXIMUM;
+        if (op_string == "up:min") return Operator::MINIMUM;
+        if (op_string == "up:equals") return Operator::EQUALS;
+        if (op_string == "up:le") return Operator::LESS_EQUAL;
+        if (op_string == "up:lt") return Operator::LESS_THAN;
+        if (op_string == "up:ge") return Operator::GREATER_EQUAL;
+        if (op_string == "up:gt") return Operator::GREATER_THAN;
+        if (op_string == "up:and") return Operator::AND;
+        if (op_string == "up:or") return Operator::OR;
+        if (op_string == "up:not") return Operator::NOT;
+        if (op_string == "up:implies") return Operator::IMPLIES;
+        if (op_string == "up:iff") return Operator::IFF;
+        
+        // Standard notation
+        if (op_string == "+") return Operator::PLUS;
+        if (op_string == "-") return Operator::MINUS;
+        if (op_string == "*") return Operator::MULTIPLY;
+        if (op_string == "/") return Operator::DIVIDE;
+        if (op_string == "mod") return Operator::MODULO;
+        if (op_string == "abs") return Operator::ABSOLUTE;
+        if (op_string == "max") return Operator::MAXIMUM;
+        if (op_string == "min") return Operator::MINIMUM;
+        if (op_string == "=" || op_string == "==") return Operator::EQUALS;
+        if (op_string == "<=") return Operator::LESS_EQUAL;
+        if (op_string == "<") return Operator::LESS_THAN;
+        if (op_string == ">=") return Operator::GREATER_EQUAL;
+        if (op_string == ">") return Operator::GREATER_THAN;
+        if (op_string == "and") return Operator::AND;
+        if (op_string == "or") return Operator::OR;
+        if (op_string == "not") return Operator::NOT;
+        if (op_string == "=>") return Operator::IMPLIES;
+        if (op_string == "=" || op_string == "<=>") return Operator::IFF;
+        
+        return Operator::UNKNOWN;
+    }
+
+    /**
+     * @brief Converts Operator enum to standard notation string
+     */
+    static std::string operator_to_string(Operator op) {
+        switch (op) {
+            case Operator::PLUS: return "+";
+            case Operator::MINUS: return "-";
+            case Operator::MULTIPLY: return "*";
+            case Operator::DIVIDE: return "/";
+            case Operator::MODULO: return "mod";
+            case Operator::ABSOLUTE: return "abs";
+            case Operator::MAXIMUM: return "max";
+            case Operator::MINIMUM: return "min";
+            case Operator::EQUALS: return "=";
+            case Operator::LESS_EQUAL: return "<=";
+            case Operator::LESS_THAN: return "<";
+            case Operator::GREATER_EQUAL: return ">=";
+            case Operator::GREATER_THAN: return ">";
+            case Operator::AND: return "and";
+            case Operator::OR: return "or";
+            case Operator::NOT: return "not";
+            case Operator::IMPLIES: return "=>";
+            case Operator::IFF: return "=";
+            default: return "";
+        }
+    }
+
+    /**
+     * @brief Maps UP notation operators to standard mathematical symbols
+     * @param up_function_name The UP notation function name (e.g., "up:plus")
+     * @return The standard operator symbol (e.g., "+") or original name if not found
+     */
+    static std::string map_up_operator(const std::string& up_function_name) {
+        Operator op = string_to_operator(up_function_name);
+        if (op == Operator::UNKNOWN) {
+            return up_function_name;  // Return original if not found
+        }
+        return operator_to_string(op);
+    }
+
+    /**
+     * @brief Checks if an Operator is an arithmetic operator
+     */
+    static bool is_arithmetic_operator(Operator op) {
+        return op == Operator::PLUS || op == Operator::MINUS || 
+               op == Operator::MULTIPLY || op == Operator::DIVIDE || 
+               op == Operator::MODULO || op == Operator::ABSOLUTE ||
+               op == Operator::MAXIMUM || op == Operator::MINIMUM;
+    }
+
+    /**
+     * @brief Checks if an Operator is a comparison operator
+     */
+    static bool is_comparison_operator(Operator op) {
+        return op == Operator::EQUALS || op == Operator::LESS_EQUAL || 
+               op == Operator::LESS_THAN || op == Operator::GREATER_EQUAL || 
+               op == Operator::GREATER_THAN;
+    }
+
+    /**
+     * @brief Checks if an Operator is a logical operator
+     */
+    static bool is_logical_operator(Operator op) {
+        return op == Operator::AND || op == Operator::OR || 
+               op == Operator::NOT || op == Operator::IMPLIES || 
+               op == Operator::IFF;
+    }
+
+    /**
+     * @brief Checks if a string represents a standard arithmetic operator
+     */
+    static bool is_arithmetic_operator(const std::string& op) {
+        return is_arithmetic_operator(string_to_operator(op));
+    }
+
+    /**
+     * @brief Checks if a string represents a standard comparison operator
+     */
+    static bool is_comparison_operator(const std::string& op) {
+        return is_comparison_operator(string_to_operator(op));
+    }
+
+    /**
+     * @brief Checks if a string represents a standard logical operator
+     */
+    static bool is_logical_operator(const std::string& op) {
+        return is_logical_operator(string_to_operator(op));
+    }
+
+    /**
+     * @brief Checks if a string represents any standard operator
+     */
+    static bool is_standard_operator(const std::string& op) {
+        return string_to_operator(op) != Operator::UNKNOWN;
+    }
 
 private:
     std::optional<Atom> atom_;

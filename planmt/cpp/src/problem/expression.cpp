@@ -10,14 +10,42 @@ Expression::Expression(const pb::Expression& pb_expression) {
     // Convert kind
     kind_ = static_cast<Kind>(pb_expression.kind());
     
-    // get the atom
-    assert(pb_expression.has_atom());
-    atom_ = Atom(pb_expression.atom());
+    // Handle atom vs list based on the protobuf content
+    if (pb_expression.has_atom()) {
+        // This is an atom expression
+        Atom original_atom(pb_expression.atom());
+        
+        // If this is a symbol and it's a function symbol, apply UP operator mapping
+        if (original_atom.is_symbol() && 
+            (kind_ == Kind::FUNCTION_SYMBOL || kind_ == Kind::FLUENT_SYMBOL)) {
+            std::string mapped_symbol = Expression::map_up_operator(original_atom.symbol());
+            // Create a new atom with the mapped symbol
+            pb::Atom mapped_pb_atom;
+            mapped_pb_atom.set_symbol(mapped_symbol);
+            atom_ = Atom(mapped_pb_atom);
+        } else {
+            atom_ = original_atom;
+        }
+    }
     
-    // Check if list is present
+    // Handle list (for function applications, etc.)
     if (pb_expression.list_size() > 0) {
-        for (const auto& pb_expr : pb_expression.list()) {
-            list_.emplace_back(pb_expr);
+        list_.clear();
+        for (int i = 0; i < pb_expression.list_size(); ++i) {
+            const auto& pb_expr = pb_expression.list(i);
+            
+            // For the first element in function applications, apply operator mapping
+            if (i == 0 && kind_ == Kind::FUNCTION_APPLICATION && pb_expr.has_atom() && pb_expr.atom().has_symbol()) {
+                // Create a modified protobuf expression with mapped operator
+                pb::Expression modified_pb_expr = pb_expr;
+                std::string original_symbol = pb_expr.atom().symbol();
+                std::string mapped_symbol = Expression::map_up_operator(original_symbol);
+                modified_pb_expr.mutable_atom()->set_symbol(mapped_symbol);
+                list_.emplace_back(modified_pb_expr);
+            } else {
+                // Recursively process other elements
+                list_.emplace_back(pb_expr);
+            }
         }
     }
 }

@@ -37,34 +37,60 @@ void SmtEncodingVisitor::visit_function_application(const std::string& function_
         }
     }
     
-    // Handle different operators
-    if (function_name == "and") {
-        result_ = handle_and(z3_args);
-    } else if (function_name == "or") {
-        result_ = handle_or(z3_args);
-    } else if (function_name == "not") {
-        result_ = handle_not(z3_args);
-    } else if (function_name == "=" || function_name == "==") {
-        result_ = handle_equals(z3_args);
-    } else if (function_name == "<") {
-        result_ = handle_less_than(z3_args);
-    } else if (function_name == "<=") {
-        result_ = handle_less_equal(z3_args);
-    } else if (function_name == ">") {
-        result_ = handle_greater_than(z3_args);
-    } else if (function_name == ">=") {
-        result_ = handle_greater_equal(z3_args);
-    } else if (function_name == "+") {
-        result_ = handle_plus(z3_args);
-    } else if (function_name == "-") {
-        result_ = handle_minus(z3_args);
-    } else if (function_name == "*") {
-        result_ = handle_multiply(z3_args);
-    } else if (function_name == "/") {
-        result_ = handle_divide(z3_args);
-    } else {
-        // Unknown function - create uninterpreted function
-        result_ = handle_uninterpreted_function(function_name, z3_args);
+    // Use enum-based operator handling for efficiency and type safety
+    Expression::Operator op = Expression::string_to_operator(function_name);
+    
+    switch (op) {
+        case Expression::Operator::AND:
+            result_ = handle_and(z3_args);
+            break;
+        case Expression::Operator::OR:
+            result_ = handle_or(z3_args);
+            break;
+        case Expression::Operator::NOT:
+            result_ = handle_not(z3_args);
+            break;
+        case Expression::Operator::EQUALS:
+            result_ = handle_equals(z3_args);
+            break;
+        case Expression::Operator::LESS_THAN:
+            result_ = handle_less_than(z3_args);
+            break;
+        case Expression::Operator::LESS_EQUAL:
+            result_ = handle_less_equal(z3_args);
+            break;
+        case Expression::Operator::GREATER_THAN:
+            result_ = handle_greater_than(z3_args);
+            break;
+        case Expression::Operator::GREATER_EQUAL:
+            result_ = handle_greater_equal(z3_args);
+            break;
+        case Expression::Operator::PLUS:
+            result_ = handle_plus(z3_args);
+            break;
+        case Expression::Operator::MINUS:
+            result_ = handle_minus(z3_args);
+            break;
+        case Expression::Operator::MULTIPLY:
+            result_ = handle_multiply(z3_args);
+            break;
+        case Expression::Operator::DIVIDE:
+            result_ = handle_divide(z3_args);
+            break;
+        case Expression::Operator::MODULO:
+        case Expression::Operator::ABSOLUTE:
+        case Expression::Operator::MAXIMUM:
+        case Expression::Operator::MINIMUM:
+        case Expression::Operator::IMPLIES:
+        case Expression::Operator::IFF:
+            // TODO: Implement these operators when needed
+            result_ = handle_uninterpreted_function(function_name, z3_args);
+            break;
+        case Expression::Operator::UNKNOWN:
+        default:
+            // Unknown function - create uninterpreted function
+            result_ = handle_uninterpreted_function(function_name, z3_args);
+            break;
     }
 }
 
