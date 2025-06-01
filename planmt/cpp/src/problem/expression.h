@@ -72,9 +72,9 @@ public:
      * @brief Converts type string to Type enum
      */
     static Type string_to_type(const std::string& type_str) {
-        if (type_str == "up:bool") return Type::BOOLEAN;
-        if (type_str == "up:integer") return Type::INTEGER;
-        if (type_str == "up:real") return Type::REAL;
+        if (type_str == "up:bool" || type_str == "bool") return Type::BOOLEAN;
+        if (type_str == "up:integer" || type_str == "up:int" || type_str == "int" || type_str == "integer") return Type::INTEGER;
+        if (type_str == "up:real" || type_str == "real") return Type::REAL;
         if (type_str.empty() || type_str == "unknown") return Type::UNKNOWN;
         return Type::OBJECT; // All other types are OBJECT types
     }

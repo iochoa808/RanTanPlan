@@ -1,7 +1,8 @@
 #pragma once
 
 #include "../problem/problem.h"
-#include "smt_encoding_visitor.h"
+#include "lifted_encoding_visitor.h"
+#include "grounded_encoding_visitor.h"
 #include <z3++.h>
 
 #include <vector>
@@ -24,6 +25,9 @@ public:
     std::shared_ptr<z3::expr> encode_goal(int t);    // Encodes goal conditions at layer_idx
     std::shared_ptr<z3::expr> encode_parallelism(int t); // Encodes parallelism semantics
 
+    // Public method for getting fluent variables (used by GroundedEncodingVisitor)
+    z3::expr get_fluent_var(const Fluent& fluent, const std::vector<Object>& params, int t);
+
 private:
     // Helper function to convert expression to Z3 using visitor
     std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1);
@@ -31,8 +35,7 @@ private:
     // Helper function to print symbol table for debugging
     void print_symbol_table(const std::string& context) const;
 
-    // Gets or creates a Z3 variable for a grounded fluent at a specific step
-    z3::expr get_fluent_var(const Fluent& fluent, const std::vector<Object>& params, int t);
+    // Gets or creates a Z3 variable for an action at a specific step
     z3::expr get_action_var(const Action& action, const std::vector<Object>& params, int t);
 
     // Creates a unique base string representation for vars
@@ -41,12 +44,16 @@ private:
     std::string get_smt_var_name(const Action& action, const std::vector<Object>& params) const;
     std::string get_smt_var_name(const Action& action, const std::vector<Object>& params, int t) const;
     
+    // Helper method to create correctly typed variables based on fluent definitions
+    z3::expr create_typed_variable(const Fluent& fluent, const std::string& var_name);
+    
     // Member variables
     const Problem& problem_; // The planning problem instance
     z3::context& ctx_;       // Z3 context (shared)
 
     SymbolTable symbol_table_; // Unified symbol table for Z3 variables and functions
-    SmtEncodingVisitor smt_visitor_; // SMT encoding visitor (reused across methods)
+    LiftedEncodingVisitor smt_visitor_; // SMT encoding visitor (reused across methods)
+    GroundedEncodingVisitor grounded_visitor_; // Grounded encoding visitor for individual variables
     
     // Storage for SMT variables - outer vector is indexed by timestep. Inner map's key is the base name.
     std::vector<std::unordered_map<std::string, std::shared_ptr<z3::expr>>> state_vars_; // for fluent and extra stuff

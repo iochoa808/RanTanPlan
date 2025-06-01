@@ -7,7 +7,7 @@ namespace planmt {
 
 // Constructor
 GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
-    : problem_(problem), ctx_(ctx), symbol_table_(), smt_visitor_(ctx_, symbol_table_, &problem_) {
+    : problem_(problem), ctx_(ctx), symbol_table_(), smt_visitor_(ctx_, symbol_table_, &problem_), grounded_visitor_(ctx_, this, &problem_) {
     // Initialize storage for state and action variables
     state_vars_.clear();
     action_vars_.clear();
@@ -16,21 +16,21 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
 
 // Helper function to convert expression to Z3 using visitor
 std::optional<z3::expr> GroundedEncoder::convert_expression_to_z3(const Expression& expr, int timestep) {
-    smt_visitor_.clear();
+    grounded_visitor_.clear();
     
     // Set timestep for temporal encoding if provided
     if (timestep >= 0) {
-        smt_visitor_.set_timestep(timestep);
+        grounded_visitor_.set_timestep(timestep);
     } else {
-        smt_visitor_.clear_timestep();
+        grounded_visitor_.clear_timestep();
     }
     
-    accept_visitor(expr, smt_visitor_);
+    accept_visitor(expr, grounded_visitor_);
     
     // Clear timestep after use
-    smt_visitor_.clear_timestep();
+    grounded_visitor_.clear_timestep();
     
-    return smt_visitor_.get_result();
+    return grounded_visitor_.get_result();
 }
 
 // Encoding steps
@@ -136,8 +136,8 @@ z3::expr GroundedEncoder::get_fluent_var(const Fluent& fluent, const std::vector
     auto& timestep_vars = state_vars_[t];
     auto it = timestep_vars.find(var_name);
     if (it == timestep_vars.end()) {
-        // Create new variable using the visitor to ensure consistency
-        z3::expr new_var = smt_visitor_.create_bool_variable(var_name);
+        // Create new variable with correct type based on fluent's value type
+        z3::expr new_var = create_typed_variable(fluent, var_name);
         timestep_vars[var_name] = std::make_shared<z3::expr>(new_var);
         return new_var;
     }
@@ -185,6 +185,29 @@ std::string GroundedEncoder::get_smt_var_name(const Action& action, const std::v
 
 std::string GroundedEncoder::get_smt_var_name(const Action& action, const std::vector<Object>& params, int t) const {
     return get_smt_var_name(action, params) + "_" + std::to_string(t);
+}
+
+z3::expr GroundedEncoder::create_typed_variable(const Fluent& fluent, const std::string& var_name) {
+    Expression::Type fluent_type = fluent.get_type_enum();
+    
+    switch (fluent_type) {
+        case Expression::Type::BOOLEAN:
+            // Boolean fluents (predicates)
+            return smt_visitor_.create_bool_variable(var_name);
+        case Expression::Type::INTEGER:
+            // Integer fluents
+            return smt_visitor_.create_int_variable(var_name);
+        case Expression::Type::REAL:
+            // Real fluents
+            return smt_visitor_.create_real_variable(var_name);
+        case Expression::Type::OBJECT:
+            // Object fluents are typically mapped to integers in SMT encoding
+            return smt_visitor_.create_int_variable(var_name);
+        case Expression::Type::UNKNOWN:
+        default:
+            // For unknown types, default to integer
+            return smt_visitor_.create_int_variable(var_name);
+    }
 }
 
 void GroundedEncoder::print_symbol_table(const std::string& context) const {

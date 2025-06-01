@@ -74,7 +74,8 @@ add_executable(planmt
     src/problem/action.cpp
     src/problem/problem.cpp
     src/problem/visitors/expression_visitor.cpp
-    src/encoders/smt_encoding_visitor.cpp
+    src/encoders/lifted_encoding_visitor.cpp
+    src/encoders/grounded_encoding_visitor.cpp
     src/encoders/grounded_encoder.cpp
     src/planners/sequential.cpp
 )

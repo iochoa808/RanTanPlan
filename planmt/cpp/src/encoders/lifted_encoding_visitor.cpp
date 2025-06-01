@@ -1,9 +1,9 @@
-#include "smt_encoding_visitor.h"
+#include "lifted_encoding_visitor.h"
 #include "../problem/visitors/expression_visitor.h"
 
 namespace planmt {
 
-void SmtEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) {
+void LiftedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) {
     switch (type) {
         case Expression::Type::BOOLEAN:
             result_ = create_bool_variable(symbol);
@@ -25,20 +25,20 @@ void SmtEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kin
     }
 }
 
-void SmtEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) {
+void LiftedEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) {
     result_ = ctx_.int_val(static_cast<int>(value));
 }
 
-void SmtEncodingVisitor::visit_real(const Real& value, Expression::Kind kind) {
+void LiftedEncodingVisitor::visit_real(const Real& value, Expression::Kind kind) {
     // Convert real to Z3 rational
     result_ = ctx_.real_val(value.numerator(), value.denominator());
 }
 
-void SmtEncodingVisitor::visit_boolean(bool value, Expression::Kind kind) {
+void LiftedEncodingVisitor::visit_boolean(bool value, Expression::Kind kind) {
     result_ = ctx_.bool_val(value);
 }
 
-void SmtEncodingVisitor::visit_function_application(const std::string& function_name, 
+void LiftedEncodingVisitor::visit_function_application(const std::string& function_name, 
                                                   const std::vector<Expression>& args,
                                                   Expression::Kind kind) {
     // Convert arguments
@@ -111,7 +111,7 @@ void SmtEncodingVisitor::visit_function_application(const std::string& function_
     }
 }
 
-void SmtEncodingVisitor::visit_fluent_application(const std::string& fluent_name,
+void LiftedEncodingVisitor::visit_fluent_application(const std::string& fluent_name,
                                                 const std::vector<Expression>& args,
                                                 Expression::Kind kind) {
     // Convert arguments to Z3
@@ -144,7 +144,7 @@ void SmtEncodingVisitor::visit_fluent_application(const std::string& fluent_name
     result_ = handle_uninterpreted_function(fluent_name, z3_args, return_sort);
 }
 
-void SmtEncodingVisitor::visit_list(const std::vector<Expression>& elements, 
+void LiftedEncodingVisitor::visit_list(const std::vector<Expression>& elements, 
                                    Expression::Kind kind) {
     // For lists that aren't function applications, we can't easily convert to Z3
     // This might represent a raw list structure
@@ -152,7 +152,7 @@ void SmtEncodingVisitor::visit_list(const std::vector<Expression>& elements,
 }
 
 // Helper methods for handling specific operators
-std::optional<z3::expr> SmtEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.bool_val(true);
     }
@@ -164,7 +164,7 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_and(const std::vector<z3::exp
     return result;
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.bool_val(false);
     }
@@ -176,49 +176,49 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_or(const std::vector<z3::expr
     return result;
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
     if (args.size() != 1) {
         return std::nullopt;
     }
     return !args[0];
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_equals(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_equals(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
         return std::nullopt;
     }
     return args[0] == args[1];
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_less_than(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_less_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
         return std::nullopt;
     }
     return args[0] < args[1];
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_less_equal(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_less_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
         return std::nullopt;
     }
     return args[0] <= args[1];
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_greater_than(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_greater_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
         return std::nullopt;
     }
     return args[0] > args[1];
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_greater_equal(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_greater_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
         return std::nullopt;
     }
     return args[0] >= args[1];
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_plus(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_plus(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.int_val(0);
     }
@@ -230,7 +230,7 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_plus(const std::vector<z3::ex
     return result;
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_minus(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_minus(const std::vector<z3::expr>& args) {
     if (args.size() == 1) {
         // Unary minus
         return -args[0];
@@ -241,7 +241,7 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_minus(const std::vector<z3::e
     return std::nullopt;
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_multiply(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_multiply(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.int_val(1);
     }
@@ -253,14 +253,14 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_multiply(const std::vector<z3
     return result;
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_divide(const std::vector<z3::expr>& args) {
+std::optional<z3::expr> LiftedEncodingVisitor::handle_divide(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
         return std::nullopt;
     }
     return args[0] / args[1];
 }
 
-std::optional<z3::expr> SmtEncodingVisitor::handle_uninterpreted_function(
+std::optional<z3::expr> LiftedEncodingVisitor::handle_uninterpreted_function(
     const std::string& function_name, 
     const std::vector<z3::expr>& args,
     const z3::sort& return_sort) {
@@ -296,7 +296,7 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_uninterpreted_function(
     return func_decl(z3_args);
 }
 
-z3::expr SmtEncodingVisitor::create_bool_variable(const std::string& name) {
+z3::expr LiftedEncodingVisitor::create_bool_variable(const std::string& name) {
     auto it = symbol_table_.find(name);
     if (it != symbol_table_.end()) {
         if (std::holds_alternative<z3::expr>(it->second)) {
@@ -309,7 +309,7 @@ z3::expr SmtEncodingVisitor::create_bool_variable(const std::string& name) {
     return var;
 }
 
-z3::expr SmtEncodingVisitor::create_int_variable(const std::string& name) {
+z3::expr LiftedEncodingVisitor::create_int_variable(const std::string& name) {
     auto it = symbol_table_.find(name);
     if (it != symbol_table_.end()) {
         if (std::holds_alternative<z3::expr>(it->second)) {
@@ -322,7 +322,7 @@ z3::expr SmtEncodingVisitor::create_int_variable(const std::string& name) {
     return var;
 }
 
-z3::expr SmtEncodingVisitor::create_real_variable(const std::string& name) {
+z3::expr LiftedEncodingVisitor::create_real_variable(const std::string& name) {
     auto it = symbol_table_.find(name);
     if (it != symbol_table_.end()) {
         if (std::holds_alternative<z3::expr>(it->second)) {

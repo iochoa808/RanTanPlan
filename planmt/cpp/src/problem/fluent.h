@@ -47,6 +47,9 @@ public:
     bool is_predicate() const { return value_type_ == "up:bool" || value_type_ == "bool"; }
     bool is_function() const { return !is_predicate(); }
     
+    // Type enum access
+    Expression::Type get_type_enum() const { return Expression::string_to_type(value_type_); }
+    
     // String representation
     std::string to_string() const;
     

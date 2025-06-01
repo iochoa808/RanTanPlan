@@ -22,8 +22,11 @@ using SymbolTable = std::unordered_map<std::string, Z3Object>;
  * Handles integers, reals, booleans, symbols, and common arithmetic operations.
  * Uses external symbol table provided by GroundedEncoder.
  * Supports temporal encoding through timestep parameters.
+ * 
+ * TODO: properly check this with an ungrounded problem instance.
  */
-class SmtEncodingVisitor : public BaseExpressionVisitor {
+
+class LiftedEncodingVisitor : public BaseExpressionVisitor {
 private:
     z3::context& ctx_;
     std::optional<z3::expr> result_;
@@ -33,7 +36,7 @@ private:
     
 public:
     // Constructor
-    SmtEncodingVisitor(z3::context& ctx, SymbolTable& symbol_table, const Problem* problem = nullptr) 
+    LiftedEncodingVisitor(z3::context& ctx, SymbolTable& symbol_table, const Problem* problem = nullptr) 
         : ctx_(ctx), symbol_table_(symbol_table), problem_(problem), current_timestep_(-1) {}
     
     // BaseExpressionVisitor interface methods
