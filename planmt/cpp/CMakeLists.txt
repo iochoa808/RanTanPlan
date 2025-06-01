@@ -17,7 +17,11 @@ endif()
 # PROTOBUF SETUP
 # ==============================================================================
 # https://github.com/protocolbuffers/protobuf/issues/12637
-find_package(Protobuf CONFIG REQUIRED)
+if(APPLE)
+    find_package(Protobuf REQUIRED CONFIG)
+else()
+    find_package(Protobuf REQUIRED)
+endif()
 # Abseil (Google's C++ common libraries) for protobuf
 #find_package(absl REQUIRED)
 # no longer needed, protobuf now uses absl internally
@@ -136,3 +140,15 @@ endif()
 # INSTALLATION
 # ==============================================================================
 install(TARGETS planmt DESTINATION ${OUTPUT_DIR})
+
+# ==============================================================================
+# LINUX: Set RPATH for Z3 if found manually
+# ==============================================================================
+if(NOT Z3_FOUND AND Z3_LIB_DIR)
+    set_target_properties(planmt PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "${Z3_LIB_DIR}"
+        SKIP_BUILD_RPATH FALSE
+        SKIP_INSTALL_RPATH FALSE
+    )
+endif()
