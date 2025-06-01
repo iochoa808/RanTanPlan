@@ -3,11 +3,8 @@
 
 namespace planmt {
 
-Action::Action(const pb::Action& pb_action) : name_(pb_action.name()) {
-    for (const auto& pb_param : pb_action.parameters()) {
-        parameters_.emplace_back(pb_param);
-    }
-    
+Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters)
+    : name_(pb_action.name()), parameters_(parameters) {
     for (const auto& pb_precond : pb_action.conditions()) {
         preconditions_.emplace_back(pb_precond.cond());
     }

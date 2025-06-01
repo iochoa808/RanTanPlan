@@ -2,6 +2,7 @@
 
 #include <string>
 #include "protobuf_aliases.h"
+#include "type.h"
 
 namespace planmt {
 
@@ -14,20 +15,19 @@ class Object {
 public:
     // Constructors
     Object() = default;
-    Object(const std::string& name, const std::string& type) 
-        : name_(name), type_(type) {}
-    Object(const pb::ObjectDeclaration& pb_object);
+    Object(const std::string& name, const Type* type) : name_(name), type_(type) {}
+    Object(const pb::ObjectDeclaration& pb_object, const Type* type);
     
     // Accessors
     const std::string& name() const { return name_; }
-    const std::string& type() const { return type_; }
+    const Type* type() const { return type_; }
     
     // Setters
     void set_name(const std::string& name) { name_ = name; }
-    void set_type(const std::string& type) { type_ = type; }
+    void set_type(const Type* type) { type_ = type; }
     
     // String representation
-    std::string to_string() const { return name_ + " : " + type_; }
+    std::string to_string() const { return name_ + " : " + (type_ ? type_->name() : "null"); }
     
     // Operators
     bool operator==(const Object& other) const {
@@ -37,7 +37,7 @@ public:
 
 private:
     std::string name_;
-    std::string type_;
+    const Type* type_ = nullptr;
 };
 
 } // namespace planmt

@@ -40,7 +40,7 @@ public:
         : ctx_(ctx), symbol_table_(symbol_table), problem_(problem), current_timestep_(-1) {}
     
     // BaseExpressionVisitor interface methods
-    void visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) override;
+    void visit_symbol(const std::string& symbol, Expression::Kind kind, const Type* type) override;
     void visit_integer(int64_t value, Expression::Kind kind) override;
     void visit_real(const Real& value, Expression::Kind kind) override;
     void visit_boolean(bool value, Expression::Kind kind) override;

@@ -3,23 +3,18 @@
 
 namespace planmt {
 
-Problem::Problem(const pb::Problem& pb_problem) 
-    : domain_name_(pb_problem.domain_name()), problem_name_(pb_problem.problem_name()) {
+Problem::Problem(const pb::Problem& pb_problem) {
+    load_types(pb_problem.types());
+    resolve_type_hierarchy();
     
     // Load objects
-    for (const auto& pb_object : pb_problem.objects()) {
-        objects_.emplace_back(pb_object);
-    }
+    load_objects(pb_problem.objects());
     
     // Load fluents
-    for (const auto& pb_fluent : pb_problem.fluents()) {
-        fluents_.emplace_back(pb_fluent);
-    }
+    load_fluents(pb_problem.fluents());
     
     // Load actions
-    for (const auto& pb_action : pb_problem.actions()) {
-        actions_.emplace_back(pb_action);
-    }
+    load_actions(pb_problem.actions());
     
     // Load initial state
     for (const auto& pb_assignment : pb_problem.initial_state()) {
@@ -31,10 +26,6 @@ Problem::Problem(const pb::Problem& pb_problem)
         goals_.emplace_back(pb_goal);
     }
     
-    // Build lookup mappings
-    build_object_mappings();
-    build_fluent_mappings();
-    build_action_mappings();
 }
 
 bool Problem::has_object(const std::string& name) const {
@@ -70,6 +61,12 @@ const Action* Problem::find_action(const std::string& name) const {
     if (it != action_name_to_index_.end()) {
         return &actions_[it->second];
     }
+    return nullptr;
+}
+
+const Type* Problem::find_type(const std::string& name) const {
+    auto it = type_name_to_ptr_.find(name);
+    if (it != type_name_to_ptr_.end()) return it->second;
     return nullptr;
 }
 
@@ -180,6 +177,84 @@ void Problem::build_action_mappings() {
     for (size_t i = 0; i < actions_.size(); ++i) {
         action_name_to_index_[actions_[i].name()] = i;
     }
+}
+
+void Problem::load_types(const pb::RepeatedTypeDeclaration& pb_types) {
+    types_.clear();
+    type_name_to_ptr_.clear();
+
+    // ensure basic types are present
+    if (!find_type("up:bool")) {
+        types_.emplace_back("up:bool");
+    }
+    if (!find_type("up:int")) {
+        types_.emplace_back("up:int");
+    }
+    if (!find_type("up:real")) {
+        types_.emplace_back("up:real");
+    }
+
+    for (const auto& pb_type : pb_types) {
+        types_.emplace_back(pb_type.type_name());
+        types_.back().set_parent_name(pb_type.parent_type());
+    }
+    for (auto& type : types_) {
+        type_name_to_ptr_[type.name()] = &type;
+    }
+}
+
+void Problem::resolve_type_hierarchy() {
+    for (auto& type : types_) {
+        if (!type.parent_name().empty()) {
+            auto it = type_name_to_ptr_.find(type.parent_name());
+            if (it != type_name_to_ptr_.end()) {
+                type.set_parent(it->second);
+            }
+        }
+    }
+}
+
+void Problem::load_objects(const pb::RepeatedObjectDeclaration& pb_objects) {
+    objects_.clear();
+    for (const auto& pb_obj : pb_objects) {
+        const Type* type = find_type(pb_obj.type());
+        objects_.emplace_back(pb_obj.name(), type);
+    }
+    build_object_mappings();
+}
+
+void Problem::load_fluents(const pb::RepeatedFluent& pb_fluents) {
+    fluents_.clear();
+    for (const auto& pb_fluent : pb_fluents) {
+        std::vector<Parameter> params;
+        // Collect parameters for the fluent
+        for (const auto& pb_param : pb_fluent.parameters()) {
+            const Type* param_type = find_type(pb_param.type());
+            params.emplace_back(pb_param.name(), param_type);
+        }
+
+        // Find the value type for the fluent
+        const Type* value_type = find_type(pb_fluent.value_type());
+        if (!value_type) {
+            std::cerr << "ERROR: Could not find type '" << pb_fluent.value_type() 
+                << "' for fluent '" << pb_fluent.name() << "'" << std::endl;
+        }
+        fluents_.emplace_back(pb_fluent.name(), value_type, params);
+    }
+    build_fluent_mappings();
+}
+
+void Problem::load_actions(const pb::RepeatedAction& pb_actions) {
+    actions_.clear();
+    for (const auto& pb_action : pb_actions) {
+        std::vector<Parameter> params;
+        for (const auto& pb_param : pb_action.parameters()) {
+            const Type* param_type = find_type(pb_param.type());
+            params.emplace_back(pb_param.name(), param_type);
+        }
+        actions_.emplace_back(pb_action, params);
+    }
+    build_action_mappings();
 }
 
 } // namespace planmt

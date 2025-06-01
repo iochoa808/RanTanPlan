@@ -53,7 +53,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
     std::cout << "Initial state SMT formula: " << initial_state_formula << std::endl;
     
     // Print symbol table after encoding initial state
-    print_symbol_table("After encoding initial state");
+    //print_symbol_table("After encoding initial state");
     
     return std::make_shared<z3::expr>(initial_state_formula);
 }
@@ -188,25 +188,22 @@ std::string GroundedEncoder::get_smt_var_name(const Action& action, const std::v
 }
 
 z3::expr GroundedEncoder::create_typed_variable(const Fluent& fluent, const std::string& var_name) {
-    Expression::Type fluent_type = fluent.get_type_enum();
-    
-    switch (fluent_type) {
-        case Expression::Type::BOOLEAN:
-            // Boolean fluents (predicates)
-            return smt_visitor_.create_bool_variable(var_name);
-        case Expression::Type::INTEGER:
-            // Integer fluents
-            return smt_visitor_.create_int_variable(var_name);
-        case Expression::Type::REAL:
-            // Real fluents
-            return smt_visitor_.create_real_variable(var_name);
-        case Expression::Type::OBJECT:
-            // Object fluents are typically mapped to integers in SMT encoding
-            return smt_visitor_.create_int_variable(var_name);
-        case Expression::Type::UNKNOWN:
-        default:
-            // For unknown types, default to integer
-            return smt_visitor_.create_int_variable(var_name);
+    // Use the new type checking methods from Fluent class
+    if (fluent.is_bool_fluent()) {
+        // Boolean fluents (predicates)
+        return smt_visitor_.create_bool_variable(var_name);
+    } else if (fluent.is_int_fluent()) {
+        // Integer fluents
+        return smt_visitor_.create_int_variable(var_name);
+    } else if (fluent.is_real_fluent()) {
+        // Real fluents
+        return smt_visitor_.create_real_variable(var_name);
+    } else if (fluent.is_object_fluent()) {
+        // Object fluents are typically mapped to integers in SMT encoding
+        return smt_visitor_.create_int_variable(var_name);
+    } else {
+        // For unknown types, default to integer
+        return smt_visitor_.create_int_variable(var_name);
     }
 }
 

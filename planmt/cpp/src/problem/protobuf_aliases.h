@@ -24,6 +24,7 @@ namespace pb {
     using Assignment = ::Assignment;
     using Problem = ::Problem;
     using ObjectDeclaration = ::ObjectDeclaration;
+    using TypeDeclaration = ::TypeDeclaration;
     
     // Basic types
     using Atom = ::Atom;
@@ -32,4 +33,10 @@ namespace pb {
     // Enums
     using ExpressionKind = ::ExpressionKind;
     using EffectExpression_EffectKind = ::EffectExpression_EffectKind;
+
+    // Repeated field aliases for cleaner signatures
+    using RepeatedTypeDeclaration = ::google::protobuf::RepeatedPtrField<TypeDeclaration>;
+    using RepeatedObjectDeclaration = ::google::protobuf::RepeatedPtrField<ObjectDeclaration>;
+    using RepeatedFluent = ::google::protobuf::RepeatedPtrField<Fluent>;
+    using RepeatedAction = ::google::protobuf::RepeatedPtrField<Action>;
 }

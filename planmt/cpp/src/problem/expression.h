@@ -7,8 +7,12 @@
 #include <unordered_map>
 #include "protobuf_aliases.h"
 #include "atom.h"
+#include "type.h"
 
 namespace planmt {
+
+// Forward declaration
+class Problem;
 
 /**
  * @brief Expression
@@ -35,17 +39,6 @@ public:
         FUNCTION_APPLICATION = 6,   // Function application (e.g., `(+ 1 3)`)
         VARIABLE = 7                // Variable from outer scope (existential/universal)
     };
-    
-    /**
-     * @brief Expression data types
-     */
-    enum class Type {
-        BOOLEAN,     // up:bool
-        INTEGER,     // up:integer  
-        REAL,        // up:real
-        OBJECT,      // Custom PDDL types (aircraft, city, person, etc.)
-        UNKNOWN      // Unknown or unspecified type
-    };
 
     /**
      * @brief Operator types for type safety and consistency
@@ -68,17 +61,6 @@ public:
     // STATIC UTILITY METHODS
     // ========================================================================
     
-    /**
-     * @brief Converts type string to Type enum
-     */
-    static Type string_to_type(const std::string& type_str) {
-        if (type_str == "up:bool" || type_str == "bool") return Type::BOOLEAN;
-        if (type_str == "up:integer" || type_str == "up:int" || type_str == "int" || type_str == "integer") return Type::INTEGER;
-        if (type_str == "up:real" || type_str == "real") return Type::REAL;
-        if (type_str.empty() || type_str == "unknown") return Type::UNKNOWN;
-        return Type::OBJECT; // All other types are OBJECT types
-    }
-
     /**
      * @brief Converts operator string to Operator enum
      */
@@ -206,8 +188,8 @@ public:
     // CONSTRUCTORS
     // ========================================================================
     
-    Expression() : kind_(Kind::UNKNOWN) {}
-    Expression(const pb::Expression& pb_expression);
+    Expression() : kind_(Kind::UNKNOWN), type_(nullptr) {}
+    Expression(const pb::Expression& pb_expression, const Problem* problem = nullptr);
     
     // ========================================================================
     // CORE ACCESSORS
@@ -224,14 +206,14 @@ public:
     Kind kind() const { return kind_; }
     
     /**
-     * @brief Get the type string (e.g., "up:bool", "up:integer", "location")
+     * @brief Get the type of this expression
      */
-    const std::string& type() const { return type_; }
+    const Type* type() const { return type_; }
     
     /**
-     * @brief Get type enum from type string
+     * @brief Set the type of this expression
      */
-    Type type_enum() const { return string_to_type(type_); }
+    void set_type(const Type* type) { type_ = type; }
 
     /**
      * @brief Get the number of elements in the list
@@ -247,6 +229,20 @@ public:
      * @brief Get a specific element from the list
      */
     const Expression& list_element(size_t index) const { return list_[index]; }
+    
+    // ========================================================================
+    // TYPE CHECKING CONVENIENCE METHODS
+    // ========================================================================
+    
+    /*
+    bool is_bool_type() const { return type_ && type_->is_bool(); }
+    bool is_int_type() const { return type_ && type_->is_int(); }
+    bool is_real_type() const { return type_ && type_->is_real(); }
+    bool is_object_type() const { return type_ && type_->is_object(); }
+    bool is_subtype_of(const Type* supertype) const {
+        return type_ && type_->is_subtype_of(supertype);
+    }
+    */
     
     // ========================================================================
     // STRUCTURAL TYPE CHECKING
@@ -271,10 +267,7 @@ public:
     bool is_not() const;
     bool is_implies() const;
     bool is_iff() const;
-    bool is_exists() const;
-    bool is_forall() const;
     bool is_equals() const;
-    bool is_not_equals() const;
     bool is_plus() const;
     bool is_minus() const;
     bool is_multiply() const;
@@ -304,7 +297,10 @@ private:
     std::vector<Expression> list_;  ///< List of sub-expressions (if this expression is a list)
 
     Kind kind_;        ///< Structural information (function application, atom, etc.)
-    std::string type_; ///< Type information ("up:bool", "up:integer", custom types, etc.)
+    const Type* type_; ///< Type information (pointer to Type object)
+    
+    // Helper method to resolve type from string using Problem context
+    const Type* resolve_type(const std::string& type_str, const Problem* problem) const;
 };
 
 } // namespace planmt

@@ -1,11 +1,13 @@
 #include "expression.h"
+#include "problem.h"
 #include <sstream>
 
 namespace planmt {
 
-Expression::Expression(const pb::Expression& pb_expression) {
-    // Set type
-    type_ = pb_expression.type();
+Expression::Expression(const pb::Expression& pb_expression, const Problem* problem) {
+    // Set type from protobuf and resolve using Problem context
+    const Type* resolved_type = resolve_type(pb_expression.type(), problem);
+    type_ = resolved_type;
     
     // Convert kind
     kind_ = static_cast<Kind>(pb_expression.kind());
@@ -41,13 +43,31 @@ Expression::Expression(const pb::Expression& pb_expression) {
                 std::string original_symbol = pb_expr.atom().symbol();
                 std::string mapped_symbol = Expression::map_up_operator(original_symbol);
                 modified_pb_expr.mutable_atom()->set_symbol(mapped_symbol);
-                list_.emplace_back(modified_pb_expr);
+                list_.emplace_back(modified_pb_expr, problem);
             } else {
                 // Recursively process other elements
-                list_.emplace_back(pb_expr);
+                list_.emplace_back(pb_expr, problem);
             }
         }
     }
+}
+
+const Type* Expression::resolve_type(const std::string& type_str, const Problem* problem) const {
+    if (type_str.empty()) {
+        return nullptr;
+    }
+    
+    // If we have a Problem context, try to find the type
+    if (problem) {
+        const Type* found_type = problem->find_type(type_str);
+        if (found_type) {
+            return found_type;
+        }
+    }
+    
+    // For primitive types, we might need to create/find them in a global registry
+    // For now, return nullptr if not found in problem context
+    return nullptr;
 }
 
 std::string Expression::to_string() const {
@@ -107,36 +127,8 @@ bool Expression::is_iff() const {
     return value().symbol() == "iff" || value().symbol() == "<=>";
 }
 
-bool Expression::is_exists() const {
-    return value().symbol() == "exists";
-}
-
-bool Expression::is_forall() const {
-    return value().symbol() == "forall";
-}
-
 bool Expression::is_equals() const {
     return value().symbol() == "=" || value().symbol() == "==";
-}
-
-bool Expression::is_not_equals() const {
-    return value().symbol() == "!=" || value().symbol() == "<>";
-}
-
-bool Expression::is_less_than() const {
-    return value().symbol() == "<";
-}
-
-bool Expression::is_less_equal() const {
-    return value().symbol() == "<=";
-}
-
-bool Expression::is_greater_than() const {
-    return value().symbol() == ">";
-}
-
-bool Expression::is_greater_equal() const {
-    return value().symbol() == ">=";
 }
 
 bool Expression::is_plus() const {
@@ -153,5 +145,21 @@ bool Expression::is_multiply() const {
 
 bool Expression::is_divide() const {
     return value().symbol() == "/";
+}
+
+bool Expression::is_less_than() const {
+    return value().symbol() == "<";
+}
+
+bool Expression::is_less_equal() const {
+    return value().symbol() == "<=";
+}
+
+bool Expression::is_greater_than() const {
+    return value().symbol() == ">";
+}
+
+bool Expression::is_greater_equal() const {
+    return value().symbol() == ">=";
 }
 } // namespace planmt

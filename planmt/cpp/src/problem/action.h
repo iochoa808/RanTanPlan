@@ -20,7 +20,7 @@ public:
     // Constructors
     Action() = default;
     Action(const std::string& name) : name_(name) {}
-    Action(const pb::Action& pb_action);
+    Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters);
     
     // Basic accessors
     const std::string& name() const { return name_; }

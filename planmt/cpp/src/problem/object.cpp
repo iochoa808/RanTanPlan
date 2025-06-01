@@ -2,8 +2,7 @@
 
 namespace planmt {
 
-Object::Object(const pb::ObjectDeclaration& pb_object) 
-    : name_(pb_object.name()), type_(pb_object.type()) {
-}
+Object::Object(const pb::ObjectDeclaration& pb_object, const Type* type)
+    : name_(pb_object.name()), type_(type) {}
 
 } // namespace planmt

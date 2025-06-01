@@ -3,25 +3,25 @@
 
 namespace planmt {
 
-void LiftedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) {
-    switch (type) {
-        case Expression::Type::BOOLEAN:
-            result_ = create_bool_variable(symbol);
-            break;
-        case Expression::Type::INTEGER:
-            result_ = create_int_variable(symbol);
-            break;
-        case Expression::Type::REAL:
-            result_ = create_real_variable(symbol);
-            break;
-        case Expression::Type::OBJECT:
-            // PDDL objects (aircraft, city, etc.) - use integer for distinctness
-            result_ = create_int_variable(symbol);
-            break;
-        default:
-            std::cerr << "Warning: Unknown type for symbol '" << symbol << "'" << std::endl;
-            result_ = create_int_variable(symbol);
-            break;
+void LiftedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, const Type* type) {
+    if (!type) {
+        std::cerr << "Warning: No type information for symbol '" << symbol << "'" << std::endl;
+        result_ = create_int_variable(symbol);
+        return;
+    }
+    
+    if (type->is_bool()) {
+        result_ = create_bool_variable(symbol);
+    } else if (type->is_int()) {
+        result_ = create_int_variable(symbol);
+    } else if (type->is_real()) {
+        result_ = create_real_variable(symbol);
+    } else if (type->is_object()) {
+        // PDDL objects (aircraft, city, etc.) - use integer for distinctness
+        result_ = create_int_variable(symbol);
+    } else {
+        std::cerr << "Warning: Unknown type for symbol '" << symbol << "'" << std::endl;
+        result_ = create_int_variable(symbol);
     }
 }
 

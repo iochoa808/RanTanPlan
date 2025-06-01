@@ -15,6 +15,7 @@
 #include "goal.h"
 #include "assignment.h"
 #include "action.h"
+#include "type.h"
 
 namespace planmt {
 
@@ -67,6 +68,10 @@ public:
     size_t goal_count() const { return goals_.size(); }
     const Goal& goal(size_t index) const { return goals_[index]; }
     
+    // Type access
+    const std::vector<Type>& types() const { return types_; }
+    const Type* find_type(const std::string& name) const;
+    
     // Setters
     void set_domain_name(const std::string& domain_name) { domain_name_ = domain_name; }
     void set_problem_name(const std::string& problem_name) { problem_name_ = problem_name; }
@@ -106,15 +111,22 @@ private:
     std::vector<Action> actions_;
     std::vector<Assignment> initial_state_;
     std::vector<Goal> goals_;
+    std::vector<Type> types_;
     
     // Quick lookup mappings
     std::unordered_map<std::string, size_t> object_name_to_index_;
     std::unordered_map<std::string, size_t> fluent_name_to_index_;
     std::unordered_map<std::string, size_t> action_name_to_index_;
+    std::unordered_map<std::string, const Type*> type_name_to_ptr_;
     
     void build_object_mappings();
     void build_fluent_mappings();
     void build_action_mappings();
+    void load_types(const pb::RepeatedTypeDeclaration& pb_types);
+    void resolve_type_hierarchy();
+    void load_objects(const pb::RepeatedObjectDeclaration& pb_objects);
+    void load_fluents(const pb::RepeatedFluent& pb_fluents);
+    void load_actions(const pb::RepeatedAction& pb_actions);
 };
 
 } // namespace planmt

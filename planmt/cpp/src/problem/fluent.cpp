@@ -3,22 +3,12 @@
 
 namespace planmt {
 
-Fluent::Fluent(const pb::Fluent& pb_fluent) 
-    : name_(pb_fluent.name()), value_type_(pb_fluent.value_type()) {
-    
-    for (const auto& pb_param : pb_fluent.parameters()) {
-        parameters_.emplace_back(pb_param);
-    }
-    
-    if (pb_fluent.has_default_value()) {
-        default_value_ = Expression(pb_fluent.default_value());
-    }
-}
+Fluent::Fluent(const pb::Fluent& pb_fluent, const Type* value_type, const std::vector<Parameter>& parameters)
+    : name_(pb_fluent.name()), value_type_(value_type), parameters_(parameters) {}
 
 std::string Fluent::to_string() const {
     std::ostringstream oss;
     oss << name_;
-    
     if (!parameters_.empty()) {
         oss << "(";
         for (size_t i = 0; i < parameters_.size(); ++i) {
@@ -27,13 +17,10 @@ std::string Fluent::to_string() const {
         }
         oss << ")";
     }
-    
-    oss << " : " << value_type_;
-    
+    oss << " : " << (value_type_ ? value_type_->name() : "null");
     if (has_default_value()) {
         oss << " = " << default_value_->to_string();
     }
-    
     return oss.str();
 }
 

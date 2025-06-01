@@ -10,27 +10,26 @@ GroundedEncodingVisitor::GroundedEncodingVisitor(z3::context& ctx,
                                                  const Problem* problem)
     : ctx_(ctx), encoder_(encoder), problem_(problem), current_timestep_(-1) {}
 
-void GroundedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) {
+void GroundedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, const Type* type) {
     // For symbols, we create a variable or constant based on the type
-    switch (type) {
-        case Expression::Type::BOOLEAN:
-            result_ = ctx_.bool_const(symbol.c_str());
-            break;
-        case Expression::Type::INTEGER:
-            result_ = ctx_.int_const(symbol.c_str());
-            break;
-        case Expression::Type::REAL:
-            result_ = ctx_.real_const(symbol.c_str());
-            break;
-        case Expression::Type::OBJECT:
-            // Objects are typically mapped to integers in SMT encoding
-            result_ = ctx_.int_const(symbol.c_str());
-            break;
-        case Expression::Type::UNKNOWN:
-        default:
-            // For unknown types, default to integer
-            result_ = ctx_.int_const(symbol.c_str());
-            break;
+    if (!type) {
+        // For unknown types, default to integer
+        result_ = ctx_.int_const(symbol.c_str());
+        return;
+    }
+    
+    if (type->is_bool()) {
+        result_ = ctx_.bool_const(symbol.c_str());
+    } else if (type->is_int()) {
+        result_ = ctx_.int_const(symbol.c_str());
+    } else if (type->is_real()) {
+        result_ = ctx_.real_const(symbol.c_str());
+    } else if (type->is_object()) {
+        // Objects are typically mapped to integers in SMT encoding
+        result_ = ctx_.int_const(symbol.c_str());
+    } else {
+        // For unknown types, default to integer
+        result_ = ctx_.int_const(symbol.c_str());
     }
 }
 
@@ -147,12 +146,19 @@ void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent
     // Convert argument expressions to objects
     std::vector<Object> param_objects;
     param_objects.reserve(args.size());
-    
-    for (const auto& arg : args) {
-        // For grounded encoding, arguments should be constants representing objects
+    for (size_t i = 0; i < args.size(); ++i) {
+        const auto& arg = args[i];
         if (arg.kind() == Expression::Kind::CONSTANT && arg.is_atom()) {
-            // Get the symbol name from the atom
-            param_objects.emplace_back(arg.value().symbol(), "object"); // Default type
+            // Get the expected type for this parameter from the fluent definition
+            const Type* param_type = nullptr;
+            if (i < fluent_def->parameters().size()) {
+                param_type = fluent_def->parameters()[i].type();
+            }
+            if (!param_type) {
+                // Fallback to 'object' type if parameter type is missing
+                param_type = problem_->find_type("object");
+            }
+            param_objects.emplace_back(arg.value().symbol(), param_type);
         } else {
             std::cerr << "Error: Non-constant argument in grounded fluent application: " << fluent_name 
                       << " (kind: " << static_cast<int>(arg.kind()) << ")" << std::endl;
