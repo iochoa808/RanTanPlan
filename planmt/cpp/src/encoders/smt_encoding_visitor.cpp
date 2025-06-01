@@ -3,10 +3,26 @@
 
 namespace planmt {
 
-void SmtEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind) {
-    // For symbols, we need to determine the appropriate type
-    // Default to integer for now, but this could be extended based on context
-    result_ = create_int_variable(symbol);
+void SmtEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) {
+    switch (type) {
+        case Expression::Type::BOOLEAN:
+            result_ = create_bool_variable(symbol);
+            break;
+        case Expression::Type::INTEGER:
+            result_ = create_int_variable(symbol);
+            break;
+        case Expression::Type::REAL:
+            result_ = create_real_variable(symbol);
+            break;
+        case Expression::Type::OBJECT:
+            // PDDL objects (aircraft, city, etc.) - use integer for distinctness
+            result_ = create_int_variable(symbol);
+            break;
+        default:
+            std::cerr << "Warning: Unknown type for symbol '" << symbol << "'" << std::endl;
+            result_ = create_int_variable(symbol);
+            break;
+    }
 }
 
 void SmtEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) {
@@ -38,6 +54,7 @@ void SmtEncodingVisitor::visit_function_application(const std::string& function_
     }
     
     // Use enum-based operator handling for efficiency and type safety
+    std::cout << "Handling function application: " << function_name << std::endl;
     Expression::Operator op = Expression::string_to_operator(function_name);
     
     switch (op) {
@@ -84,12 +101,12 @@ void SmtEncodingVisitor::visit_function_application(const std::string& function_
         case Expression::Operator::IMPLIES:
         case Expression::Operator::IFF:
             // TODO: Implement these operators when needed
-            result_ = handle_uninterpreted_function(function_name, z3_args);
+            result_ = handle_uninterpreted_function(function_name, z3_args, ctx_.int_sort());
             break;
         case Expression::Operator::UNKNOWN:
         default:
             // Unknown function - create uninterpreted function
-            result_ = handle_uninterpreted_function(function_name, z3_args);
+            result_ = handle_uninterpreted_function(function_name, z3_args, ctx_.int_sort());
             break;
     }
 }
@@ -97,8 +114,34 @@ void SmtEncodingVisitor::visit_function_application(const std::string& function_
 void SmtEncodingVisitor::visit_fluent_application(const std::string& fluent_name,
                                                 const std::vector<Expression>& args,
                                                 Expression::Kind kind) {
-    // Fluent applications are similar to function applications
-    visit_function_application(fluent_name, args, kind);
+    // Convert arguments to Z3
+    std::vector<z3::expr> z3_args;
+    for (const auto& arg : args) {
+        accept_visitor(arg, *this);
+        if (!result_) {
+            return; // Error in argument conversion
+        }
+        z3_args.push_back(*result_);
+        result_.reset();
+    }
+    
+    // Add timestep as final argument if temporal encoding is enabled
+    if (current_timestep_ >= 0) {
+        z3_args.push_back(ctx_.int_val(current_timestep_));
+    }
+    
+    // Determine return type based on fluent definition
+    z3::sort return_sort = ctx_.int_sort(); // Default to integer
+    
+    if (problem_) {
+        const Fluent* fluent_def = problem_->find_fluent(fluent_name);
+        if (fluent_def && fluent_def->is_predicate()) {
+            return_sort = ctx_.bool_sort();
+        }
+    }
+    
+    // Handle as uninterpreted function with correct return type and timestep
+    result_ = handle_uninterpreted_function(fluent_name, z3_args, return_sort);
 }
 
 void SmtEncodingVisitor::visit_list(const std::vector<Expression>& elements, 
@@ -219,24 +262,27 @@ std::optional<z3::expr> SmtEncodingVisitor::handle_divide(const std::vector<z3::
 
 std::optional<z3::expr> SmtEncodingVisitor::handle_uninterpreted_function(
     const std::string& function_name, 
-    const std::vector<z3::expr>& args) {
+    const std::vector<z3::expr>& args,
+    const z3::sort& return_sort) {
     
     // Create or get function declaration
     auto func_it = symbol_table_.find(function_name);
     
     if (func_it == symbol_table_.end() || !std::holds_alternative<z3::func_decl>(func_it->second)) {
-        // Create new function declaration
-        // For simplicity, assume all arguments are integers and return type is integer
+        // Create new function declaration with appropriate domain sorts
         std::vector<z3::sort> domain;
-        for (size_t i = 0; i < args.size(); ++i) {
-            domain.push_back(ctx_.int_sort());
+        for (const auto& arg : args) {
+            // Use the actual sort of each argument to maintain type consistency
+            domain.push_back(arg.get_sort());
         }
         z3::func_decl func_decl = ctx_.function(function_name.c_str(), 
                                  static_cast<unsigned>(args.size()),
                                  domain.data(), 
-                                 ctx_.int_sort());
+                                 return_sort);
         symbol_table_.emplace(function_name, func_decl);
         func_it = symbol_table_.find(function_name);
+        
+        std::cout << "Created function declaration: " << func_decl << std::endl;
     }
     
     z3::func_decl func_decl = std::get<z3::func_decl>(func_it->second);

@@ -7,7 +7,7 @@ namespace planmt {
 
 // Constructor
 GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
-    : problem_(problem), ctx_(ctx), symbol_table_(), smt_visitor_(ctx_, symbol_table_) {
+    : problem_(problem), ctx_(ctx), symbol_table_(), smt_visitor_(ctx_, symbol_table_, &problem_) {
     // Initialize storage for state and action variables
     state_vars_.clear();
     action_vars_.clear();
@@ -15,9 +15,21 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
 }
 
 // Helper function to convert expression to Z3 using visitor
-std::optional<z3::expr> GroundedEncoder::convert_expression_to_z3(const Expression& expr) {
+std::optional<z3::expr> GroundedEncoder::convert_expression_to_z3(const Expression& expr, int timestep) {
     smt_visitor_.clear();
+    
+    // Set timestep for temporal encoding if provided
+    if (timestep >= 0) {
+        smt_visitor_.set_timestep(timestep);
+    } else {
+        smt_visitor_.clear_timestep();
+    }
+    
     accept_visitor(expr, smt_visitor_);
+    
+    // Clear timestep after use
+    smt_visitor_.clear_timestep();
+    
     return smt_visitor_.get_result();
 }
 
@@ -25,10 +37,10 @@ std::optional<z3::expr> GroundedEncoder::convert_expression_to_z3(const Expressi
 std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
     z3::expr initial_state_formula = ctx_.bool_val(true);
     
-    // Process each assignment in the initial state
+    // Process each assignment in the initial state at timestep 0
     for (const auto& assignment : problem_.initial_state()) {
-        auto fluent_expr = convert_expression_to_z3(assignment.fluent());
-        auto value_expr = convert_expression_to_z3(assignment.value());
+        auto fluent_expr = convert_expression_to_z3(assignment.fluent(), 0);
+        auto value_expr = convert_expression_to_z3(assignment.value(), 0);
         
         if (!fluent_expr || !value_expr) {
             std::cerr << "Error: Failed to encode assignment in initial state" << std::endl;
@@ -74,7 +86,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
     
     for (const auto& goal : goals) {
         try {
-            auto z3_goal = convert_expression_to_z3(goal.goal_expression());
+            auto z3_goal = convert_expression_to_z3(goal.goal_expression(), t);
             if (z3_goal) {
                 goal_formulas.push_back(*z3_goal);
                 std::cout << "Goal encoded: " << *z3_goal << std::endl;

@@ -7,7 +7,7 @@ void accept_visitor(const Expression& expr, ExpressionVisitor& visitor) {
         const Atom& atom = expr.value();
         
         if (atom.is_symbol()) {
-            visitor.visit_symbol(atom.symbol(), expr.kind());
+            visitor.visit_symbol(atom.symbol(), expr.kind(), expr.type_enum());
         } else if (atom.is_integer()) {
             visitor.visit_integer(atom.integer(), expr.kind());
         } else if (atom.is_real()) {

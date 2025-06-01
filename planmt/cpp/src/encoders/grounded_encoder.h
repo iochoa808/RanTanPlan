@@ -26,7 +26,7 @@ public:
 
 private:
     // Helper function to convert expression to Z3 using visitor
-    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr);
+    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1);
     
     // Helper function to print symbol table for debugging
     void print_symbol_table(const std::string& context) const;

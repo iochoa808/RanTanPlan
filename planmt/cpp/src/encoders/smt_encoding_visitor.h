@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../problem/visitors/expression_visitor.h"
+#include "../problem/problem.h"
 #include <z3++.h>
 #include <optional>
 #include <string>
@@ -20,20 +21,23 @@ using SymbolTable = std::unordered_map<std::string, Z3Object>;
  * Converts expressions containing atoms and function applications to Z3 expressions.
  * Handles integers, reals, booleans, symbols, and common arithmetic operations.
  * Uses external symbol table provided by GroundedEncoder.
+ * Supports temporal encoding through timestep parameters.
  */
 class SmtEncodingVisitor : public BaseExpressionVisitor {
 private:
     z3::context& ctx_;
     std::optional<z3::expr> result_;
     SymbolTable& symbol_table_; // Reference to external symbol table
+    const Problem* problem_; // Reference to problem instance for fluent type lookup
+    int current_timestep_; // Current timestep for temporal encoding (-1 means no timestep)
     
 public:
     // Constructor
-    SmtEncodingVisitor(z3::context& ctx, SymbolTable& symbol_table) 
-        : ctx_(ctx), symbol_table_(symbol_table) {}
+    SmtEncodingVisitor(z3::context& ctx, SymbolTable& symbol_table, const Problem* problem = nullptr) 
+        : ctx_(ctx), symbol_table_(symbol_table), problem_(problem), current_timestep_(-1) {}
     
     // BaseExpressionVisitor interface methods
-    void visit_symbol(const std::string& symbol, Expression::Kind kind) override;
+    void visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) override;
     void visit_integer(int64_t value, Expression::Kind kind) override;
     void visit_real(const Real& value, Expression::Kind kind) override;
     void visit_boolean(bool value, Expression::Kind kind) override;
@@ -59,6 +63,11 @@ public:
     void clear_symbol_table() {
         symbol_table_.clear();
     }
+    
+    // Temporal encoding methods
+    void set_timestep(int timestep) { current_timestep_ = timestep; }
+    int get_timestep() const { return current_timestep_; }
+    void clear_timestep() { current_timestep_ = -1; }
 
     // Public methods for creating variables from names (to be used by GroundedEncoder)
     z3::expr create_bool_variable(const std::string& name);
@@ -79,7 +88,7 @@ private:
     std::optional<z3::expr> handle_minus(const std::vector<z3::expr>& args);
     std::optional<z3::expr> handle_multiply(const std::vector<z3::expr>& args);
     std::optional<z3::expr> handle_divide(const std::vector<z3::expr>& args);
-    std::optional<z3::expr> handle_uninterpreted_function(const std::string& name, const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_uninterpreted_function(const std::string& name, const std::vector<z3::expr>& args, const z3::sort& return_sort);
     
     // Helper to determine Z3 sort for a symbol based on its kind
     z3::sort get_sort_for_symbol(const std::string& symbol, Expression::Kind kind);

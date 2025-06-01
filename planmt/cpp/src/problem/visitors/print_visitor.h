@@ -36,12 +36,23 @@ private:
         }
     }
     
+    const char* type_to_string(Expression::Type type) const {
+        switch (type) {
+            case Expression::Type::BOOLEAN: return "BOOLEAN";
+            case Expression::Type::INTEGER: return "INTEGER";
+            case Expression::Type::REAL: return "REAL";
+            case Expression::Type::OBJECT: return "OBJECT";
+            case Expression::Type::UNKNOWN: return "UNKNOWN";
+            default: return "UNKNOWN";
+        }
+    }
+    
 public:
     explicit PrintVisitor(std::ostream& out = std::cout) : out_(out) {}
     
-    void visit_symbol(const std::string& symbol, Expression::Kind kind) override {
+    void visit_symbol(const std::string& symbol, Expression::Kind kind, Expression::Type type) override {
         print_indent();
-        out_ << "Symbol: \"" << symbol << "\" (" << kind_to_string(kind) << ")\n";
+        out_ << "Symbol: \"" << symbol << "\" (" << kind_to_string(kind) << ", " << type_to_string(type) << ")\n";
     }
     
     void visit_integer(int64_t value, Expression::Kind kind) override {
