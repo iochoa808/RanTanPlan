@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <functional>
 #include "protobuf_aliases.h"
 #include "atom.h"
 #include "type.h"
@@ -304,3 +305,14 @@ private:
 };
 
 } // namespace planmt
+
+// specialising std::hash for Expression by using its string representation
+// note that for this to work we need to be in the std namespace
+namespace std {
+    template<>
+    struct hash<planmt::Expression> {
+        std::size_t operator()(const planmt::Expression& expr) const {
+            return std::hash<std::string>()(expr.to_string());
+        }
+    };
+}

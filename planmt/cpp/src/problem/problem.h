@@ -24,6 +24,12 @@ namespace planmt {
  * 
  * This is the central class that represents a complete planning problem.
  * It contains all objects, fluents, actions, initial state, and goals.
+ * 
+ * Note that this class is the only one that has qualified objects. That is,
+ * Fluent objects for example represent the schema of a fluent, not a grounded
+ * instance. The grounded instances are represented by the Expression class.
+ * The Expression class then has utility methods to check the type of an Expression,
+ * such as whether it is a fluent application, function application, or an atom.
  */
 class Problem {
 public:

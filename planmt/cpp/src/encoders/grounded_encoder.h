@@ -59,6 +59,14 @@ private:
     std::vector<std::unordered_map<std::string, std::shared_ptr<z3::expr>>> state_vars_; // for fluent and extra stuff
     std::vector<std::unordered_map<std::string, std::shared_ptr<z3::expr>>> action_vars_;
 
+    // Indices for the frame axioms
+    // Map from grounded fluent (Expression) to vector of (Action*, EffectExpression*)
+    std::unordered_map<Expression, std::vector<std::pair<const Action*, const EffectExpression*>>> epc_index_;
+    // a structure from a fluent to a vector of pairs (action, effect_expression)
+    void build_epc_index();
+
+    void index_effect_fluents(const Action* action, const EffectExpression* eff_expr);
+
     int layers_encoded_ = -1; // Tracks the highest layer for which transitions are encoded
 };
 

@@ -2,6 +2,7 @@
 #include <iostream>
 #include "problem/visitors/print_visitor.h"
 #include "problem/visitors/expression_visitor.h"
+#include <functional>
 
 namespace planmt {
 
@@ -12,6 +13,8 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
     state_vars_.clear();
     action_vars_.clear();
     layers_encoded_ = -1;
+
+    build_epc_index();
 }
 
 // Helper function to convert expression to Z3 using visitor
@@ -227,6 +230,41 @@ void GroundedEncoder::print_symbol_table(const std::string& context) const {
         }
     }
     std::cout << "===== End Symbol Table =====" << std::endl << std::endl;
+}
+
+void GroundedEncoder::index_effect_fluents(const Action* action, const EffectExpression* eff_expr) {
+    // Index the direct effect
+    const Expression& fluent = eff_expr->fluent();
+    epc_index_[fluent].emplace_back(action, eff_expr);
+
+    // Recursively handle quantified effects (forall)
+    // In standard ADL/PDDL, quantified effects are represented as EffectExpressions with forall_variables_ non-empty.
+    // If you extend EffectExpression to support a list of sub-effects, recurse into them here.
+    // For now, we assume the current EffectExpression is the only effect, so nothing to do.
+
+    // Recursively handle conditional effects (when ...)
+    // In standard ADL/PDDL, the condition is a logical formula, not an effect, so nothing to do.
+    // If you extend EffectExpression to support sub-effects in the value or condition, recurse into them here.
+    // For now, we assume the value is not an EffectExpression, so nothing to do.
+}
+
+void GroundedEncoder::build_epc_index() {
+    epc_index_.clear();
+    for (const auto& action : problem_.actions()) {
+        for (const auto& effect : action.effects()) {
+            const EffectExpression& eff_expr = effect.effect_expression();
+            index_effect_fluents(&action, &eff_expr);
+        }
+    }
+    // Print the index to stdout
+    std::cout << "\n===== EPC Index =====" << std::endl;
+    for (const auto& [fluent, action_effects] : epc_index_) {
+        std::cout << "Fluent: " << fluent.to_string() << std::endl;
+        for (const auto& [action, eff_expr] : action_effects) {
+            std::cout << "  Modified by Action: " << action->name() << " | Effect: " << eff_expr->to_string() << std::endl;
+        }
+    }
+    std::cout << "===== End EPC Index =====\n" << std::endl;
 }
 
 } // namespace planmt

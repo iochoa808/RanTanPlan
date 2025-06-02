@@ -142,7 +142,7 @@ endif()
 install(TARGETS planmt DESTINATION ${OUTPUT_DIR})
 
 # ==============================================================================
-# LINUX: Set RPATH for Z3 if found manually
+# Set RPATH for Z3 if found manually
 # ==============================================================================
 if(NOT Z3_FOUND AND Z3_LIB_DIR)
     set_target_properties(planmt PROPERTIES

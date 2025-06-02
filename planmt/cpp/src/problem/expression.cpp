@@ -1,6 +1,7 @@
 #include "expression.h"
 #include "problem.h"
 #include <sstream>
+#include <functional>
 
 namespace planmt {
 
