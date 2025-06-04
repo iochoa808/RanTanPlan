@@ -1,8 +1,6 @@
 # planMT
 
-A high-performance automated planner that uses a planning-as-satisfiability approach, implemented as a proper Python package with both C├── examples/                 # Example PDDL files
-├── pyproject.toml           # Package configuration & build system
-└── README.md               # This filend library interfaces. It integrates with Unified Planning (UP) and uses a C++ backend for efficient solving.
+A high-performance automated planner that uses a planning-as-satisfiability approach
 
 ## Architecture
 
