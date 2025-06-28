@@ -47,9 +47,9 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
 
 ## Features
 
-- ** Easy Installation**: Install as a Python package with `pip install`
-- ** CLI Interface**: Run from command line with `planmt -d domain.pddl -p problem.pddl`
-- ** High Performance**: C++ backend for efficient SAT-based planning
+- **Easy Installation**: Install as a Python package with `pip install`
+- **CLI Interface**: Run from command line with `planmt -d domain.pddl -p problem.pddl`
+- **High Performance**: C++ backend for efficient SAT-based planning
 
 ## Installation
 
