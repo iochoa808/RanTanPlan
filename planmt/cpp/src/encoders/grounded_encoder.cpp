@@ -49,15 +49,9 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
             std::cerr << "Error: Failed to encode assignment in initial state" << std::endl;
             continue;
         }
-        
         // Create and add equality constraint: fluent = value
         initial_state_formula = initial_state_formula && (*fluent_expr == *value_expr);
     }
-    std::cout << "Initial state SMT formula: " << initial_state_formula << std::endl;
-    
-    // Print symbol table after encoding initial state
-    //print_symbol_table("After encoding initial state");
-    
     return std::make_shared<z3::expr>(initial_state_formula);
 }
 
@@ -78,9 +72,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
     const auto& goals = problem_.goals();
     
     if (goals.empty()) {
-        // If no goals, return true (vacuously satisfied)
-        auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
-        return expr;
+        return std::make_shared<z3::expr>(ctx_.bool_val(true)); // If no goals, vacuously satisfied
     }
     
     // Convert each goal expression to Z3 formula and collect them
@@ -88,36 +80,19 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
     goal_formulas.reserve(goals.size());
     
     for (const auto& goal : goals) {
-        try {
-            auto z3_goal = convert_expression_to_z3(goal.goal_expression(), t);
-            if (z3_goal) {
-                goal_formulas.push_back(*z3_goal);
-                std::cout << "Goal encoded: " << *z3_goal << std::endl;
-            } else {
-                std::cerr << "Warning: Failed to encode goal expression: " << goal.to_string() << std::endl;
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Error encoding goal: " << e.what() << std::endl;
+        auto z3_goal = convert_expression_to_z3(goal.goal_expression(), t);
+        if (z3_goal) {
+            goal_formulas.push_back(*z3_goal);
+            std::cout << "Goal encoded: " << *z3_goal << std::endl;
+        } else {
+            std::cerr << "Error: Failed to encode goal expression: " << goal.to_string() << std::endl;
         }
     }
-    
-    if (goal_formulas.empty()) {
-        std::cerr << "Warning: No goals were successfully encoded, returning false" << std::endl;
-        auto expr = std::make_shared<z3::expr>(ctx_.bool_val(false));
-        return expr;
-    }
-    
     // Combine all goal formulas with logical AND
     z3::expr goal_conjunction = goal_formulas[0];
     for (size_t i = 1; i < goal_formulas.size(); ++i) {
         goal_conjunction = goal_conjunction && goal_formulas[i];
     }
-    
-    std::cout << "Goal SMT formula at timestep " << t << ": " << goal_conjunction << std::endl;
-    
-    // Print symbol table after encoding goal
-    print_symbol_table("After encoding goal at timestep " + std::to_string(t));
-    
     return std::make_shared<z3::expr>(goal_conjunction);
 }
 
@@ -232,23 +207,43 @@ void GroundedEncoder::print_symbol_table(const std::string& context) const {
     std::cout << "===== End Symbol Table =====" << std::endl << std::endl;
 }
 
-void GroundedEncoder::index_effect_fluents(const Action* action, const EffectExpression* eff_expr) {
-    // Index the direct effect
-    const Expression& fluent = eff_expr->fluent();
-    epc_index_[fluent].emplace_back(action, eff_expr);
-
-    // Recursively handle quantified effects (forall)
-    // In standard ADL/PDDL, quantified effects are represented as EffectExpressions with forall_variables_ non-empty.
-    // If you extend EffectExpression to support a list of sub-effects, recurse into them here.
-    // For now, we assume the current EffectExpression is the only effect, so nothing to do.
-
-    // Recursively handle conditional effects (when ...)
-    // In standard ADL/PDDL, the condition is a logical formula, not an effect, so nothing to do.
-    // If you extend EffectExpression to support sub-effects in the value or condition, recurse into them here.
-    // For now, we assume the value is not an EffectExpression, so nothing to do.
+void GroundedEncoder::print_epc_index(const std::string& context) const {
+    std::cout << "\n===== EPC Index: " << context << " =====" << std::endl;
+    
+    if (epc_index_.empty()) {
+        std::cout << "(empty)" << std::endl;
+    } else {
+        for (const auto& [fluent, action_effects] : epc_index_) {
+            std::cout << "Fluent: " << fluent.to_string() << std::endl;
+            for (const auto& [action, eff_expr] : action_effects) {
+                std::cout << "  Modified by Action: " << action->name() << " | Effect: " << eff_expr->to_string() << std::endl;
+            }
+        }
+    }
+    std::cout << "===== End EPC Index =====" << std::endl << std::endl;
 }
 
 void GroundedEncoder::build_epc_index() {
+
+    // Local helper function to index effect fluents in case we need to handle complex effects
+    // in the future like nested quantified/conditional effects. As of now, I think
+    // the limitation is UP's though ...
+    auto index_effect_fluents = [this](const Action* action, const EffectExpression* eff_expr) {
+        // Index the direct effect
+        const Expression& fluent = eff_expr->fluent();
+        epc_index_[fluent].emplace_back(action, eff_expr);
+
+        // Recursively handle quantified effects (forall)
+        // In standard ADL/PDDL, quantified effects are represented as EffectExpressions with forall_variables_ non-empty.
+        // If you extend EffectExpression to support a list of sub-effects, recurse into them here.
+        // For now, we assume the current EffectExpression is the only effect, so nothing to do.
+
+        // Recursively handle conditional effects (when ...)
+        // In standard ADL/PDDL, the condition is a logical formula, not an effect, so nothing to do.
+        // If you extend EffectExpression to support sub-effects in the value or condition, recurse into them here.
+        // For now, we assume the value is not an EffectExpression, so nothing to do.
+    };
+
     epc_index_.clear();
     for (const auto& action : problem_.actions()) {
         for (const auto& effect : action.effects()) {
@@ -256,15 +251,9 @@ void GroundedEncoder::build_epc_index() {
             index_effect_fluents(&action, &eff_expr);
         }
     }
-    // Print the index to stdout
-    std::cout << "\n===== EPC Index =====" << std::endl;
-    for (const auto& [fluent, action_effects] : epc_index_) {
-        std::cout << "Fluent: " << fluent.to_string() << std::endl;
-        for (const auto& [action, eff_expr] : action_effects) {
-            std::cout << "  Modified by Action: " << action->name() << " | Effect: " << eff_expr->to_string() << std::endl;
-        }
-    }
-    std::cout << "===== End EPC Index =====\n" << std::endl;
+    
+    // Print the index for debugging (uncomment when needed)
+    // print_epc_index("After building EPC index");
 }
 
 } // namespace planmt
