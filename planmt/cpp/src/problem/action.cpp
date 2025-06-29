@@ -5,8 +5,37 @@ namespace planmt {
 
 Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters)
     : name_(pb_action.name()), parameters_(parameters) {
-    for (const auto& pb_precond : pb_action.conditions()) {
-        preconditions_.emplace_back(pb_precond.cond());
+    
+    // Create single precondition from repeated conditions using AND
+    if (pb_action.conditions().empty()) {
+        // No preconditions - create true constant
+        pb::Expression pb_true_expr;
+        pb_true_expr.mutable_atom()->set_boolean(true);
+        pb_true_expr.set_kind(pb::ExpressionKind::CONSTANT);
+        pb_true_expr.set_type("up:bool");
+        precondition_ = Expression(pb_true_expr);
+    } else if (pb_action.conditions().size() == 1) {
+        // Single precondition - use it directly
+        precondition_ = Expression(pb_action.conditions(0).cond());
+    } else {
+        // Multiple preconditions - create AND expression
+        pb::Expression pb_and_expr;
+        pb_and_expr.set_kind(pb::ExpressionKind::FUNCTION_APPLICATION);
+        pb_and_expr.set_type("up:bool");
+        
+        // First element: the "and" function symbol
+        pb::Expression* and_symbol = pb_and_expr.add_list();
+        and_symbol->mutable_atom()->set_symbol("and");
+        and_symbol->set_kind(pb::ExpressionKind::FUNCTION_SYMBOL);
+        and_symbol->set_type("up:bool");
+        
+        // Add all the condition expressions directly from protobuf
+        for (const auto& pb_condition : pb_action.conditions()) {
+            pb::Expression* operand = pb_and_expr.add_list();
+            *operand = pb_condition.cond();
+        }
+        
+        precondition_ = Expression(pb_and_expr);
     }
     
     for (const auto& pb_effect : pb_action.effects()) {
@@ -51,11 +80,8 @@ std::string Action::to_string() const {
         oss << ")";
     }
     
-    if (!preconditions_.empty()) {
-        oss << "\n  Preconditions:";
-        for (const auto& precond : preconditions_) {
-            oss << "\n    " << precond.to_string();
-        }
+    if (has_precondition()) {
+        oss << "\n  Precondition: " << precondition_.to_string();
     }
     
     if (!effects_.empty()) {
@@ -71,7 +97,7 @@ std::string Action::to_string() const {
 bool Action::operator==(const Action& other) const {
     return name_ == other.name_ &&
            parameters_ == other.parameters_ &&
-           preconditions_ == other.preconditions_ &&
+           precondition_ == other.precondition_ &&
            effects_ == other.effects_;
 }
 

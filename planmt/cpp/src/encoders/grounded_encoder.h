@@ -26,11 +26,14 @@ public:
     std::shared_ptr<z3::expr> encode_parallelism(int t); // Encodes parallelism semantics
 
     // Public method for getting fluent variables (used by GroundedEncodingVisitor)
-    z3::expr get_fluent_var(const Fluent& fluent, const std::vector<Object>& params, int t);
+    z3::expr get_fluent_var(const Fluent& fluent, int t);
 
 private:
     // Helper function to convert expression to Z3 using visitor
     std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1);
+    
+    // Helper function to convert effect to Z3 constraint using visitor
+    std::optional<z3::expr> convert_effect_to_z3(const EffectExpression& effect, int timestep);
     
     // Helper function to print symbol table for debugging
     void print_symbol_table(const std::string& context) const;
@@ -39,13 +42,13 @@ private:
     void print_epc_index(const std::string& context) const;
 
     // Gets or creates a Z3 variable for an action at a specific step
-    z3::expr get_action_var(const Action& action, const std::vector<Object>& params, int t);
+    z3::expr get_action_var(const Action& action, int t);
 
     // Creates a unique base string representation for vars
-    std::string get_smt_var_name(const Fluent& fluent, const std::vector<Object>& params) const;
-    std::string get_smt_var_name(const Fluent& fluent, const std::vector<Object>& params, int t) const;
-    std::string get_smt_var_name(const Action& action, const std::vector<Object>& params) const;
-    std::string get_smt_var_name(const Action& action, const std::vector<Object>& params, int t) const;
+    std::string get_smt_var_name(const Fluent& fluent) const;
+    std::string get_smt_var_name(const Fluent& fluent, int t) const;
+    std::string get_smt_var_name(const Action& action) const;
+    std::string get_smt_var_name(const Action& action, int t) const;
     
     // Helper method to create correctly typed variables based on fluent definitions
     z3::expr create_typed_variable(const Fluent& fluent, const std::string& var_name);

@@ -20,19 +20,12 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     auto* log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
 
-    //std::cout << "Problem received by C++ planner:" << std::endl;
-    std::cout << problem.to_string() << std::endl;
-
     // Create Z3 context
     z3::context ctx;
 
-    // Create GroundedEncoder instance
+    // Instantiate the encoder/planner combination
     planmt::GroundedEncoder encoder(problem, ctx);
-    std::cout << "GroundedEncoder instantiated." << std::endl;
-
-    // Create SequentialPlanner instance
     planmt::SequentialPlanner planner(problem, encoder);
-    std::cout << "SequentialPlanner instantiated." << std::endl;
 
     // TODO: Call planner.search() and populate the actual result based on the search outcome.
     // For now, returning a placeholder result.
@@ -41,7 +34,7 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     result.set_status(PlanGenerationResult_Status_UNSOLVABLE_INCOMPLETELY);
     log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
-    log_message->set_message("C++ planner: Custom effects tested successfully.");
+    log_message->set_message("Finished solving the problem.");
 
     return result;
 }
@@ -63,6 +56,7 @@ int main(int argc, char* argv[]) {
 
     // Create a Problem wrapper from the protobuf message
     planmt::Problem planning_problem(problem_msg);
+    //std::cout << planning_problem.to_string() << std::endl;
 
     // Solve the planning problem
     PlanGenerationResult result = solve_planning_problem(planning_problem);

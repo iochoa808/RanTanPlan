@@ -10,6 +10,7 @@ import argparse
 import sys
 import os
 from pathlib import Path
+from unified_planning.engines.results import LogLevel
 
 
 def parse_arguments():
@@ -140,9 +141,11 @@ def solve_problem(problem, args):
         print("Please ensure the planmt package is properly installed.")
         return None
     
-    planner_options = {}
+    # Prepare planner parameters (not constructor options)
+    planner_params = {}
     if args.executable:
-        planner_options['executable_path'] = args.executable
+        planner_params['executable_path'] = args.executable
+    planner_params['verbose'] = args.verbose
     
     output_stream = sys.stdout
     
@@ -153,7 +156,7 @@ def solve_problem(problem, args):
             print(f"Using executable: {args.executable}")
     
     try:
-        with OneshotPlanner(name='planMT', **planner_options) as planner:
+        with OneshotPlanner(name='planMT', params=planner_params) as planner:
             if not planner:
                 print("Error: Could not create planMT planner. Is it properly installed?")
                 return None
@@ -206,12 +209,14 @@ def print_result(result, args):
     else:
         print("No plan found.")
     
-    # Print log messages if verbose or if there are errors
-    if result.log_messages and (args.verbose or not plan_found):
-        print("\nLog Messages:")
+    # Print log messages if verbose
+    if args.verbose and result.log_messages:
+        print(f"\nLog Messages:")
         for msg in result.log_messages:
-            print(f"  [{msg.level}] {msg.message}")
-    
+            if msg.level == LogLevel.ERROR:
+                print(f"[ERROR] {msg.message}")
+            else:
+                print(msg.message)
     return plan_found
 
 

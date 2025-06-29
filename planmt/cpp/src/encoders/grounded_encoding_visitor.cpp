@@ -1,6 +1,7 @@
 #include "grounded_encoding_visitor.h"
 #include "grounded_encoder.h"
 #include "../problem/fluent.h"
+#include "../problem/effect_expression.h"
 #include <iostream>
 
 namespace planmt {
@@ -143,9 +144,10 @@ void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent
         return;
     }
 
-    // Convert argument expressions to objects
-    std::vector<Object> param_objects;
-    param_objects.reserve(args.size());
+    // Create a temporary grounded fluent with the specific parameter values
+    std::vector<Parameter> grounded_params;
+    grounded_params.reserve(args.size());
+    
     for (size_t i = 0; i < args.size(); ++i) {
         const auto& arg = args[i];
         if (arg.kind() == Expression::Kind::CONSTANT && arg.is_atom()) {
@@ -158,7 +160,7 @@ void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent
                 // Fallback to 'object' type if parameter type is missing
                 param_type = problem_->find_type("object");
             }
-            param_objects.emplace_back(arg.value().symbol(), param_type);
+            grounded_params.emplace_back(arg.value().symbol(), param_type);
         } else {
             std::cerr << "Error: Non-constant argument in grounded fluent application: " << fluent_name 
                       << " (kind: " << static_cast<int>(arg.kind()) << ")" << std::endl;
@@ -166,11 +168,14 @@ void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent
         }
     }
 
+    // Create a temporary grounded fluent
+    Fluent grounded_fluent(fluent_def->name(), fluent_def->value_type(), grounded_params);
+    
     // Use current timestep if available, otherwise use 0
     int timestep = (current_timestep_ >= 0) ? current_timestep_ : 0;
     
     // Get the grounded variable from the encoder
-    result_ = encoder_->get_fluent_var(*fluent_def, param_objects, timestep);
+    result_ = encoder_->get_fluent_var(grounded_fluent, timestep);
 }
 
 void GroundedEncodingVisitor::visit_list(const std::vector<Expression>& elements, Expression::Kind kind) {

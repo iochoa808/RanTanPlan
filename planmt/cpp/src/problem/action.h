@@ -33,9 +33,11 @@ public:
     const Parameter* find_parameter(const std::string& name) const;
     
     // Precondition access
-    const std::vector<Expression>& preconditions() const { return preconditions_; }
-    size_t precondition_count() const { return preconditions_.size(); }
-    const Expression& precondition(size_t index) const { return preconditions_[index]; }
+    const Expression& precondition() const { return precondition_; }
+    bool has_precondition() const { 
+        return !(precondition_.is_constant() && precondition_.is_atom() && 
+                 precondition_.value().is_boolean() && precondition_.value().boolean() == true); 
+    }
     
     // Effect access
     const std::vector<Effect>& effects() const { return effects_; }
@@ -46,8 +48,7 @@ public:
     void set_name(const std::string& name) { name_ = name; }
     void add_parameter(const Parameter& param);
     void set_parameters(const std::vector<Parameter>& parameters);
-    void add_precondition(const Expression& precond) { preconditions_.push_back(precond); }
-    void set_preconditions(const std::vector<Expression>& preconditions) { preconditions_ = preconditions; }
+    void set_precondition(const Expression& precond) { precondition_ = precond; }
     void add_effect(const Effect& effect) { effects_.push_back(effect); }
     void set_effects(const std::vector<Effect>& effects) { effects_ = effects; }
     
@@ -61,7 +62,7 @@ public:
 private:
     std::string name_;
     std::vector<Parameter> parameters_;
-    std::vector<Expression> preconditions_;
+    Expression precondition_;
     std::vector<Effect> effects_;
     
     // Quick lookup for parameters

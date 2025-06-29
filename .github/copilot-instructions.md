@@ -71,7 +71,7 @@ pip install -e .
 Once installed, a CLI interface is available as the "planmt" command.
 To test the project, you can run the following: 
 ```bash
-planmt -d pddl/zenotravel/domain.pddl -p pddl/zenotravel/problem.pddl
+planmt -v -d pddl/zenotravel/domain.pddl -p pddl/zenotravel/problem.pddl
 ```
 
 Other test domains available:

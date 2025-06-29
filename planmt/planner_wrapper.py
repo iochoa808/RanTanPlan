@@ -22,6 +22,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._writer = ProtobufWriter()
         self._reader = ProtobufReader()
         self.executable_path = self._find_executable(options.get('executable_path'))
+        self._verbose = options.get('verbose', False)
 
     def _find_executable(self, provided_path):
         """Find the planmt executable, trying various locations."""
@@ -90,19 +91,25 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
     def supports(problem_kind):
         return problem_kind <= planMTPlanner.supported_kind()
 
-    def _create_log_messages(self, process):
-        """Create log messages from subprocess output."""
+    def _create_log_messages(self, process, output_stream):
+        """Create log messages from subprocess output and optionally stream to output."""
         log_messages = []
         
+        # Handle stdout - only add to LogMessages if verbose, but always stream if verbose
         if process.stdout:
-            for line in process.stdout.strip().split('\n'):
-                if line.strip():
-                    log_messages.append(LogMessage(level=LogLevel.INFO, message=f"C++ stdout: {line.strip()}"))
+            stdout_lines = [line.strip() for line in process.stdout.strip().split('\n') if line.strip()]
+            if stdout_lines:
+                    #self._log_to_stream(output_stream, f"stdout:\n{chr(10).join(stdout_lines)}")
+                    for line in stdout_lines:
+                        log_messages.append(LogMessage(level=LogLevel.INFO, message=line))
         
+        # Handle stderr - always add to LogMessages and always stream (errors should always be visible)
         if process.stderr:
-            for line in process.stderr.strip().split('\n'):
-                if line.strip():
-                    log_messages.append(LogMessage(level=LogLevel.ERROR, message=f"C++ stderr: {line.strip()}"))
+            stderr_lines = [line.strip() for line in process.stderr.strip().split('\n') if line.strip()]
+            if stderr_lines:
+                #self._log_to_stream(output_stream, f"stderr:\n{chr(10).join(stderr_lines)}")
+                for line in stderr_lines:
+                    log_messages.append(LogMessage(level=LogLevel.ERROR, message=line))
         
         return log_messages
 
@@ -142,13 +149,8 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             # Run the C++ planner
             process = subprocess.run(command, timeout=timeout, capture_output=True, text=True)
 
-            # Log subprocess output
-            if process.stdout:
-                self._log_to_stream(output_stream, f"planner stdout:\n{process.stdout}")
-            if process.stderr:
-                self._log_to_stream(output_stream, f"planner stderr:\n{process.stderr}")
-
-            log_messages_from_subprocess = self._create_log_messages(process)
+            # Create log messages from subprocess output and optionally log to stream
+            log_messages_from_subprocess = self._create_log_messages(process, output_stream)
 
             # Handle process errors
             if process.returncode != 0:

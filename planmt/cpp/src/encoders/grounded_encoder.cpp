@@ -19,21 +19,54 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
 
 // Helper function to convert expression to Z3 using visitor
 std::optional<z3::expr> GroundedEncoder::convert_expression_to_z3(const Expression& expr, int timestep) {
-    grounded_visitor_.clear();
-    
-    // Set timestep for temporal encoding if provided
+    grounded_visitor_.clear(); // start with a fresh visitor state
+
     if (timestep >= 0) {
-        grounded_visitor_.set_timestep(timestep);
+        grounded_visitor_.set_timestep(timestep); // Set timestep if provided
     } else {
         grounded_visitor_.clear_timestep();
     }
-    
     accept_visitor(expr, grounded_visitor_);
-    
-    // Clear timestep after use
-    grounded_visitor_.clear_timestep();
-    
+    grounded_visitor_.clear_timestep(); // Clear timestep after use
     return grounded_visitor_.get_result();
+}
+
+// Helper function to convert effect to Z3 constraint using visitor
+std::optional<z3::expr> GroundedEncoder::convert_effect_to_z3(const EffectExpression& effect, int timestep) {
+    auto fluent_curr_z3 = convert_expression_to_z3(effect.fluent(), timestep);
+    auto fluent_next_z3 = convert_expression_to_z3(effect.fluent(), timestep + 1);
+    auto value_z3 = convert_expression_to_z3(effect.value(), timestep);
+    
+    if (!fluent_next_z3 || !value_z3 || !fluent_curr_z3) {
+        std::cerr << "Error: Failed to convert effect fluent or value to Z3" << std::endl;
+        return std::nullopt;
+    }
+    
+    z3::expr effect_constraint = ctx_.bool_val(true);
+    switch (effect.kind()) {
+        case EffectExpression::Kind::ASSIGN:
+            effect_constraint = (*fluent_next_z3 == *value_z3);
+            break;
+            
+        case EffectExpression::Kind::INCREASE: {
+            effect_constraint = (*fluent_next_z3 == *fluent_curr_z3 + *value_z3);
+            break;
+        }
+        case EffectExpression::Kind::DECREASE: {
+            effect_constraint = (*fluent_next_z3 == *fluent_curr_z3 - *value_z3);
+            break;
+        }
+    }
+    
+    if (effect.is_conditional()) { // Handle conditional effects
+        const Expression& condition = effect.condition();
+        auto condition_z3 = convert_expression_to_z3(condition, timestep);
+        if (condition_z3) {
+            effect_constraint = z3::implies(*condition_z3, effect_constraint);
+        }
+    }
+    
+    return effect_constraint;
 }
 
 // Encoding steps
@@ -56,9 +89,53 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
-    // TODO: Implement action encoding for timestep t
-    auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
-    return expr;
+    std::vector<z3::expr> action_constraints;
+    
+    for (const Action& action : problem_.actions()) {
+        z3::expr action_var = get_action_var(action, t); 
+        
+        // Create precondition constraints: action_var => precondition
+        if (action.has_precondition()) {
+            auto z3_precond = convert_expression_to_z3(action.precondition(), t);
+            if (z3_precond.has_value()) {
+                // action_var => precondition
+                action_constraints.push_back(z3::implies(action_var, z3_precond.value()));
+            }
+        }
+        
+        // Create effect constraints: action_var => effects
+        if (!action.effects().empty()) {
+            std::vector<z3::expr> effect_exprs;
+            for (const Effect& effect : action.effects()) {
+                auto z3_effect = convert_effect_to_z3(effect.effect_expression(), t);
+                if (z3_effect.has_value()) {
+                    effect_exprs.push_back(z3_effect.value());
+                }
+            }
+            
+            if (!effect_exprs.empty()) {
+                z3::expr effect_conjunction = effect_exprs[0];
+                for (size_t i = 1; i < effect_exprs.size(); ++i) {
+                    effect_conjunction = effect_conjunction && effect_exprs[i];
+                }
+                // action_var => effect_conjunction
+                action_constraints.push_back(z3::implies(action_var, effect_conjunction));
+            }
+        }
+    }
+    
+    // Combine all action constraints with logical AND
+    if (action_constraints.empty()) {
+        auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
+        return expr;
+    }
+    
+    z3::expr big_and = action_constraints[0];
+    for (size_t i = 1; i < action_constraints.size(); ++i) {
+        big_and = big_and && action_constraints[i];
+    }
+    
+    return std::make_shared<z3::expr>(big_and);
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
@@ -103,8 +180,8 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
 }
 
 // Private helper methods
-z3::expr GroundedEncoder::get_fluent_var(const Fluent& fluent, const std::vector<Object>& params, int t) {
-    std::string var_name = get_smt_var_name(fluent, params, t);
+z3::expr GroundedEncoder::get_fluent_var(const Fluent& fluent, int t) {
+    std::string var_name = get_smt_var_name(fluent, t);
     
     // Ensure we have enough timesteps allocated
     while (static_cast<int>(state_vars_.size()) <= t) {
@@ -122,8 +199,8 @@ z3::expr GroundedEncoder::get_fluent_var(const Fluent& fluent, const std::vector
     return *(it->second);
 }
 
-z3::expr GroundedEncoder::get_action_var(const Action& action, const std::vector<Object>& params, int t) {
-    std::string var_name = get_smt_var_name(action, params, t);
+z3::expr GroundedEncoder::get_action_var(const Action& action, int t) {
+    std::string var_name = get_smt_var_name(action, t);
     
     // Ensure we have enough timesteps allocated
     while (static_cast<int>(action_vars_.size()) <= t) {
@@ -141,28 +218,30 @@ z3::expr GroundedEncoder::get_action_var(const Action& action, const std::vector
     return *(it->second);
 }
 
-std::string GroundedEncoder::get_smt_var_name(const Fluent& fluent, const std::vector<Object>& params) const {
+std::string GroundedEncoder::get_smt_var_name(const Fluent& fluent) const {
     std::string name = fluent.name();
-    for (const auto& param : params) {
+    // Add parameter values from the fluent's embedded parameters
+    for (const auto& param : fluent.parameters()) {
         name += "_" + param.name();
     }
     return name;
 }
 
-std::string GroundedEncoder::get_smt_var_name(const Fluent& fluent, const std::vector<Object>& params, int t) const {
-    return get_smt_var_name(fluent, params) + "_" + std::to_string(t);
+std::string GroundedEncoder::get_smt_var_name(const Fluent& fluent, int t) const {
+    return get_smt_var_name(fluent) + "_" + std::to_string(t);
 }
 
-std::string GroundedEncoder::get_smt_var_name(const Action& action, const std::vector<Object>& params) const {
+std::string GroundedEncoder::get_smt_var_name(const Action& action) const {
     std::string name = action.name();
-    for (const auto& param : params) {
+    // Add parameter values from the action's embedded parameters
+    for (const auto& param : action.parameters()) {
         name += "_" + param.name();
     }
     return name;
 }
 
-std::string GroundedEncoder::get_smt_var_name(const Action& action, const std::vector<Object>& params, int t) const {
-    return get_smt_var_name(action, params) + "_" + std::to_string(t);
+std::string GroundedEncoder::get_smt_var_name(const Action& action, int t) const {
+    return get_smt_var_name(action) + "_" + std::to_string(t);
 }
 
 z3::expr GroundedEncoder::create_typed_variable(const Fluent& fluent, const std::string& var_name) {

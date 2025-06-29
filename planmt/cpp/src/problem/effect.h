@@ -28,9 +28,8 @@ public:
     EffectExpression::Kind kind() const { return effect_expr_.kind(); }
     const Expression& fluent() const { return effect_expr_.fluent(); }
     const Expression& value() const { return effect_expr_.value(); }
-    bool has_condition() const { return effect_expr_.has_condition(); }
-    const Expression& condition() const { return effect_expr_.condition(); }
     bool is_conditional() const { return effect_expr_.is_conditional(); }
+    const Expression& condition() const { return effect_expr_.condition(); }
     bool is_quantified() const { return effect_expr_.is_quantified(); }
     
     // String representation

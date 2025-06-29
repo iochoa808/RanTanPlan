@@ -34,7 +34,11 @@ public:
     Kind kind() const { return kind_; }
     const Expression& fluent() const { return fluent_; }
     const Expression& value() const { return value_; }
-    bool has_condition() const { return condition_.has_value(); }
+    bool is_conditional() const { 
+        return condition_.has_value() && 
+               !(condition_->is_constant() && condition_->is_atom() && 
+                 condition_->value().is_boolean() && condition_->value().boolean() == true); 
+    }
     const Expression& condition() const { return condition_.value(); }
     const std::vector<Expression>& forall_variables() const { return forall_variables_; }
     
@@ -50,7 +54,6 @@ public:
     bool is_assign() const { return kind_ == Kind::ASSIGN; }
     bool is_increase() const { return kind_ == Kind::INCREASE; }
     bool is_decrease() const { return kind_ == Kind::DECREASE; }
-    bool is_conditional() const { return condition_.has_value(); }
     bool is_quantified() const { return !forall_variables_.empty(); }
     
     // String representation
