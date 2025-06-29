@@ -8,12 +8,8 @@ namespace planmt {
 
 // Constructor
 GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
-    : problem_(problem), ctx_(ctx), symbol_table_(), smt_visitor_(ctx_, symbol_table_, &problem_), grounded_visitor_(ctx_, this, &problem_) {
-    // Initialize storage for state and action variables
-    state_vars_.clear();
-    action_vars_.clear();
+    : problem_(problem), ctx_(ctx), variable_factory_(ctx), grounded_visitor_(ctx_, &problem_, &variable_factory_) {
     layers_encoded_ = -1;
-
     build_epc_index();
 }
 
@@ -92,7 +88,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
     std::vector<z3::expr> action_constraints;
     
     for (const Action& action : problem_.actions()) {
-        z3::expr action_var = get_action_var(action, t); 
+        z3::expr action_var = variable_factory_.get_action_variable(action, t); 
         
         // Create precondition constraints: action_var => precondition
         if (action.has_precondition()) {
@@ -177,113 +173,6 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
     // TODO: Implement parallelism constraints for timestep t
     auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
     return expr;
-}
-
-// Private helper methods
-z3::expr GroundedEncoder::get_fluent_var(const Fluent& fluent, int t) {
-    std::string var_name = get_smt_var_name(fluent, t);
-    
-    // Ensure we have enough timesteps allocated
-    while (static_cast<int>(state_vars_.size()) <= t) {
-        state_vars_.emplace_back();
-    }
-    
-    auto& timestep_vars = state_vars_[t];
-    auto it = timestep_vars.find(var_name);
-    if (it == timestep_vars.end()) {
-        // Create new variable with correct type based on fluent's value type
-        z3::expr new_var = create_typed_variable(fluent, var_name);
-        timestep_vars[var_name] = std::make_shared<z3::expr>(new_var);
-        return new_var;
-    }
-    return *(it->second);
-}
-
-z3::expr GroundedEncoder::get_action_var(const Action& action, int t) {
-    std::string var_name = get_smt_var_name(action, t);
-    
-    // Ensure we have enough timesteps allocated
-    while (static_cast<int>(action_vars_.size()) <= t) {
-        action_vars_.emplace_back();
-    }
-    
-    auto& timestep_vars = action_vars_[t];
-    auto it = timestep_vars.find(var_name);
-    if (it == timestep_vars.end()) {
-        // Create new variable using the visitor to ensure consistency
-        z3::expr new_var = smt_visitor_.create_bool_variable(var_name);
-        timestep_vars[var_name] = std::make_shared<z3::expr>(new_var);
-        return new_var;
-    }
-    return *(it->second);
-}
-
-std::string GroundedEncoder::get_smt_var_name(const Fluent& fluent) const {
-    std::string name = fluent.name();
-    // Add parameter values from the fluent's embedded parameters
-    for (const auto& param : fluent.parameters()) {
-        name += "_" + param.name();
-    }
-    return name;
-}
-
-std::string GroundedEncoder::get_smt_var_name(const Fluent& fluent, int t) const {
-    return get_smt_var_name(fluent) + "_" + std::to_string(t);
-}
-
-std::string GroundedEncoder::get_smt_var_name(const Action& action) const {
-    std::string name = action.name();
-    // Add parameter values from the action's embedded parameters
-    for (const auto& param : action.parameters()) {
-        name += "_" + param.name();
-    }
-    return name;
-}
-
-std::string GroundedEncoder::get_smt_var_name(const Action& action, int t) const {
-    return get_smt_var_name(action) + "_" + std::to_string(t);
-}
-
-z3::expr GroundedEncoder::create_typed_variable(const Fluent& fluent, const std::string& var_name) {
-    // Use the new type checking methods from Fluent class
-    if (fluent.is_bool_fluent()) {
-        // Boolean fluents (predicates)
-        return smt_visitor_.create_bool_variable(var_name);
-    } else if (fluent.is_int_fluent()) {
-        // Integer fluents
-        return smt_visitor_.create_int_variable(var_name);
-    } else if (fluent.is_real_fluent()) {
-        // Real fluents
-        return smt_visitor_.create_real_variable(var_name);
-    } else if (fluent.is_object_fluent()) {
-        // Object fluents are typically mapped to integers in SMT encoding
-        return smt_visitor_.create_int_variable(var_name);
-    } else {
-        // For unknown types, default to integer
-        return smt_visitor_.create_int_variable(var_name);
-    }
-}
-
-void GroundedEncoder::print_symbol_table(const std::string& context) const {
-    std::cout << "\n===== Symbol Table: " << context << " =====" << std::endl;
-    std::cout << "Total symbols: " << symbol_table_.size() << std::endl;
-    
-    if (symbol_table_.empty()) {
-        std::cout << "(empty)" << std::endl;
-    } else {
-        for (const auto& [name, z3_object] : symbol_table_) {
-            std::cout << "  " << name << " -> ";
-            if (std::holds_alternative<z3::expr>(z3_object)) {
-                const auto& expr = std::get<z3::expr>(z3_object);
-                std::cout << "expr: " << expr << " (sort: " << expr.get_sort() << ")";
-            } else if (std::holds_alternative<z3::func_decl>(z3_object)) {
-                const auto& func_decl = std::get<z3::func_decl>(z3_object);
-                std::cout << "func_decl: " << func_decl << " (arity: " << func_decl.arity() << ")";
-            }
-            std::cout << std::endl;
-        }
-    }
-    std::cout << "===== End Symbol Table =====" << std::endl << std::endl;
 }
 
 void GroundedEncoder::print_epc_index(const std::string& context) const {

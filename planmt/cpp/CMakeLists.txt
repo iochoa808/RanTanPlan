@@ -82,6 +82,7 @@ add_executable(planmt
     src/encoders/lifted_encoding_visitor.cpp
     src/encoders/grounded_encoding_visitor.cpp
     src/encoders/grounded_encoder.cpp
+    src/encoders/z3_variable_factory.cpp
     src/planners/sequential.cpp
 )
 

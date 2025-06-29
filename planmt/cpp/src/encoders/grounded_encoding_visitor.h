@@ -3,15 +3,16 @@
 #include "../problem/visitors/expression_visitor.h"
 #include "../problem/problem.h"
 #include "../problem/object.h"
+#include "z3_variable_factory.h"
 #include <z3++.h>
 #include <optional>
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace planmt {
 
 // Forward declarations
-class GroundedEncoder;
 class Fluent;
 
 /**
@@ -26,20 +27,21 @@ class Fluent;
  * - Fluent applications become individual variables (e.g., "located_plane1_city0_5") 
  *   instead of function calls (e.g., "(located plane1 city0 5)")
  * - Proper type support for Boolean, Integer, Real, and Object fluents
- * - Calls back to GroundedEncoder for variable creation to ensure consistency
+ * - Uses Z3VariableFactory for consistent variable creation and naming
  * - Supports temporal encoding through timestep parameters
  */
 class GroundedEncodingVisitor : public BaseExpressionVisitor {
 private:
     z3::context& ctx_;
-    GroundedEncoder* encoder_;
     const Problem* problem_;
     int current_timestep_;
     std::optional<z3::expr> result_;
+    Z3VariableFactory* variable_factory_;
     
 public:
     // Constructor
-    GroundedEncodingVisitor(z3::context& ctx, GroundedEncoder* encoder, const Problem* problem);
+    GroundedEncodingVisitor(z3::context& ctx, const Problem* problem, 
+                           Z3VariableFactory* factory);
     
     // BaseExpressionVisitor interface methods
     void visit_symbol(const std::string& symbol, Expression::Kind kind, const Type* type) override;

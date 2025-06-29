@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../problem/problem.h"
-#include "lifted_encoding_visitor.h"
 #include "grounded_encoding_visitor.h"
+#include "z3_variable_factory.h"
 #include <z3++.h>
 
 #include <vector>
@@ -25,9 +25,6 @@ public:
     std::shared_ptr<z3::expr> encode_goal(int t);    // Encodes goal conditions at layer_idx
     std::shared_ptr<z3::expr> encode_parallelism(int t); // Encodes parallelism semantics
 
-    // Public method for getting fluent variables (used by GroundedEncodingVisitor)
-    z3::expr get_fluent_var(const Fluent& fluent, int t);
-
 private:
     // Helper function to convert expression to Z3 using visitor
     std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1);
@@ -35,41 +32,15 @@ private:
     // Helper function to convert effect to Z3 constraint using visitor
     std::optional<z3::expr> convert_effect_to_z3(const EffectExpression& effect, int timestep);
     
-    // Helper function to print symbol table for debugging
-    void print_symbol_table(const std::string& context) const;
-    
     // Helper function to print EPC index for debugging
     void print_epc_index(const std::string& context) const;
-
-    // Gets or creates a Z3 variable for an action at a specific step
-    z3::expr get_action_var(const Action& action, int t);
-
-    // Creates a unique base string representation for vars
-    std::string get_smt_var_name(const Fluent& fluent) const;
-    std::string get_smt_var_name(const Fluent& fluent, int t) const;
-    std::string get_smt_var_name(const Action& action) const;
-    std::string get_smt_var_name(const Action& action, int t) const;
-    
-    // Helper method to create correctly typed variables based on fluent definitions
-    z3::expr create_typed_variable(const Fluent& fluent, const std::string& var_name);
     
     // Member variables
     const Problem& problem_; // The planning problem instance
     z3::context& ctx_;       // Z3 context (shared)
+    Z3VariableFactory variable_factory_; // Factory for creating and managing Z3 variables
 
-    SymbolTable symbol_table_; // Unified symbol table for Z3 variables and functions
-    LiftedEncodingVisitor smt_visitor_; // SMT encoding visitor (reused across methods)
     GroundedEncodingVisitor grounded_visitor_; // Grounded encoding visitor for individual variables
-    
-    // Storage for SMT variables - outer vector is indexed by timestep. Inner map's key is the base name.
-
-    // state_vars_[0]["at_airplane1_city1"] -> z3::expr(bool variable for fluent at timestep 0)
-    // state_vars_[1]["fuel_airplane1_10"] -> z3::expr(int variable for fluent at timestep 1)
-    std::vector<std::unordered_map<std::string, std::shared_ptr<z3::expr>>> state_vars_; // for fluent and extra stuff
-
-    // action_vars_[0]["move_airplane1_city1_city2"] -> z3::expr(bool variable for action at timestep 0)
-    // action_vars_[1]["load_package1_airplane1_city1"] -> z3::expr(bool variable for action at timestep 1)
-    std::vector<std::unordered_map<std::string, std::shared_ptr<z3::expr>>> action_vars_;
 
     // Indices for the frame axioms
 

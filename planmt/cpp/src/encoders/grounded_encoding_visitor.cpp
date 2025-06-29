@@ -1,5 +1,5 @@
 #include "grounded_encoding_visitor.h"
-#include "grounded_encoder.h"
+#include "z3_variable_factory.h"
 #include "../problem/fluent.h"
 #include "../problem/effect_expression.h"
 #include <iostream>
@@ -7,31 +7,16 @@
 namespace planmt {
 
 GroundedEncodingVisitor::GroundedEncodingVisitor(z3::context& ctx, 
-                                                 GroundedEncoder* encoder,
-                                                 const Problem* problem)
-    : ctx_(ctx), encoder_(encoder), problem_(problem), current_timestep_(-1) {}
+                                                 const Problem* problem,
+                                                 Z3VariableFactory* factory)
+    : ctx_(ctx), problem_(problem), current_timestep_(-1), 
+      variable_factory_(factory) {}
 
 void GroundedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, const Type* type) {
-    // For symbols, we create a variable or constant based on the type
-    if (!type) {
-        // For unknown types, default to integer
-        result_ = ctx_.int_const(symbol.c_str());
-        return;
-    }
-    
-    if (type->is_bool()) {
-        result_ = ctx_.bool_const(symbol.c_str());
-    } else if (type->is_int()) {
-        result_ = ctx_.int_const(symbol.c_str());
-    } else if (type->is_real()) {
-        result_ = ctx_.real_const(symbol.c_str());
-    } else if (type->is_object()) {
-        // Objects are typically mapped to integers in SMT encoding
-        result_ = ctx_.int_const(symbol.c_str());
-    } else {
-        // For unknown types, default to integer
-        result_ = ctx_.int_const(symbol.c_str());
-    }
+    std::cout << "Visiting symbol: " << symbol << ", kind: " << static_cast<int>(kind) << ", type: " << (type ? type->name() : "null") << std::endl;
+    // Use the factory to create symbol variables with proper types
+    // Note: kind is not used in grounded encoding since all symbols become constants
+    result_ = variable_factory_->create_symbol_variable(symbol, type);
 }
 
 void GroundedEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) {
@@ -125,11 +110,6 @@ void GroundedEncodingVisitor::visit_function_application(const std::string& func
 void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent_name,
                                                      const std::vector<Expression>& args,
                                                      Expression::Kind kind) {
-    if (!encoder_) {
-        std::cerr << "Error: No GroundedEncoder available for fluent application" << std::endl;
-        return;
-    }
-
     // Find the fluent definition
     const Fluent* fluent_def = nullptr;
     for (const auto& fluent : problem_->fluents()) {
@@ -174,8 +154,8 @@ void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent
     // Use current timestep if available, otherwise use 0
     int timestep = (current_timestep_ >= 0) ? current_timestep_ : 0;
     
-    // Get the grounded variable from the encoder
-    result_ = encoder_->get_fluent_var(grounded_fluent, timestep);
+    // Create the variable using the factory's get_fluent_variable method
+    result_ = variable_factory_->get_fluent_variable(grounded_fluent, timestep);
 }
 
 void GroundedEncodingVisitor::visit_list(const std::vector<Expression>& elements, Expression::Kind kind) {
