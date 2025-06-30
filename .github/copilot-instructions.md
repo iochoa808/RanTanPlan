@@ -58,6 +58,13 @@ The project is structured as follows:
 5. Python reads result and converts back to Unified Planning format
 
 ## Building
+
+The project has a virtual environment that is used to build and run the project.
+To activate the virtual environment, you can run the following command:
+```bash
+source .venv/bin/activate
+```
+
 The build system uses cmake, but needs some variables to find the Z3 libraries for it to work correctly.
 Therefore, from the root of the project, you can run the following command to build the project: `python build.py`
 The `python build.py --clean` command cleans the build and builds from scratch.

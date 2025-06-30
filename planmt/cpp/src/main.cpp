@@ -25,7 +25,7 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
 
     // Instantiate the encoder/planner combination
     planmt::GroundedEncoder encoder(problem, ctx);
-    planmt::SequentialPlanner planner(problem, encoder);
+    planmt::SequentialPlanner planner(problem, encoder, ctx);
 
     // TODO: Call planner.search() and populate the actual result based on the search outcome.
     // For now, returning a placeholder result.

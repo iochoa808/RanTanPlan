@@ -181,3 +181,4 @@ planmt/cpp/build
 planmt/bin/planmt
 test_problem.pb
 output_solution.pb
+output.smt2

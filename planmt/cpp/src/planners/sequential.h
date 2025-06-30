@@ -10,7 +10,7 @@ namespace planmt {
 class SequentialPlanner {
 public:
     // Constructor
-    SequentialPlanner(const Problem& problem, GroundedEncoder& encoder);
+    SequentialPlanner(const Problem& problem, GroundedEncoder& encoder, z3::context& ctx);
 
     // TODO - returns a plan
     void search();
@@ -18,6 +18,7 @@ public:
 private:
     const Problem& problem_;
     GroundedEncoder& encoder_;
+    z3::context& ctx_;
 };
 
 } // namespace planmt
