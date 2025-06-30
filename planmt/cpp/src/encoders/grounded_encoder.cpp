@@ -110,10 +110,12 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
             }
             
             if (!effect_exprs.empty()) {
-                z3::expr effect_conjunction = effect_exprs[0];
-                for (size_t i = 1; i < effect_exprs.size(); ++i) {
-                    effect_conjunction = effect_conjunction && effect_exprs[i];
+                // Create a flat conjunction using Z3's mk_and function
+                z3::expr_vector effect_vector(ctx_);
+                for (const auto& expr : effect_exprs) {
+                    effect_vector.push_back(expr);
                 }
+                z3::expr effect_conjunction = z3::mk_and(effect_vector);
                 // action_var => effect_conjunction
                 action_constraints.push_back(z3::implies(action_var, effect_conjunction));
             }
@@ -126,18 +128,74 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
         return expr;
     }
     
-    z3::expr big_and = action_constraints[0];
-    for (size_t i = 1; i < action_constraints.size(); ++i) {
-        big_and = big_and && action_constraints[i];
+    // Create a flat conjunction using Z3's mk_and function
+    z3::expr_vector constraint_vector(ctx_);
+    for (const auto& constraint : action_constraints) {
+        constraint_vector.push_back(constraint);
     }
+    z3::expr big_and = z3::mk_and(constraint_vector);
     
     return std::make_shared<z3::expr>(big_and);
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
-    // TODO: Implement frame axioms encoding for timestep t
-    auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
-    return expr;
+    std::vector<z3::expr> frame_axioms;
+    
+    // Iterate through all fluents in the EPC index
+    for (const auto& [fluent, action_effects] : epc_index_) {
+        // Get fluent variables at timesteps t and t+1
+        auto fluent_t = convert_expression_to_z3(fluent, t);
+        auto fluent_t_plus_1 = convert_expression_to_z3(fluent, t + 1);
+        
+        // Create the "fluent changed" condition: fluent^t != fluent^(t+1)
+        z3::expr fluent_changed = (*fluent_t != *fluent_t_plus_1);
+        
+        // Build disjunction of all actions that can cause this change
+        std::vector<z3::expr> action_terms;
+        
+        for (const auto& [action, effect_expr] : action_effects) {
+            // Get the action variable at timestep t
+            z3::expr action_var = variable_factory_.get_action_variable(*action, t);
+            
+            // For conditional effects: action_var && condition
+            if (effect_expr->is_conditional()) {
+                auto condition_z3 = convert_expression_to_z3(effect_expr->condition(), t);
+                action_terms.push_back(action_var && *condition_z3); // condition /\ action_var
+            } else {
+                action_terms.push_back(action_var); // For unconditional effects: just the action variable
+            }
+        }
+        
+        // Create the action disjunction
+        z3::expr action_disjunction = ctx_.bool_val(false);
+        if (!action_terms.empty()) {
+            // Create a flat disjunction using Z3's mk_or function
+            z3::expr_vector action_vector(ctx_);
+            for (const auto& term : action_terms) {
+                action_vector.push_back(term);
+            }
+            action_disjunction = z3::mk_or(action_vector);
+        }
+        
+        // Create the frame axiom: fluent_changed -> action_disjunction
+        // This is equivalent to: (fluent^t != fluent^(t+1)) -> (a1 || (epc2 && a2) || a3 || ...)
+        z3::expr frame_axiom = z3::implies(fluent_changed, action_disjunction);
+        frame_axioms.push_back(frame_axiom);
+    }
+    
+    // Combine all frame axioms with logical AND
+    if (frame_axioms.empty()) {
+        auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
+        return expr;
+    }
+    
+    // Create a flat conjunction using Z3's mk_and function
+    z3::expr_vector frame_vector(ctx_);
+    for (const auto& axiom : frame_axioms) {
+        frame_vector.push_back(axiom);
+    }
+    z3::expr big_and = z3::mk_and(frame_vector);
+    return std::make_shared<z3::expr>(big_and);
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
@@ -162,10 +220,16 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
         }
     }
     // Combine all goal formulas with logical AND
-    z3::expr goal_conjunction = goal_formulas[0];
-    for (size_t i = 1; i < goal_formulas.size(); ++i) {
-        goal_conjunction = goal_conjunction && goal_formulas[i];
+    if (goal_formulas.empty()) {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
     }
+    
+    // Create a flat conjunction using Z3's mk_and function
+    z3::expr_vector goal_vector(ctx_);
+    for (const auto& goal : goal_formulas) {
+        goal_vector.push_back(goal);
+    }
+    z3::expr goal_conjunction = z3::mk_and(goal_vector);
     return std::make_shared<z3::expr>(goal_conjunction);
 }
 
