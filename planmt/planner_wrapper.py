@@ -1,10 +1,10 @@
 from typing import Callable, IO, Optional
 
 import unified_planning as up
-from unified_planning.shortcuts import Fraction
+from unified_planning.shortcuts import Fraction, PlanValidator
 from unified_planning.engines.results import PlanGenerationResult, LogMessage, LogLevel
 from unified_planning.engines.mixins import OneshotPlannerMixin
-from unified_planning.engines import PlanGenerationResultStatus, Engine, CompilationKind
+from unified_planning.engines import PlanGenerationResultStatus, Engine, CompilationKind, ValidationResultStatus
 from unified_planning.engines.compilers import Grounder
 from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
@@ -116,6 +116,38 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         finally:
             if pipe:
                 pipe.close()
+
+    def _validate_plan(self, problem: Problem, plan: SequentialPlan) -> bool:
+        """
+        Validate a plan against the problem using Unified Planning's PlanValidator.
+        
+        Args:
+            problem: The original problem (not grounded)
+            plan: The plan to validate (should be mapped back to the original problem)
+            
+        Returns:
+            bool: True if the plan is valid, False otherwise
+        """
+        try:
+            with PlanValidator(problem_kind=problem.kind, plan_kind=plan.kind) as validator:
+                validation_result = validator.validate(problem, plan)
+                
+                if validation_result.status == ValidationResultStatus.VALID:
+                    print("Plan validation: VALID")
+                    print(f"  The plan with {len(plan.actions)} actions is correct and executable.")
+                    return True
+                else:
+                    print(f"Plan validation: {validation_result.status.name}")
+                    if validation_result.log_messages:
+                        for log_msg in validation_result.log_messages:
+                            print(f"  Validation {log_msg.level.name}: {log_msg.message}")
+                    else:
+                        print("  No detailed validation messages available.")
+                    return False
+                    
+        except Exception as e:
+            print(f"Plan validation failed with error: {e}")
+            return False
 
     def _initialize_fluents(self, task: Problem):
         """
@@ -268,11 +300,28 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             print(f"Plan found (after mapping): {final_plan is not None}")
             print(f"Status from planner: {result_from_protobuf.status.name}")
 
+            # Validate the plan if one was found
+            if final_plan is not None and result_from_protobuf.status == PlanGenerationResultStatus.SOLVED_SATISFICING:
+                print("Validating plan...")
+                plan_is_valid = self._validate_plan(problem, final_plan)
+                
+                if not plan_is_valid:
+                    # If plan validation fails, log it but still return the plan with a warning
+                    validation_log = LogMessage(
+                        level=LogLevel.WARNING, 
+                        message="Plan validation failed - the plan may not be correct"
+                    )
+                    result_log_messages = list(result_from_protobuf.log_messages) + [validation_log]
+                else:
+                    result_log_messages = result_from_protobuf.log_messages
+            else:
+                result_log_messages = result_from_protobuf.log_messages
+
             return PlanGenerationResult(
                 result_from_protobuf.status,
                 final_plan,
                 self.name,
-                log_messages=result_from_protobuf.log_messages,
+                log_messages=result_log_messages,
                 metrics=result_from_protobuf.metrics
             )
 
