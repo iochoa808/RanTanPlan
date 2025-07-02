@@ -76,6 +76,7 @@ add_executable(planmt
     src/problem/goal.cpp
     src/problem/assignment.cpp
     src/problem/action.cpp
+    src/problem/plan.cpp
     src/problem/problem.cpp
     src/problem/type.cpp
     src/problem/visitors/expression_visitor.cpp

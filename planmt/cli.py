@@ -189,20 +189,25 @@ def print_result(result, args):
     plan_found = result.plan is not None
     
     if plan_found:
-        print(f"Plan found with {len(result.plan.actions)} actions:")
-        
-        for i, action_instance in enumerate(result.plan.actions):
-            params_str = ", ".join(map(str, action_instance.actual_parameters))
-            print(f"  {i+1}. {action_instance.action.name}({params_str})")
+        if hasattr(result.plan, 'actions'):
+            # Sequential plan
+            print(f"Plan found with {len(result.plan.actions)} actions:")
+            for i, action_instance in enumerate(result.plan.actions):
+                params_str = ", ".join(map(str, action_instance.actual_parameters))
+                print(f"  {i+1}. {action_instance.action.name}({params_str})")
+        else:
+            print("Plan found but format not recognized")
+            print(f"Plan: {result.plan}")
         
         # Save plan to file if requested
         if args.output_plan:
             try:
                 with open(args.output_plan, 'w') as f:
                     f.write(f"Plan for problem (status: {result.status}):\n")
-                    for i, action_instance in enumerate(result.plan.actions):
-                        params_str = ", ".join(map(str, action_instance.actual_parameters))
-                        f.write(f"{i+1}. {action_instance.action.name}({params_str})\n")
+                    if hasattr(result.plan, 'actions'):
+                        for i, action_instance in enumerate(result.plan.actions):
+                            params_str = ", ".join(map(str, action_instance.actual_parameters))
+                            f.write(f"{i+1}. {action_instance.action.name}({params_str})\n")
                 print(f"Plan saved to: {args.output_plan}")
             except Exception as e:
                 print(f"Warning: Could not save plan to file: {e}")

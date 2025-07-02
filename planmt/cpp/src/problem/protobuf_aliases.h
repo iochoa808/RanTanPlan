@@ -14,6 +14,7 @@
 namespace pb {
     // Core protobuf types
     using Action = ::Action;
+    using ActionInstance = ::ActionInstance;
     using Effect = ::Effect;
     using EffectExpression = ::EffectExpression;
     using Expression = ::Expression;
@@ -23,6 +24,7 @@ namespace pb {
     using Goal = ::Goal;
     using Assignment = ::Assignment;
     using Problem = ::Problem;
+    using Plan = ::Plan;
     using ObjectDeclaration = ::ObjectDeclaration;
     using TypeDeclaration = ::TypeDeclaration;
     

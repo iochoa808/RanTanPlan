@@ -85,3 +85,7 @@ Other test domains available:
 - `pddl/rover/` - Mars rover planning
 - `pddl/satellite/` - Satellite observation scheduling  
 - `pddl/scanalyzer-3d-sequential-optimal-strips/` - Assembly line optimization
+
+## Code Examples
+Z3 C++ API: https://z3prover.github.io/api/html/namespacez3.html
+Z3 C++ header: https://github.com/Z3Prover/z3/blob/master/src/api/c%2B%2B/z3%2B%2B.h

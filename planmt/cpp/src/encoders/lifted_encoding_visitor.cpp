@@ -30,8 +30,8 @@ void LiftedEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) 
 }
 
 void LiftedEncodingVisitor::visit_real(const Real& value, Expression::Kind kind) {
-    // Convert real to Z3 rational
-    result_ = ctx_.real_val(value.numerator(), value.denominator());
+    // Convert real to Z3 rational using string representation
+    result_ = ctx_.real_val(value.to_string().c_str());
 }
 
 void LiftedEncodingVisitor::visit_boolean(bool value, Expression::Kind kind) {

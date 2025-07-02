@@ -24,6 +24,9 @@ public:
     std::shared_ptr<z3::expr> encode_frames(int t); // Encodes frame axioms for layer_idx to layer_idx+1
     std::shared_ptr<z3::expr> encode_goal(int t);    // Encodes goal conditions at layer_idx
     std::shared_ptr<z3::expr> encode_parallelism(int t); // Encodes parallelism semantics
+    
+    // Access to variable factory for plan extraction
+    Z3VariableFactory& get_variable_factory() { return variable_factory_; }
 
 private:
     // Helper function to convert expression to Z3 using visitor

@@ -27,11 +27,27 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     planmt::GroundedEncoder encoder(problem, ctx);
     planmt::SequentialPlanner planner(problem, encoder, ctx);
 
-    // TODO: Call planner.search() and populate the actual result based on the search outcome.
-    // For now, returning a placeholder result.
-    planner.search();
+    // Call planner.search() and get the result
+    planmt::Plan plan = planner.search();
     
-    result.set_status(PlanGenerationResult_Status_UNSOLVABLE_INCOMPLETELY);
+    if (!plan.is_empty()) {
+        // Plan found - populate the result
+        result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
+        
+        // Convert plan to protobuf and set it in the result
+        *result.mutable_plan() = plan.to_protobuf();
+        
+        log_message = result.add_log_messages();
+        log_message->set_level(LogMessage_LogLevel_INFO);
+        log_message->set_message("Plan found with " + std::to_string(plan.length()) + " actions.");
+    } else {
+        // No plan found
+        result.set_status(PlanGenerationResult_Status_UNSOLVABLE_INCOMPLETELY);
+        log_message = result.add_log_messages();
+        log_message->set_level(LogMessage_LogLevel_INFO);
+        log_message->set_message("No plan found within the search limit.");
+    }
+    
     log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
     log_message->set_message("Finished solving the problem.");

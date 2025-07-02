@@ -1,13 +1,18 @@
-import unified_planning as up
 from typing import Callable, IO, Optional
+
+import unified_planning as up
+from unified_planning.shortcuts import Fraction
 from unified_planning.engines.results import PlanGenerationResult, LogMessage, LogLevel
 from unified_planning.engines.mixins import OneshotPlannerMixin
-from unified_planning.engines import PlanGenerationResultStatus, Engine, CompilationKind # Added CompilationKind
-from unified_planning.engines.compilers import Grounder # Added Grounder
+from unified_planning.engines import PlanGenerationResultStatus, Engine, CompilationKind
+from unified_planning.engines.compilers import Grounder
 from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.exceptions import UPException
-from unified_planning.model import ProblemKind
+from unified_planning.model import ProblemKind, Problem
+from unified_planning.plans import SequentialPlan, ActionInstance
+from unified_planning.shortcuts import get_environment
+from unified_planning.model.fluent import get_all_fluent_exp
 import unified_planning.grpc.generated.unified_planning_pb2 as up_pb2
 
 import subprocess
@@ -119,10 +124,59 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             output_stream.write(f"{message}\n")
             output_stream.flush()
 
-    def _solve(self, problem: 'up.model.Problem',
-              callback: Optional[Callable[['up.engines.PlanGenerationResult'], None]] = None,
+    def _initialize_fluents(self, task: Problem):
+        """
+        Initialize the int and real fluents of a given task with a default value of 0.
+        Any Boolean fluent is initialized with a default value of False.
+        Args:
+            task (Problem): The UP task object
+        Updates:
+            task.initial_defaults: Adds default values for real and integer types.
+            task.explicit_initial_values: Sets initial values for uninitialized fluents.
+        """
+        # update the initial defaults to account for real and integer types.
+        _env = get_environment()
+        _tm = _env.type_manager
+        _em = _env.expression_manager
+        task.initial_defaults.update({_tm.RealType():_em.Real(Fraction(0))})
+        task.initial_defaults.update({_tm.IntType() :_em.Int(0)})
+        task.initial_defaults.update({_tm.BoolType() :_em.Bool(False)})
+
+        # Get all fluent expressions from the problem and flatten into a single list
+        all_fluent_expressions = []
+        for fluent in task.fluents:
+            fluent_expressions = list(get_all_fluent_exp(task, fluent))
+            all_fluent_expressions.extend(fluent_expressions)
+        fluentslist = all_fluent_expressions
+
+        # now lets separate the initialized and uninitialized fluents.
+        initialized_fluents  = list(task.explicit_initial_values.keys())
+        unintialized_fluents = list(filter(lambda x: not x in initialized_fluents, fluentslist))
+        
+        # Check for real or integer fluents being initialized to 0 and issue warning
+        real_int_fluents_to_init = []
+        for fe in unintialized_fluents:
+            if fe.type == _tm.RealType() or fe.type == _tm.IntType():
+                real_int_fluents_to_init.append(fe)
+        
+        if real_int_fluents_to_init:
+            fluent_names = [str(f) for f in real_int_fluents_to_init]
+            print(f"WARNING: Initializing {len(real_int_fluents_to_init)} real/integer fluents to 0: {', '.join(fluent_names)}")
+            print("         This is not semantically correct but is done in practice for planning purposes.")
+        
+        # update the initial values for the fluents that are not initialized.
+        for fe in unintialized_fluents:
+            task.set_initial_value(fe, task.initial_defaults[fe.type]) 
+
+
+    def _solve(self, problem: Problem,
+              callback: Optional[Callable[[PlanGenerationResult], None]] = None,
               timeout: Optional[float] = None,
-              output_stream: Optional[IO[str]] = None) -> 'up.engines.PlanGenerationResult':
+              output_stream: Optional[IO[str]] = None) -> PlanGenerationResult:
+
+        # initialise all fluents that are not set in the initial state so we do not have to deal with
+        # uninitialized fluents in the C++ planner.
+        self._initialize_fluents(problem) 
 
         # TODO: implement a sequence of compiler applications depending on the problem kind and encoder capabilities
         self._log_to_stream(output_stream, "Starting grounding process.")
@@ -133,10 +187,13 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
 
         pb_problem_msg = self._writer.convert(grounded_problem)
 
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=".pb", delete=False) as problem_file, \
-             tempfile.NamedTemporaryFile(mode="rb", suffix=".pb", delete=False) as solution_file:
-            problem_filepath = problem_file.name
-            solution_filepath = solution_file.name
+        # Create temporary files for problem and solution
+        problem_file = tempfile.NamedTemporaryFile(suffix=".pb", delete=False)
+        solution_file = tempfile.NamedTemporaryFile(suffix=".pb", delete=False)
+        problem_filepath = problem_file.name
+        solution_filepath = solution_file.name
+        problem_file.close()
+        solution_file.close()
 
         try:
             # Write problem to file
@@ -178,21 +235,23 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
 
             final_plan = None
             if result_from_protobuf.plan:
-                self._log_to_stream(output_stream, "Mapping plan back to original problem.")
                 try:
-                    final_plan = grounding_result.map_back_plan(result_from_protobuf.plan, problem)
-                    self._log_to_stream(output_stream, "Plan mapping complete.")
+                    new_actions: list[ActionInstance] = []
+                    for ai in result_from_protobuf.plan.actions:
+                        mapped_ai = grounding_result.map_back_action_instance(ai)
+                        assert mapped_ai is not None
+                        new_actions.append(mapped_ai)
+                    final_plan = SequentialPlan(new_actions)
                 except Exception as e:
                     self._log_to_stream(output_stream, f"Error mapping plan back: {e}")
                     all_log_messages.append(LogMessage(level=LogLevel.ERROR, message=f"Error mapping plan back: {e}"))
-                    # Depending on severity, might change status or return error
                     return PlanGenerationResult(
                         PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
                         log_messages=all_log_messages
                     )
             
             self._log_to_stream(output_stream, f"Plan found (after mapping): {final_plan is not None}")
-            self._log_to_stream(output_stream, f"Status from planner: {result_from_protobuf.status}")
+            self._log_to_stream(output_stream, f"Status from planner: {result_from_protobuf.status.name}")
 
             return PlanGenerationResult(
                 result_from_protobuf.status,

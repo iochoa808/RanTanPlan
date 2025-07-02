@@ -65,79 +65,82 @@ std::optional<z3::expr> GroundedEncoder::convert_effect_to_z3(const EffectExpres
     return effect_constraint;
 }
 
-// Encoding steps
+/**
+ * @brief Encodes the initial state constraints at timestep 0
+ * 
+ * Note: The Python side takes responsibility for initializing all fluents 
+ * with default values, so here we can just iterate over the initial state.
+ */
 std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
-    z3::expr initial_state_formula = ctx_.bool_val(true);
+   z3::expr_vector initial_state(ctx_);
     
     // Process each assignment in the initial state at timestep 0
     for (const auto& assignment : problem_.initial_state()) {
         auto fluent_expr = convert_expression_to_z3(assignment.fluent(), 0);
         auto value_expr = convert_expression_to_z3(assignment.value(), 0);
-        
-        if (!fluent_expr || !value_expr) {
-            std::cerr << "Error: Failed to encode assignment in initial state" << std::endl;
-            continue;
-        }
-        // Create and add equality constraint: fluent = value
-        initial_state_formula = initial_state_formula && (*fluent_expr == *value_expr);
+        initial_state.push_back(*fluent_expr == *value_expr);
     }
+    
+    // Combine all initial state constraints with logical AND
+    if (initial_state.empty()) {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    }
+    z3::expr initial_state_formula = z3::mk_and(initial_state);
     return std::make_shared<z3::expr>(initial_state_formula);
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
-    std::vector<z3::expr> action_constraints;
-    
+    z3::expr_vector action_constraints(ctx_);
+
     for (const Action& action : problem_.actions()) {
         z3::expr action_var = variable_factory_.get_action_variable(action, t); 
         
-        // Create precondition constraints: action_var => precondition
-        if (action.has_precondition()) {
-            auto z3_precond = convert_expression_to_z3(action.precondition(), t);
-            if (z3_precond.has_value()) {
-                // action_var => precondition
-                action_constraints.push_back(z3::implies(action_var, z3_precond.value()));
-            }
-        }
-        
-        // Create effect constraints: action_var => effects
+        // if the action has no effects, we skip it as it cannot change any fluents
         if (!action.effects().empty()) {
-            std::vector<z3::expr> effect_exprs;
+
+            // Create precondition constraints: action_var => precondition
+            if (action.has_precondition()) {
+                std::optional<z3::expr> z3_precond = convert_expression_to_z3(action.precondition(), t);
+                action_constraints.push_back(z3::implies(action_var, z3_precond.value())); // we assume precondition is valid
+            }
+        
+            // Create effect constraints: action_var => effects
+            z3::expr_vector effect_exprs(ctx_);
             for (const Effect& effect : action.effects()) {
                 auto z3_effect = convert_effect_to_z3(effect.effect_expression(), t);
                 if (z3_effect.has_value()) {
                     effect_exprs.push_back(z3_effect.value());
                 }
             }
-            
-            if (!effect_exprs.empty()) {
-                // Create a flat conjunction using Z3's mk_and function
-                z3::expr_vector effect_vector(ctx_);
-                for (const auto& expr : effect_exprs) {
-                    effect_vector.push_back(expr);
-                }
-                z3::expr effect_conjunction = z3::mk_and(effect_vector);
-                // action_var => effect_conjunction
-                action_constraints.push_back(z3::implies(action_var, effect_conjunction));
-            }
+            z3::expr effect_conjunction = z3::mk_and(effect_exprs);
+            // action_var => effect_conjunction
+            action_constraints.push_back(z3::implies(action_var, effect_conjunction));
         }
     }
     
-    // Combine all action constraints with logical AND
+    // Combine all action constraints. Can't see why we could have no actions, but handle it gracefully.
     if (action_constraints.empty()) {
         auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
         return expr;
     }
-    
-    // Create a flat conjunction using Z3's mk_and function
-    z3::expr_vector constraint_vector(ctx_);
-    for (const auto& constraint : action_constraints) {
-        constraint_vector.push_back(constraint);
-    }
-    z3::expr big_and = z3::mk_and(constraint_vector);
-    
-    return std::make_shared<z3::expr>(big_and);
+    return std::make_shared<z3::expr>(z3::mk_and(action_constraints));
 }
 
+/**
+ * @brief Encodes frame axioms for a specific time step
+ *
+ * Frame axioms ensure that fluents only change when explicitly caused by
+ * actions.  For each fluent in the EPC index, adds a constraint that says: "if a
+ * fluent changes between time t and t+1, then at least one action that can
+ * cause this change must be executed at time t".
+ *
+ * (at_robot_A^t != at_robot_A^(t+1)) -> (move_A_to_B^t || (Effect_precondition^t && conditional_action^t))
+ *
+ * @param t The current time step for which to encode frame axioms
+ * @return A shared pointer to a Z3 expression representing the conjunction of all frame
+ * axioms for the transition from time t to t+1. Returns true if no fluents
+ * exist in the EPC index.
+ */
 std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
     std::vector<z3::expr> frame_axioms;
     
@@ -214,7 +217,6 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
         auto z3_goal = convert_expression_to_z3(goal.goal_expression(), t);
         if (z3_goal) {
             goal_formulas.push_back(*z3_goal);
-            std::cout << "Goal encoded: " << *z3_goal << std::endl;
         } else {
             std::cerr << "Error: Failed to encode goal expression: " << goal.to_string() << std::endl;
         }
@@ -234,9 +236,23 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
-    // TODO: Implement parallelism constraints for timestep t
-    auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
-    return expr;
+    // Create a vector of all action variables at timestep t
+    z3::expr_vector action_vars(ctx_);
+    for (const Action& action : problem_.actions()) {
+        z3::expr action_var = variable_factory_.get_action_variable(action, t);
+        action_vars.push_back(action_var);
+    }
+    
+    if (action_vars.empty()) {
+        // If no actions exist, return true (vacuously satisfied)
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    }
+    
+    // Create pseudo-boolean constraint: exactly 1 action is true
+    // Use Z3's dedicated pseudo-boolean equality constraint with all coefficients = 1
+    std::vector<int> coeffs(action_vars.size(), 1);
+    z3::expr exactly_one = z3::pbeq(action_vars, coeffs.data(), 1);
+    return std::make_shared<z3::expr>(exactly_one);
 }
 
 void GroundedEncoder::print_epc_index(const std::string& context) const {
