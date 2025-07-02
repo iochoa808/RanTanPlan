@@ -15,7 +15,7 @@
 #include "z3++.h"
 
 // Function to print the complete planning problem structure using enhanced planning classes
-PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
+PlanGenerationResult solve_planning_problem(const planmt::Problem& problem, const std::string& parallelism_strategy = "sequential") {
     PlanGenerationResult result;
     auto* log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
@@ -25,6 +25,19 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
 
     // Instantiate the encoder/planner combination
     planmt::GroundedEncoder encoder(problem, ctx);
+    
+    // Set parallelism strategy based on parameter
+    if (parallelism_strategy == "forall") {
+        encoder.set_parallelism_strategy(planmt::GroundedEncoder::ParallelismType::FORALL);
+    } else if (parallelism_strategy == "exists") {
+        encoder.set_parallelism_strategy(planmt::GroundedEncoder::ParallelismType::EXISTS);
+    } else {
+        // Default to sequential (including "sequential" and any invalid input)
+        encoder.set_parallelism_strategy(planmt::GroundedEncoder::ParallelismType::SEQUENTIAL);
+    }
+    
+    std::cout << "Using parallelism strategy: " << encoder.get_parallelism_strategy_name() << std::endl;
+    
     planmt::SequentialPlanner planner(problem, encoder, ctx);
 
     // Call planner.search() and get the result
@@ -57,9 +70,16 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
 int main(int argc, char* argv[]) {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <input_problem.pb> <output_solution.pb>" << std::endl;
+    if (argc < 3 || argc > 4) {
+        std::cerr << "Usage: " << argv[0] << " <input_problem.pb> <output_solution.pb> [parallelism_strategy]" << std::endl;
+        std::cerr << "  parallelism_strategy: sequential (default), forall, or exists" << std::endl;
         return 1;
+    }
+
+    // Get parallelism strategy (optional third argument)
+    std::string parallelism_strategy = "sequential"; // default
+    if (argc == 4) {
+        parallelism_strategy = argv[3];
     }
 
     // Read the problem from the input file
@@ -74,8 +94,8 @@ int main(int argc, char* argv[]) {
     planmt::Problem planning_problem(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
 
-    // Solve the planning problem
-    PlanGenerationResult result = solve_planning_problem(planning_problem);
+    // Solve the planning problem with the specified parallelism strategy
+    PlanGenerationResult result = solve_planning_problem(planning_problem, parallelism_strategy);
 
     // Write the result to the output file
     std::fstream output(argv[2], std::ios::out | std::ios::trunc | std::ios::binary);

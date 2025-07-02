@@ -3,6 +3,7 @@
 #include "../problem/problem.h"
 #include "grounded_encoding_visitor.h"
 #include "z3_variable_factory.h"
+#include "parallelism_strategy.h"
 #include <z3++.h>
 
 #include <vector>
@@ -13,8 +14,20 @@
 // This class is able to handle the encoding of grounded fluents and actions.
 namespace planmt {
 
+// Forward declarations
+class SequentialSemantics;
+class ForallSemantics; 
+class ExistsSemantics;
+
 class GroundedEncoder {
 public:
+    // Enum for selecting parallelism strategy
+    enum class ParallelismType {
+        SEQUENTIAL,  // Exactly one action per timestep (default)
+        FORALL,      // Actions can execute in parallel if they don't conflict  
+        EXISTS       // At least one action must execute per timestep
+    };
+
     // Constructor
     GroundedEncoder(const Problem& problem, z3::context& ctx);
 
@@ -24,6 +37,11 @@ public:
     std::shared_ptr<z3::expr> encode_frames(int t); // Encodes frame axioms for layer_idx to layer_idx+1
     std::shared_ptr<z3::expr> encode_goal(int t);    // Encodes goal conditions at layer_idx
     std::shared_ptr<z3::expr> encode_parallelism(int t); // Encodes parallelism semantics
+    
+    // Strategy management
+    void set_parallelism_strategy(ParallelismType type);
+    ParallelismType get_parallelism_strategy() const { return current_parallelism_type_; }
+    std::string get_parallelism_strategy_name() const;
     
     // Access to variable factory for plan extraction
     Z3VariableFactory& get_variable_factory() { return variable_factory_; }
@@ -44,6 +62,10 @@ private:
     Z3VariableFactory variable_factory_; // Factory for creating and managing Z3 variables
 
     GroundedEncodingVisitor grounded_visitor_; // Grounded encoding visitor for individual variables
+
+    // Parallelism strategy
+    std::unique_ptr<ParallelismStrategy> parallelism_strategy_;
+    ParallelismType current_parallelism_type_;
 
     // Indices for the frame axioms
 

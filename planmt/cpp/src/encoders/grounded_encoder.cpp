@@ -1,4 +1,5 @@
 #include "grounded_encoder.h"
+#include "parallelism_strategies.h"
 #include <iostream>
 #include "problem/visitors/print_visitor.h"
 #include "problem/visitors/expression_visitor.h"
@@ -11,6 +12,9 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
     : problem_(problem), ctx_(ctx), variable_factory_(ctx), grounded_visitor_(ctx_, &problem_, &variable_factory_) {
     layers_encoded_ = -1;
     build_epc_index();
+    
+    // Initialize with sequential semantics by default
+    set_parallelism_strategy(ParallelismType::SEQUENTIAL);
 }
 
 // Helper function to convert expression to Z3 using visitor
@@ -236,23 +240,32 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
-    // Create a vector of all action variables at timestep t
-    z3::expr_vector action_vars(ctx_);
-    for (const Action& action : problem_.actions()) {
-        z3::expr action_var = variable_factory_.get_action_variable(action, t);
-        action_vars.push_back(action_var);
-    }
+    return parallelism_strategy_->encode_parallelism(t);
+}
+
+void GroundedEncoder::set_parallelism_strategy(ParallelismType type) {
+    current_parallelism_type_ = type;
     
-    if (action_vars.empty()) {
-        // If no actions exist, return true (vacuously satisfied)
-        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    switch (type) {
+        case ParallelismType::SEQUENTIAL:
+            parallelism_strategy_ = std::make_unique<SequentialSemantics>();
+            break;
+        case ParallelismType::FORALL:
+            parallelism_strategy_ = std::make_unique<ForallSemantics>();
+            break;
+        case ParallelismType::EXISTS:
+            parallelism_strategy_ = std::make_unique<ExistsSemantics>();
+            break;
     }
-    
-    // Create pseudo-boolean constraint: exactly 1 action is true
-    // Use Z3's dedicated pseudo-boolean equality constraint with all coefficients = 1
-    std::vector<int> coeffs(action_vars.size(), 1);
-    z3::expr exactly_one = z3::pbeq(action_vars, coeffs.data(), 1);
-    return std::make_shared<z3::expr>(exactly_one);
+    // Initialize the strategy with problem context
+    parallelism_strategy_->initialize(problem_, ctx_, variable_factory_);
+}
+
+std::string GroundedEncoder::get_parallelism_strategy_name() const {
+    if (parallelism_strategy_) {
+        return parallelism_strategy_->get_name();
+    }
+    return "Unknown";
 }
 
 void GroundedEncoder::print_epc_index(const std::string& context) const {
@@ -299,8 +312,7 @@ void GroundedEncoder::build_epc_index() {
             index_effect_fluents(&action, &eff_expr);
         }
     }
-    
-    // Print the index for debugging (uncomment when needed)
+    // Print the index for debugging
     // print_epc_index("After building EPC index");
 }
 

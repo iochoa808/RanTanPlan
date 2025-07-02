@@ -61,7 +61,15 @@ For more information, visit: https://github.com/pyPMT/planMT
         help="Enable verbose output"
     )
     
-
+    parser.add_argument(
+        "--parallelism",
+        type=str,
+        choices=["sequential", "forall", "exists"],
+        default="sequential",
+        help="Parallelism strategy: sequential (exactly one action per timestep), "
+             "forall (actions can execute in parallel if they don't conflict), "
+             "or exists (at least one action must execute per timestep). Default: sequential"
+    )
     
     parser.add_argument(
         "--output-plan",
@@ -146,12 +154,14 @@ def solve_problem(problem, args):
     if args.executable:
         planner_params['executable_path'] = args.executable
     planner_params['verbose'] = args.verbose
+    planner_params['parallelism'] = args.parallelism
     
     output_stream = sys.stdout
     
     if args.verbose:
         print(f"\n--- Starting planMT solver ---")
         print(f"Timeout: {args.timeout} seconds")
+        print(f"Parallelism strategy: {args.parallelism}")
         if args.executable:
             print(f"Using executable: {args.executable}")
     
