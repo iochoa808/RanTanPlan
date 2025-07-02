@@ -182,3 +182,4 @@ planmt/bin/planmt
 test_problem.pb
 output_solution.pb
 output.smt2
+plan_model.txt

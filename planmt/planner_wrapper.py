@@ -18,6 +18,8 @@ import unified_planning.grpc.generated.unified_planning_pb2 as up_pb2
 import subprocess
 import tempfile
 import os
+import sys
+import threading
 
 class planMTPlanner(Engine, OneshotPlannerMixin):
     def __init__(self, **options):
@@ -96,33 +98,23 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
     def supports(problem_kind):
         return problem_kind <= planMTPlanner.supported_kind()
 
-    def _create_log_messages(self, process, output_stream):
-        """Create log messages from subprocess output and optionally stream to output."""
-        log_messages = []
-        
-        # Handle stdout - only add to LogMessages if verbose, but always stream if verbose
-        if process.stdout:
-            stdout_lines = [line.strip() for line in process.stdout.strip().split('\n') if line.strip()]
-            if stdout_lines:
-                    #self._log_to_stream(output_stream, f"stdout:\n{chr(10).join(stdout_lines)}")
-                    for line in stdout_lines:
-                        log_messages.append(LogMessage(level=LogLevel.INFO, message=line))
-        
-        # Handle stderr - always add to LogMessages and always stream (errors should always be visible)
-        if process.stderr:
-            stderr_lines = [line.strip() for line in process.stderr.strip().split('\n') if line.strip()]
-            if stderr_lines:
-                #self._log_to_stream(output_stream, f"stderr:\n{chr(10).join(stderr_lines)}")
-                for line in stderr_lines:
-                    log_messages.append(LogMessage(level=LogLevel.ERROR, message=line))
-        
-        return log_messages
-
-    def _log_to_stream(self, output_stream, message):
-        """Helper to write and flush to output stream."""
-        if output_stream:
-            output_stream.write(f"{message}\n")
-            output_stream.flush()
+    def _stream_output(self, pipe, prefix=""):
+        """Stream output from subprocess pipe directly to stdout in real-time."""
+        if not pipe:
+            return
+        try:
+            for line in iter(pipe.readline, b''):
+                if not line:
+                    break
+                line_str = line.decode('utf-8', errors='replace').rstrip()
+                if line_str:
+                    print(f"{prefix}{line_str}")
+                    sys.stdout.flush()
+        except Exception:
+            pass  # Handle any decoding errors silently
+        finally:
+            if pipe:
+                pipe.close()
 
     def _initialize_fluents(self, task: Problem):
         """
@@ -170,7 +162,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
 
 
     def _solve(self, problem: Problem,
-              callback: Optional[Callable[[PlanGenerationResult], None]] = None,
+              heuristic: Optional[Callable] = None,
               timeout: Optional[float] = None,
               output_stream: Optional[IO[str]] = None) -> PlanGenerationResult:
 
@@ -179,11 +171,11 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._initialize_fluents(problem) 
 
         # TODO: implement a sequence of compiler applications depending on the problem kind and encoder capabilities
-        self._log_to_stream(output_stream, "Starting grounding process.")
+        print("Starting grounding process.")
         grounder = Grounder()
         grounding_result = grounder.compile(problem, CompilationKind.GROUNDING)
         grounded_problem = grounding_result.problem
-        self._log_to_stream(output_stream, "Grounding process completed.")
+        print("Grounding process completed.")
 
         pb_problem_msg = self._writer.convert(grounded_problem)
 
@@ -201,25 +193,51 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
                 f.write(pb_problem_msg.SerializeToString())
 
             command = [self.executable_path, problem_filepath, solution_filepath]
-            self._log_to_stream(output_stream, f"Running planner: {' '.join(command)}")
+            print(f"Running planner: {' '.join(command)}")
 
-            # Run the C++ planner
-            process = subprocess.run(command, timeout=timeout, capture_output=True, text=True)
+            # Run the C++ planner with real-time output streaming
+            process = subprocess.Popen(
+                command, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                universal_newlines=False  # Use bytes mode for threading
+            )
 
-            # Create log messages from subprocess output and optionally log to stream
-            log_messages_from_subprocess = self._create_log_messages(process, output_stream)
+            # Create threads to stream stdout and stderr in real-time
+            stdout_thread = threading.Thread(target=self._stream_output, args=(process.stdout, ""))
+            stderr_thread = threading.Thread(target=self._stream_output, args=(process.stderr, "ERROR: "))
+            
+            stdout_thread.daemon = True
+            stderr_thread.daemon = True
+            
+            stdout_thread.start()
+            stderr_thread.start()
+
+            # Wait for process to complete with timeout
+            try:
+                return_code = process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                print("Planner timed out.")
+                return PlanGenerationResult(
+                    PlanGenerationResultStatus.TIMEOUT, None, self.name,
+                    log_messages=[LogMessage(level=LogLevel.INFO, message="Planner timed out.")]
+                )
+
+            # Wait for output threads to finish
+            stdout_thread.join(timeout=1.0)
+            stderr_thread.join(timeout=1.0)
 
             # Handle process errors
-            if process.returncode != 0:
-                error_msg = f"The planner failed with return code {process.returncode}."
-                if process.returncode == -11: # Specific check for SIGSEGV
+            if return_code != 0:
+                error_msg = f"The planner failed with return code {return_code}."
+                if return_code == -11:  # Specific check for SIGSEGV
                     error_msg += " - The error might be a segmentation fault (SIGSEGV)."
                 
-                log_messages_from_subprocess.append(LogMessage(level=LogLevel.ERROR, message=error_msg))
-                self._log_to_stream(output_stream, f"ERROR: {error_msg}")
-                
+                print(f"ERROR: {error_msg}")
                 return PlanGenerationResult(
-                    PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name, log_messages=log_messages_from_subprocess
+                    PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
+                    log_messages=[LogMessage(level=LogLevel.ERROR, message=error_msg)]
                 )
 
             # Read and convert solution
@@ -229,9 +247,6 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
 
             # Convert the protobuf result. This result is for the grounded_problem.
             result_from_protobuf = self._reader.convert(pb_plan_generation_result_msg, grounded_problem)
-
-            # Combine log messages from subprocess and protobuf result
-            all_log_messages = log_messages_from_subprocess + (result_from_protobuf.log_messages or [])
 
             final_plan = None
             if result_from_protobuf.plan:
@@ -243,32 +258,25 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
                         new_actions.append(mapped_ai)
                     final_plan = SequentialPlan(new_actions)
                 except Exception as e:
-                    self._log_to_stream(output_stream, f"Error mapping plan back: {e}")
-                    all_log_messages.append(LogMessage(level=LogLevel.ERROR, message=f"Error mapping plan back: {e}"))
+                    print(f"Error mapping plan back: {e}")
                     return PlanGenerationResult(
                         PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
-                        log_messages=all_log_messages
+                        log_messages=[LogMessage(level=LogLevel.ERROR, message=f"Error mapping plan back: {e}")]
                     )
             
-            self._log_to_stream(output_stream, f"Plan found (after mapping): {final_plan is not None}")
-            self._log_to_stream(output_stream, f"Status from planner: {result_from_protobuf.status.name}")
+            print(f"Plan found (after mapping): {final_plan is not None}")
+            print(f"Status from planner: {result_from_protobuf.status.name}")
 
             return PlanGenerationResult(
                 result_from_protobuf.status,
                 final_plan,
                 self.name,
-                log_messages=all_log_messages,
+                log_messages=result_from_protobuf.log_messages,
                 metrics=result_from_protobuf.metrics
             )
 
-        except subprocess.TimeoutExpired:
-            self._log_to_stream(output_stream, "Planner timed out.")
-            return PlanGenerationResult(
-                PlanGenerationResultStatus.TIMEOUT, None, self.name,
-                log_messages=[LogMessage(level=LogLevel.INFO, message="Planner timed out.")]
-            )
         except Exception as e:
-            self._log_to_stream(output_stream, f"An error occurred: {e}")
+            print(f"An error occurred: {e}")
             return PlanGenerationResult(
                 PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
                 log_messages=[LogMessage(level=LogLevel.ERROR, message=str(e))]
