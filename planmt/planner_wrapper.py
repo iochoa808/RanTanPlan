@@ -5,7 +5,7 @@ from unified_planning.shortcuts import Fraction, PlanValidator
 from unified_planning.engines.results import PlanGenerationResult, LogMessage, LogLevel
 from unified_planning.engines.mixins import OneshotPlannerMixin
 from unified_planning.engines import PlanGenerationResultStatus, Engine, CompilationKind, ValidationResultStatus
-from unified_planning.engines.compilers import Grounder
+from unified_planning.engines.compilers import Grounder, QuantifiersRemover
 from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.exceptions import UPException
@@ -203,14 +203,10 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         # uninitialized fluents in the C++ planner.
         self._initialize_fluents(problem) 
 
-        # TODO: implement a sequence of compiler applications depending on the problem kind and encoder capabilities
-        print("Starting grounding process.")
-        grounder = Grounder()
-        grounding_result = grounder.compile(problem, CompilationKind.GROUNDING)
-        grounded_problem = grounding_result.problem
-        print("Grounding process completed.")
+        # Apply compilation pipeline (quantifier removal + grounding)
+        compiled_problem, compilation_result = self._compile_problem(problem)
 
-        pb_problem_msg = self._writer.convert(grounded_problem)
+        pb_problem_msg = self._writer.convert(compiled_problem)
 
         # Create temporary files for problem and solution
         problem_file = tempfile.NamedTemporaryFile(suffix=".pb", delete=False)
@@ -278,15 +274,15 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
                 pb_plan_generation_result_msg = up_pb2.PlanGenerationResult() # type: ignore
                 pb_plan_generation_result_msg.ParseFromString(f.read())
 
-            # Convert the protobuf result. This result is for the grounded_problem.
-            result_from_protobuf = self._reader.convert(pb_plan_generation_result_msg, grounded_problem)
+            # Convert the protobuf result. This result is for the compiled_problem.
+            result_from_protobuf = self._reader.convert(pb_plan_generation_result_msg, compiled_problem)
 
             final_plan = None
             if result_from_protobuf.plan:
                 try:
                     new_actions: list[ActionInstance] = []
                     for ai in result_from_protobuf.plan.actions:
-                        mapped_ai = grounding_result.map_back_action_instance(ai)
+                        mapped_ai = compilation_result.map_back_action_instance(ai)
                         assert mapped_ai is not None
                         new_actions.append(mapped_ai)
                     final_plan = SequentialPlan(new_actions)
@@ -339,3 +335,61 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
 
     def destroy(self):
         pass
+
+    def _compile_problem(self, problem: Problem):
+        """
+        Apply a series of compilation steps to prepare the problem for the C++ planner.
+        
+        Args:
+            problem: The original problem
+            
+        Returns:
+            tuple: (compiled_problem, compilation_map) where compilation_map can be used
+                   to map results back to the original problem
+        """
+        current_problem = problem
+        compilation_maps = []
+        
+        print("Starting problem compilation pipeline...")
+        
+        # Step 1: Remove quantifiers if present
+        quantifier_remover = QuantifiersRemover()
+        
+        if quantifier_remover.supports(current_problem.kind):
+            print("  Applying quantifier removal...")
+            quantifier_result = quantifier_remover.compile(current_problem, CompilationKind.QUANTIFIERS_REMOVING)
+            current_problem = quantifier_result.problem
+            compilation_maps.append(quantifier_result)
+            print("  Quantifier removal completed.")
+        else:
+            print("  Quantifier removal not needed for this problem type.")
+        
+        # Step 2: Ground the problem
+        print("  Applying grounding...")
+        grounder = Grounder()
+        grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
+        current_problem = grounding_result.problem
+        compilation_maps.append(grounding_result)
+        print("  Grounding completed.")
+        
+        print("Problem compilation pipeline completed.")
+        
+        # Create a combined compilation result that can map back through all steps
+        class CombinedCompilationResult:
+            def __init__(self, problem, compilation_maps):
+                self.problem = problem
+                self.compilation_maps = compilation_maps
+            
+            def map_back_action_instance(self, action_instance):
+                """Map an action instance back through all compilation steps."""
+                current_ai = action_instance
+                # Apply mappings in reverse order
+                for comp_result in reversed(self.compilation_maps):
+                    if hasattr(comp_result, 'map_back_action_instance'):
+                        current_ai = comp_result.map_back_action_instance(current_ai)
+                        if current_ai is None:
+                            return None
+                return current_ai
+        
+        combined_result = CombinedCompilationResult(current_problem, compilation_maps)
+        return current_problem, combined_result

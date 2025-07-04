@@ -39,6 +39,9 @@ std::optional<z3::expr> GroundedEncoder::convert_effect_to_z3(const EffectExpres
     
     if (!fluent_next_z3 || !value_z3 || !fluent_curr_z3) {
         std::cerr << "Error: Failed to convert effect fluent or value to Z3" << std::endl;
+        std::cerr << "  fluent_curr_z3: " << (fluent_curr_z3 ? fluent_curr_z3->to_string() : "null") << " (from: " << effect.fluent().to_string() << ")" << std::endl;
+        std::cerr << "  fluent_next_z3: " << (fluent_next_z3 ? fluent_next_z3->to_string() : "null") << " (from: " << effect.fluent().to_string() << ")" << std::endl;
+        std::cerr << "  value_z3: " << (value_z3 ? value_z3->to_string() : "null") << " (from: " << effect.value().to_string() << ")" << std::endl;
         return std::nullopt;
     }
     
@@ -105,6 +108,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
             // Create precondition constraints: action_var => precondition
             if (action.has_precondition()) {
                 std::optional<z3::expr> z3_precond = convert_expression_to_z3(action.precondition(), t);
+                //std::cout << "pre:" << action_var.to_string() << " -> " << z3_precond.value().to_string() << std::endl;
                 action_constraints.push_back(z3::implies(action_var, z3_precond.value())); // we assume precondition is valid
             }
         
@@ -118,6 +122,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
             }
             z3::expr effect_conjunction = z3::mk_and(effect_exprs);
             // action_var => effect_conjunction
+            //std::cout << "eff:" << action_var.to_string() << " -> " << effect_conjunction.to_string() << std::endl;
             action_constraints.push_back(z3::implies(action_var, effect_conjunction));
         }
     }
@@ -186,6 +191,8 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
         
         // Create the frame axiom: fluent_changed -> action_disjunction
         // This is equivalent to: (fluent^t != fluent^(t+1)) -> (a1 || (epc2 && a2) || a3 || ...)
+        //std::cout << "Frame axiom for fluent: " << fluent_changed.to_string() << std::endl;
+        //std::cout << "  Action disjunction: " << action_disjunction.to_string() << std::endl;
         z3::expr frame_axiom = z3::implies(fluent_changed, action_disjunction);
         frame_axioms.push_back(frame_axiom);
     }
@@ -313,7 +320,7 @@ void GroundedEncoder::build_epc_index() {
         }
     }
     // Print the index for debugging
-    // print_epc_index("After building EPC index");
+    //print_epc_index("After building EPC index");
 }
 
 } // namespace planmt

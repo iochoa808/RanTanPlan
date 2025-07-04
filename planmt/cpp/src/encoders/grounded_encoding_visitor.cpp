@@ -42,7 +42,13 @@ void GroundedEncodingVisitor::visit_function_application(const std::string& func
         clear();
         accept_visitor(arg, *this);
         if (!has_result()) {
-            std::cerr << "Error: Failed to convert argument in function application: " << function_name << std::endl;
+            std::cerr << "Error: Failed to convert argument in function application: " << function_name 
+                  << ", args: [";
+            for (size_t i = 0; i < args.size(); ++i) {
+            if (i > 0) std::cerr << ", ";
+            std::cerr << args[i].to_string();
+            }
+            std::cerr << "]" << std::endl;
             return;
         }
         z3_args.push_back(get_expression());
@@ -132,7 +138,7 @@ void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent
     
     for (size_t i = 0; i < args.size(); ++i) {
         const auto& arg = args[i];
-        if (arg.kind() == Expression::Kind::CONSTANT && arg.is_atom()) {
+        if (arg.is_atom()) {
             // Get the expected type for this parameter from the fluent definition
             const Type* param_type = nullptr;
             if (i < fluent_def->parameters().size()) {
