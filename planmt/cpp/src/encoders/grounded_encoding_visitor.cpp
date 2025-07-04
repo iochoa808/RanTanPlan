@@ -89,11 +89,13 @@ void GroundedEncodingVisitor::visit_function_application(const std::string& func
         case Expression::Operator::DIVIDE:
             result_ = handle_divide(z3_args);
             break;
+        case Expression::Operator::IMPLIES:
+            result_ = handle_implies(z3_args);
+            break;
         case Expression::Operator::MODULO:
         case Expression::Operator::ABSOLUTE:
         case Expression::Operator::MAXIMUM:
         case Expression::Operator::MINIMUM:
-        case Expression::Operator::IMPLIES:
         case Expression::Operator::IFF:
             std::cerr << "Warning: Operator not yet implemented in grounded encoding: " 
                       << function_name << " (enum: " << static_cast<int>(op) << ")" << std::endl;
@@ -285,6 +287,14 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_divide(const std::vector
         return std::nullopt;
     }
     return args[0] / args[1];
+}
+
+std::optional<z3::expr> GroundedEncodingVisitor::handle_implies(const std::vector<z3::expr>& args) {
+    if (args.size() != 2) {
+        std::cerr << "Error: 'implies' operation expects exactly 2 arguments, got " << args.size() << std::endl;
+        return std::nullopt;
+    }
+    return z3::implies(args[0], args[1]);
 }
 
 } // namespace planmt

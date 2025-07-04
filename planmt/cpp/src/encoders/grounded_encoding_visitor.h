@@ -86,6 +86,7 @@ private:
     std::optional<z3::expr> handle_minus(const std::vector<z3::expr>& args);
     std::optional<z3::expr> handle_multiply(const std::vector<z3::expr>& args);
     std::optional<z3::expr> handle_divide(const std::vector<z3::expr>& args);
+    std::optional<z3::expr> handle_implies(const std::vector<z3::expr>& args);
 };
 
 } // namespace planmt
