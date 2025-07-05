@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../problem/problem.h"
-#include "z3_variable_factory.h"
+#include "../../problem/problem.h"
+#include "../z3_variable_factory.h"
 #include <z3++.h>
 #include <memory>
 #include <string>

@@ -3,7 +3,7 @@
 #include "../problem/problem.h"
 #include "grounded_encoding_visitor.h"
 #include "z3_variable_factory.h"
-#include "parallelism_strategy.h"
+#include "parallelism/parallelism_strategy.h"
 #include <z3++.h>
 
 #include <vector>

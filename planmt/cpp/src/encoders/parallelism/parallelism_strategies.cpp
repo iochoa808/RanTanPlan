@@ -1,5 +1,5 @@
 #include "parallelism_strategies.h"
-#include "../problem/action.h"
+#include "../../problem/action.h"
 #include <iostream>
 
 namespace planmt {

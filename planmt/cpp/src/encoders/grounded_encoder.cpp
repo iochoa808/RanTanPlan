@@ -1,5 +1,5 @@
 #include "grounded_encoder.h"
-#include "parallelism_strategies.h"
+#include "parallelism/parallelism_strategies.h"
 #include <iostream>
 #include "problem/visitors/print_visitor.h"
 #include "problem/visitors/expression_visitor.h"
