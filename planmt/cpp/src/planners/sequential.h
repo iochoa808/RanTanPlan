@@ -15,12 +15,16 @@ public:
 
     // Search for a plan and return it
     Plan search();
+    
+    // Check if the last search found a solution (even if empty plan)
+    bool solution_found() const { return solution_found_; }
 
 private:
     const Problem& problem_;
     GroundedEncoder& encoder_;
     z3::context& ctx_;
     z3::solver solver_;  // Solver to maintain current constraints state
+    bool solution_found_ = false;  // Track if last search found a solution
     
     // Extract plan from Z3 model
     Plan extract_plan(const z3::model& model, int max_timestep);

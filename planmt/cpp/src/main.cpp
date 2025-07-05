@@ -43,8 +43,8 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem, cons
     // Call planner.search() and get the result
     planmt::Plan plan = planner.search();
     
-    if (!plan.is_empty()) {
-        // Plan found - populate the result
+    if (planner.solution_found()) {
+        // Plan found (even if empty) - populate the result
         result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
         
         // Convert plan to protobuf and set it in the result

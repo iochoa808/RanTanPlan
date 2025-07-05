@@ -281,10 +281,22 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             if result_from_protobuf.plan:
                 try:
                     new_actions: list[ActionInstance] = []
-                    for ai in result_from_protobuf.plan.actions:
+                    
+                    # Handle different plan types - directly check if actions attribute exists
+                    if hasattr(result_from_protobuf.plan, 'actions'):
+                        # Standard SequentialPlan case
+                        plan_actions = result_from_protobuf.plan.actions
+                    else:
+                        # If no actions attribute, create empty actions list
+                        plan_actions = []
+                    
+                    # Map actions back to original problem (empty list if no actions)
+                    for ai in plan_actions:
                         mapped_ai = compilation_result.map_back_action_instance(ai)
                         assert mapped_ai is not None
                         new_actions.append(mapped_ai)
+                        
+                    # Create SequentialPlan (empty if no actions)
                     final_plan = SequentialPlan(new_actions)
                 except Exception as e:
                     print(f"Error mapping plan back: {e}")

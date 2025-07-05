@@ -25,6 +25,8 @@ void SequentialPlanner::debug_output_constraints() {
 Plan SequentialPlanner::search() {
     std::cout << "Starting search..." << std::endl;
     
+    // Reset solution found flag
+    solution_found_ = false;
 
     // Add initial state constraints (these are invariant)
     solver_.add(*encoder_.encode_initial_state());
@@ -73,6 +75,9 @@ Plan SequentialPlanner::search() {
         
         if (result == z3::sat) {
             std::cout << "\n*** PLAN FOUND at timestep " << timestep << " ***" << std::endl;
+            
+            // Mark that we found a solution
+            solution_found_ = true;
             
             // Get and output the model to a file
             z3::model model = solver_.get_model();
