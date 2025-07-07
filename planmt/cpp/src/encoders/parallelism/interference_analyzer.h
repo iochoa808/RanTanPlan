@@ -2,8 +2,10 @@
 
 #include "../../problem/problem.h"
 #include "../../problem/action.h"
+#include "../../problem/visitors/fluent_polarity_collector.h"
 #include "graph.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace planmt {
@@ -63,12 +65,27 @@ public:
     const Action* get_action_from_node_id(Graph::NodeId node_id) const;
 
 private:
+    // Data structures to store action analysis results
+    struct ActionAnalysis {
+        // Precondition analysis
+        std::unordered_map<Expression, FluentPolarityCollector::Polarity> precondition_boolean_fluents;
+        std::unordered_set<Expression> precondition_numeric_fluents;
+        
+        // Effect analysis
+        std::unordered_set<Expression> positive_boolean_effects;  // Boolean fluents made true
+        std::unordered_set<Expression> negative_boolean_effects;  // Boolean fluents made false
+        std::unordered_set<Expression> numeric_effects;           // Numeric fluents modified
+    };
+    
     const Problem* problem_;
     Graph interference_graph_;
     
     // Bidirectional mapping between actions and graph nodes
     std::unordered_map<Action, Graph::NodeId> action_to_node_id_;
     std::vector<const Action*> node_id_to_action_;
+    
+    // Analysis results for each action
+    std::unordered_map<Action, ActionAnalysis> action_analysis_;
     
     /**
      * @brief Analyze conflicts between all pairs of actions
@@ -82,6 +99,32 @@ private:
      * @return True if actions interfere, false otherwise
      */
     bool actions_interfere(const Action& a1, const Action& a2) const;
+    
+    /**
+     * @brief Analyze a single action and populate its ActionAnalysis
+     * @param action The action to analyze
+     * @return ActionAnalysis structure with collected information
+     */
+    ActionAnalysis analyze_action(const Action& action) const;
+    
+    /**
+     * @brief Analyze the preconditions of an action
+     * @param action The action to analyze
+     * @param analysis The analysis structure to populate
+     */
+    void analyze_preconditions(const Action& action, ActionAnalysis& analysis) const;
+    
+    /**
+     * @brief Analyze the effects of an action
+     * @param action The action to analyze
+     * @param analysis The analysis structure to populate
+     */
+    void analyze_effects(const Action& action, ActionAnalysis& analysis) const;
+    
+    /**
+     * @brief Print the action analysis results for debugging
+     */
+    void print_action_analysis() const;
 };
 
 } // namespace planmt

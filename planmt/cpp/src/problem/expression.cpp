@@ -94,7 +94,11 @@ std::string Expression::to_string() const {
     std::ostringstream oss;
     
     if (is_atom()) {
-        oss << atom_->to_string();
+        if (atom_.has_value()) {
+            oss << atom_->to_string();
+        } else {
+            oss << "ATOM_NO_VALUE";
+        }
     } else if (is_list()) {
         if (list_.empty()) {
             oss << "()";
@@ -128,58 +132,61 @@ bool Expression::operator==(const Expression& other) const {
 }
 
 bool Expression::is_and() const {
-    return value().symbol() == "and";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "and";
 }
 
 bool Expression::is_or() const {
-    return value().symbol() == "or";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "or";
 }
 
 bool Expression::is_not() const {
-    return value().symbol() == "not";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "not";
 }
 
 bool Expression::is_implies() const {
-    return value().symbol() == "implies" || value().symbol() == "=>";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && 
+            (atom_->symbol() == "implies" || atom_->symbol() == "=>");
 }
 
 bool Expression::is_iff() const {
-    return value().symbol() == "iff" || value().symbol() == "<=>";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && 
+            (atom_->symbol() == "iff" || atom_->symbol() == "<=>");
 }
 
 bool Expression::is_equals() const {
-    return value().symbol() == "=" || value().symbol() == "==";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && 
+            (atom_->symbol() == "=" || atom_->symbol() == "==");
 }
 
 bool Expression::is_plus() const {
-    return value().symbol() == "+";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "+";
 }
 
 bool Expression::is_minus() const {
-    return value().symbol() == "-";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "-";
 }
 
 bool Expression::is_multiply() const {
-    return value().symbol() == "*";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "*";
 }
 
 bool Expression::is_divide() const {
-    return value().symbol() == "/";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "/";
 }
 
 bool Expression::is_less_than() const {
-    return value().symbol() == "<";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "<";
 }
 
 bool Expression::is_less_equal() const {
-    return value().symbol() == "<=";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "<=";
 }
 
 bool Expression::is_greater_than() const {
-    return value().symbol() == ">";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == ">";
 }
 
 bool Expression::is_greater_equal() const {
-    return value().symbol() == ">=";
+    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == ">=";
 }
 } // namespace planmt
