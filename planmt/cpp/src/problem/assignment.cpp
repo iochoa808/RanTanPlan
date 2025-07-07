@@ -2,8 +2,8 @@
 
 namespace planmt {
 
-Assignment::Assignment(const pb::Assignment& pb_assignment) 
-    : fluent_(pb_assignment.fluent()), value_(pb_assignment.value()) {
+Assignment::Assignment(const pb::Assignment& pb_assignment, const Problem* problem) 
+    : fluent_(pb_assignment.fluent(), problem), value_(pb_assignment.value(), problem) {
 }
 
 std::string Assignment::to_string() const {

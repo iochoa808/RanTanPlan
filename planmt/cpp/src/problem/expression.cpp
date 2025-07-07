@@ -9,7 +9,7 @@ Expression::Expression(const pb::Expression& pb_expression, const Problem* probl
     // Set type from protobuf and resolve using Problem context
     const Type* resolved_type = resolve_type(pb_expression.type(), problem);
     type_ = resolved_type;
-    
+
     // Convert kind
     kind_ = static_cast<Kind>(pb_expression.kind());
     
@@ -53,6 +53,9 @@ Expression::Expression(const pb::Expression& pb_expression, const Problem* probl
     }
 }
 
+// this method is used only during the initialization of the Expression object
+// to resolve a type expressed as a string, to the type instantiation
+// basically, 
 const Type* Expression::resolve_type(const std::string& type_str, const Problem* problem) const {
     if (type_str.empty()) {
         return nullptr;
@@ -60,9 +63,25 @@ const Type* Expression::resolve_type(const std::string& type_str, const Problem*
     
     // If we have a Problem context, try to find the type
     if (problem) {
+        // First try the exact type name
         const Type* found_type = problem->find_type(type_str);
         if (found_type) {
             return found_type;
+        }
+        
+        // Handle type name mappings for compatibility
+        std::string mapped_type = type_str;
+        if (type_str == "up:integer") {
+            mapped_type = "up:int";
+        } else if (type_str == "up:boolean") {
+            mapped_type = "up:bool";
+        }
+        
+        if (mapped_type != type_str) {
+            found_type = problem->find_type(mapped_type);
+            if (found_type) {
+                return found_type;
+            }
         }
     }
     

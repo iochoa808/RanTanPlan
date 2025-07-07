@@ -16,7 +16,7 @@ public:
     Assignment() = default;
     Assignment(const Expression& fluent, const Expression& value)
         : fluent_(fluent), value_(value) {}
-    Assignment(const pb::Assignment& pb_assignment);
+    Assignment(const pb::Assignment& pb_assignment, const Problem* problem);
     
     // Accessors
     const Expression& fluent() const { return fluent_; }

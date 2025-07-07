@@ -3,7 +3,7 @@
 
 namespace planmt {
 
-Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters)
+Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, const Problem* problem)
     : name_(pb_action.name()), parameters_(parameters) {
     
     // Create single precondition from repeated conditions using AND
@@ -13,10 +13,10 @@ Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parame
         pb_true_expr.mutable_atom()->set_boolean(true);
         pb_true_expr.set_kind(pb::ExpressionKind::CONSTANT);
         pb_true_expr.set_type("up:bool");
-        precondition_ = Expression(pb_true_expr);
+        precondition_ = Expression(pb_true_expr, problem);
     } else if (pb_action.conditions().size() == 1) {
         // Single precondition - use it directly
-        precondition_ = Expression(pb_action.conditions(0).cond());
+        precondition_ = Expression(pb_action.conditions(0).cond(), problem);
     } else {
         // Multiple preconditions - create AND expression
         pb::Expression pb_and_expr;
@@ -35,11 +35,11 @@ Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parame
             *operand = pb_condition.cond();
         }
         
-        precondition_ = Expression(pb_and_expr);
+        precondition_ = Expression(pb_and_expr, problem);
     }
     
     for (const auto& pb_effect : pb_action.effects()) {
-        effects_.emplace_back(pb_effect);
+        effects_.emplace_back(pb_effect, problem);
     }
     
     build_parameter_mappings();

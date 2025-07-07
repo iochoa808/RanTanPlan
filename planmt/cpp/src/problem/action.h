@@ -20,7 +20,7 @@ public:
     // Constructors
     Action() = default;
     Action(const std::string& name) : name_(name) {}
-    Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters);
+    Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, const Problem* problem);
     
     // Basic accessors
     const std::string& name() const { return name_; }
@@ -72,3 +72,14 @@ private:
 };
 
 } // namespace planmt
+
+// specialising std::hash for Action by using its string representation
+// note that for this to work we need to be in the std namespace
+namespace std {
+    template<>
+    struct hash<planmt::Action> {
+        std::size_t operator()(const planmt::Action& action) const {
+            return std::hash<std::string>()(action.to_string());
+        }
+    };
+}

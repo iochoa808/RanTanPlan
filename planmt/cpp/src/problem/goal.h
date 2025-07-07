@@ -15,7 +15,7 @@ public:
     // Constructors
     Goal() = default;
     Goal(const Expression& goal_expr) : goal_expr_(goal_expr) {}
-    Goal(const pb::Goal& pb_goal);
+    Goal(const pb::Goal& pb_goal, const Problem* problem);
     
     // Accessors
     const Expression& goal_expression() const { return goal_expr_; }

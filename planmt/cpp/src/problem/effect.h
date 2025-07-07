@@ -16,7 +16,7 @@ public:
     // Constructors
     Effect() = default;
     Effect(const EffectExpression& effect_expr) : effect_expr_(effect_expr) {}
-    Effect(const pb::Effect& pb_effect);
+    Effect(const pb::Effect& pb_effect, const Problem* problem);
     
     // Accessors
     const EffectExpression& effect_expression() const { return effect_expr_; }

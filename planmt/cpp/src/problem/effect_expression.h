@@ -28,7 +28,7 @@ public:
     EffectExpression(Kind kind, const Expression& fluent, const Expression& value, 
                     const Expression& condition)
         : kind_(kind), fluent_(fluent), value_(value), condition_(condition) {}
-    EffectExpression(const pb::EffectExpression& pb_effect_expr);
+    EffectExpression(const pb::EffectExpression& pb_effect_expr, const Problem* problem);
     
     // Accessors
     Kind kind() const { return kind_; }

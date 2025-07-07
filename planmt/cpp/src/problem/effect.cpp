@@ -2,8 +2,8 @@
 
 namespace planmt {
 
-Effect::Effect(const pb::Effect& pb_effect) 
-    : effect_expr_(pb_effect.effect()) {
+Effect::Effect(const pb::Effect& pb_effect, const Problem* problem) 
+    : effect_expr_(pb_effect.effect(), problem) {
 }
 
 } // namespace planmt

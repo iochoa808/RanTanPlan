@@ -1,6 +1,8 @@
 #pragma once
 
 #include "parallelism_strategy.h"
+#include "interference_analyzer.h"
+#include <memory>
 
 namespace planmt {
 
@@ -46,10 +48,14 @@ private:
     const Problem* problem_;
     z3::context* ctx_;
     Z3VariableFactory* variable_factory_;
+    std::unique_ptr<InterferenceAnalyzer> interference_analyzer_;
     
-    // TODO: Add data structures for interference analysis
-    // std::unordered_map<Action, std::unordered_set<Action>> mutex_actions_;
-    // std::unordered_map<Expression, std::unordered_set<Action>> fluent_writers_;
+    /**
+     * @brief Encode mutex constraints between interfering actions
+     * @param timestep The timestep for which to encode constraints
+     * @return Z3 expression representing mutex constraints
+     */
+    std::shared_ptr<z3::expr> encode_mutex_constraints(int timestep);
 };
 
 /**
@@ -72,6 +78,7 @@ private:
     const Problem* problem_;
     z3::context* ctx_;
     Z3VariableFactory* variable_factory_;
+    std::unique_ptr<InterferenceAnalyzer> interference_analyzer_;
 };
 
 } // namespace planmt

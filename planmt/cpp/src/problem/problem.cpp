@@ -18,12 +18,12 @@ Problem::Problem(const pb::Problem& pb_problem) {
     
     // Load initial state
     for (const auto& pb_assignment : pb_problem.initial_state()) {
-        initial_state_.emplace_back(pb_assignment);
+        initial_state_.emplace_back(pb_assignment, this);
     }
     
     // Load goals
     for (const auto& pb_goal : pb_problem.goals()) {
-        goals_.emplace_back(pb_goal);
+        goals_.emplace_back(pb_goal, this);
     }
     
 }
@@ -184,20 +184,16 @@ void Problem::load_types(const pb::RepeatedTypeDeclaration& pb_types) {
     type_name_to_ptr_.clear();
 
     // ensure basic types are present
-    if (!find_type("up:bool")) {
-        types_.emplace_back("up:bool");
-    }
-    if (!find_type("up:int")) {
-        types_.emplace_back("up:int");
-    }
-    if (!find_type("up:real")) {
-        types_.emplace_back("up:real");
-    }
+    types_.emplace_back("up:bool");
+    types_.emplace_back("up:int");
+    types_.emplace_back("up:real");
 
     for (const auto& pb_type : pb_types) {
         types_.emplace_back(pb_type.type_name());
         types_.back().set_parent_name(pb_type.parent_type());
     }
+    
+    // Build the name to pointer mapping
     for (auto& type : types_) {
         type_name_to_ptr_[type.name()] = &type;
     }
@@ -252,7 +248,7 @@ void Problem::load_actions(const pb::RepeatedAction& pb_actions) {
             const Type* param_type = find_type(pb_param.type());
             params.emplace_back(pb_param.name(), param_type);
         }
-        actions_.emplace_back(pb_action, params);
+        actions_.emplace_back(pb_action, params, this);
     }
     build_action_mappings();
 }

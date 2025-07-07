@@ -3,13 +3,13 @@
 
 namespace planmt {
 
-EffectExpression::EffectExpression(const pb::EffectExpression& pb_effect_expr) 
+EffectExpression::EffectExpression(const pb::EffectExpression& pb_effect_expr, const Problem* problem) 
     : kind_(static_cast<Kind>(pb_effect_expr.kind())),
-      fluent_(pb_effect_expr.fluent()),
-      value_(pb_effect_expr.value()) {
+      fluent_(pb_effect_expr.fluent(), problem),
+      value_(pb_effect_expr.value(), problem) {
     
     if (pb_effect_expr.has_condition()) {
-        condition_ = Expression(pb_effect_expr.condition());
+        condition_ = Expression(pb_effect_expr.condition(), problem);
     }
     
     for (const auto& var : pb_effect_expr.forall()) {
