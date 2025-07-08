@@ -49,13 +49,6 @@ private:
     z3::context* ctx_;
     Z3VariableFactory* variable_factory_;
     std::unique_ptr<InterferenceAnalyzer> interference_analyzer_;
-    
-    /**
-     * @brief Encode mutex constraints between interfering actions
-     * @param timestep The timestep for which to encode constraints
-     * @return Z3 expression representing mutex constraints
-     */
-    std::shared_ptr<z3::expr> encode_mutex_constraints(int timestep);
 };
 
 /**
