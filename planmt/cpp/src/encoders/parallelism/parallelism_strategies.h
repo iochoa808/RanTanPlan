@@ -21,6 +21,9 @@ public:
     void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) override;
     
     std::string get_name() const override { return "SequentialSemantics"; }
+    
+    // Analyzer access methods (not applicable for sequential semantics)
+    const InterferenceAnalyzer* get_interference_analyzer() const override { return nullptr; }
 
 private:
     const Problem* problem_;
@@ -43,6 +46,9 @@ public:
     void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) override;
     
     std::string get_name() const override { return "ForallSemantics"; }
+    
+    // Analyzer access methods
+    const InterferenceAnalyzer* get_interference_analyzer() const override;
 
 private:
     const Problem* problem_;
@@ -66,6 +72,9 @@ public:
     void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) override;
     
     std::string get_name() const override { return "ExistsSemantics"; }
+    
+    // Analyzer access methods
+    const InterferenceAnalyzer* get_interference_analyzer() const override;
 
 private:
     const Problem* problem_;

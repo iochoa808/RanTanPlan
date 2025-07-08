@@ -40,11 +40,13 @@ public:
     
     // Strategy management
     void set_parallelism_strategy(ParallelismType type);
-    ParallelismType get_parallelism_strategy() const { return current_parallelism_type_; }
     std::string get_parallelism_strategy_name() const;
     
     // Access to variable factory for plan extraction
     Z3VariableFactory& get_variable_factory() { return variable_factory_; }
+    
+    // Get access to parallelism strategy for plan extraction
+    const ParallelismStrategy* get_parallelism_strategy() const { return parallelism_strategy_.get(); }
 
 private:
     // Helper function to convert expression to Z3 using visitor
@@ -65,7 +67,6 @@ private:
 
     // Parallelism strategy
     std::unique_ptr<ParallelismStrategy> parallelism_strategy_;
-    ParallelismType current_parallelism_type_;
 
     // Indices for the frame axioms
 

@@ -251,8 +251,6 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
 }
 
 void GroundedEncoder::set_parallelism_strategy(ParallelismType type) {
-    current_parallelism_type_ = type;
-    
     switch (type) {
         case ParallelismType::SEQUENTIAL:
             parallelism_strategy_ = std::make_unique<SequentialSemantics>();

@@ -70,6 +70,19 @@ public:
      * @return Reference to the action, or nullptr if node ID invalid
      */
     const Action* get_action_from_node_id(Graph::NodeId node_id) const;
+    
+    /**
+     * @brief Topologically sort a set of actions based on the interference graph
+     * @param actions The actions to sort
+     * @return Actions sorted in topological order based on interference dependencies
+     */
+    std::vector<const Action*> topological_sort_actions(const std::vector<const Action*>& actions) const;
+
+    /**
+     * @brief Output the interference graph to a DOT format file
+     * @param filename The name of the output file (default: "interference.dot")
+     */
+    void output_interference_graph_dot(const std::string& filename = "interference.dot") const;
 
 private:
     // Data structures to store action analysis results
@@ -83,6 +96,16 @@ private:
         std::unordered_set<Expression> positive_boolean_effects;  // Boolean fluents made true
         std::unordered_set<Expression> negative_boolean_effects;  // Boolean fluents made false
         std::unordered_set<Expression> numeric_effects;           // Numeric fluents modified
+
+        // A set of all fluents modified by this action's effects (the union of all the previous 3 sets)
+        std::unordered_set<Expression> all_effects;
+
+        // Fluents appearing in the conditions of conditional effects
+        std::unordered_set<Expression> conditional_effect_fluents;
+
+        // Fluents appearing on the RHS of numeric assignments. 
+        // For example, given an effect x' = x + y + y + z^2 would have y and z in this set.
+        std::unordered_set<Expression> numeric_effect_dependencies;
     };
     
     const Problem* problem_;

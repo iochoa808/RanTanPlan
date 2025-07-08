@@ -29,6 +29,10 @@ private:
     // Extract plan from Z3 model
     Plan extract_plan(const z3::model& model, int max_timestep);
     
+    // Helper methods for parallel plan extraction
+    std::vector<const Action*> extract_parallel_actions_at_timestep(const z3::model& model, int timestep);
+    std::vector<const Action*> topologically_sort_actions(const std::vector<const Action*>& actions);
+    
     // Debug method to output constraints for a given timestep
     void debug_output_constraints();
 };

@@ -28,8 +28,7 @@ QUICK_TEST_DIRS = [
     "pddl/gripper-round-1-adl",
 ]
 
-PARALLELISM_STRATEGIES = ["sequential"]
-#, "forall", "exists"]
+PARALLELISM_STRATEGIES = ["sequential", "forall", "exists"]
 
 # --- ANSI Color Codes for Output ---
 class Colors:

@@ -1,6 +1,9 @@
 #include "interference_analyzer.h"
 #include <iostream>
 #include <algorithm>
+#include <unordered_map>
+#include <fstream>
+#include <fstream> // For outputting the graph to a DOT file
 
 namespace planmt {
 
@@ -31,8 +34,10 @@ void InterferenceAnalyzer::initialize(const Problem& problem) {
               << " actions and indexed their preconditions and effects" << std::endl;
     
     // Print the action analysis results
-    //print_action_analysis();
     build_interference_graph();
+    // DEBUG
+    //print_action_analysis();
+    //output_interference_graph_dot();
 }
 
 void InterferenceAnalyzer::build_interference_graph() {
@@ -45,6 +50,7 @@ void InterferenceAnalyzer::build_interference_graph() {
     analyze_action_conflicts();
     std::cout << "Interference graph built with " << interference_graph_.num_nodes() 
               << " nodes and " << interference_graph_.num_edges() << " edges" << std::endl;
+    
 }
 
 void InterferenceAnalyzer::analyze_action_conflicts() {
@@ -94,42 +100,26 @@ bool InterferenceAnalyzer::actions_interfere(const Action& a1, const Action& a2)
     
     // 1. Check if effects of a1 can prevent execution of a2
     // Effects of a1 interfere with preconditions of a2
-    
-    // a1's positive effects vs a2's negative preconditions
-    if (has_intersection(analysis_a1.positive_boolean_effects, 
-                        analysis_a2.negative_boolean_preconditions)) {
+    if (has_intersection(analysis_a1.positive_boolean_effects, analysis_a2.negative_boolean_preconditions) ||
+        has_intersection(analysis_a1.negative_boolean_effects, analysis_a2.positive_boolean_preconditions) ||
+        has_intersection(analysis_a1.numeric_effects, analysis_a2.numeric_preconditions)) {
         return true;
     }
     
-    // a1's negative effects vs a2's positive preconditions  
-    if (has_intersection(analysis_a1.negative_boolean_effects,
-                        analysis_a2.positive_boolean_preconditions)) {
+    // 2. Check if effects of a1 can affect the conditions of a2's conditional effects
+    if (has_intersection(analysis_a1.all_effects, analysis_a2.conditional_effect_fluents)) {
         return true;
     }
-    
-    // a1's numeric effects vs a2's numeric preconditions
-    if (has_intersection(analysis_a1.numeric_effects,
-                        analysis_a2.numeric_preconditions)) {
+
+    // 3. Check if effects of a1 can affect the RHS of a2's numeric effects
+    if (has_intersection(analysis_a1.all_effects, analysis_a2.numeric_effect_dependencies)) {
         return true;
     }
-    
-    // 2. Check if effects of a1 and a2 interfere
-    
-    // a1's positive effects vs a2's negative effects (same fluent made true/false)
-    if (has_intersection(analysis_a1.positive_boolean_effects,
-                        analysis_a2.negative_boolean_effects)) {
-        return true;
-    }
-    
-    // a1's negative effects vs a2's positive effects (same fluent made false/true)
-    if (has_intersection(analysis_a1.negative_boolean_effects,
-                        analysis_a2.positive_boolean_effects)) {
-        return true;
-    }
-    
-    // numeric effects interfere if they modify the same fluent
-    if (has_intersection(analysis_a1.numeric_effects,
-                        analysis_a2.numeric_effects)) {
+
+    // 4. Check if effects of a1 and a2 interfere (same fluents modified differently or both modified)
+    if (has_intersection(analysis_a1.positive_boolean_effects, analysis_a2.negative_boolean_effects) ||
+        has_intersection(analysis_a1.negative_boolean_effects, analysis_a2.positive_boolean_effects) ||
+        has_intersection(analysis_a1.numeric_effects, analysis_a2.numeric_effects)) {
         return true;
     }
     
@@ -178,30 +168,39 @@ void InterferenceAnalyzer::analyze_preconditions(const Action& action, ActionAna
 void InterferenceAnalyzer::analyze_effects(const Action& action, ActionAnalysis& analysis) const {
     for (const Effect& effect : action.effects()) {
         const Expression& fluent = effect.fluent();
-        
-        if (effect.kind() == EffectExpression::Kind::ASSIGN) {
-            // For assignment effects, check if it's a boolean assignment
-            if (fluent.type() && fluent.type()->is_bool()) {
-                // Boolean assignment - check if setting to true or false
-                const Expression& value = effect.value();
-                if (value.is_atom()) {
-                    const Atom& atom = value.value();
-                    if (atom.is_boolean()) {
-                        if (atom.boolean()) {
-                            analysis.positive_boolean_effects.insert(fluent);
-                        } else {
-                            analysis.negative_boolean_effects.insert(fluent);
-                        }
-                    }
-                }
-            } else {
-                // Numeric assignment
-                analysis.numeric_effects.insert(fluent);
+        analysis.all_effects.insert(fluent);
+
+        if (effect.is_conditional()) {
+            FluentPolarityCollector collector;
+            collector.collect_from_expression(effect.condition());
+            for (const auto& fluent_in_cond : collector.get_boolean_fluents()) {
+                analysis.conditional_effect_fluents.insert(fluent_in_cond.first);
             }
-        } else if (effect.kind() == EffectExpression::Kind::INCREASE || 
-                   effect.kind() == EffectExpression::Kind::DECREASE) {
-            // Numeric increase/decrease effects
+            for (const auto& fluent_in_cond : collector.get_numeric_fluents()) {
+                analysis.conditional_effect_fluents.insert(fluent_in_cond);
+            }
+        }
+
+        // If we have a Boolean assignment ... 
+        if (effect.kind() == EffectExpression::Kind::ASSIGN && fluent.type() && fluent.type()->is_bool()) {
+            const Expression& value = effect.value();
+            if (value.is_atom() && value.value().is_boolean()) {
+                if (value.value().boolean()) { // If we're assigning true
+                    analysis.positive_boolean_effects.insert(fluent);
+                } else {
+                    analysis.negative_boolean_effects.insert(fluent);
+                }
+            }
+        } else {
+            // This handles all numeric effects: ASSIGN, INCREASE, and DECREASE
             analysis.numeric_effects.insert(fluent);
+            
+            // Collect dependencies from the RHS of the numeric effect
+            FluentPolarityCollector collector;
+            collector.collect_from_expression(effect.value());
+            for (const auto& dep : collector.get_numeric_fluents()) {
+                analysis.numeric_effect_dependencies.insert(dep);
+            }
         }
     }
 }
@@ -289,6 +288,78 @@ void InterferenceAnalyzer::print_action_analysis() const {
     }
     
     std::cout << "\n=== END ACTION ANALYSIS ===" << std::endl;
+}
+
+std::vector<const Action*> InterferenceAnalyzer::topological_sort_actions(const std::vector<const Action*>& actions) const {
+    if (actions.size() <= 1) {
+        return actions; // No sorting needed
+    }
+    
+    // Convert actions to node IDs
+    std::vector<Graph::NodeId> node_ids;
+    
+    for (const Action* action : actions) {
+        Graph::NodeId node_id = get_action_node_id(*action);
+        if (node_id >= 0) { // Valid node ID
+            node_ids.push_back(node_id);
+        }
+    }
+    
+    if (node_ids.empty()) {
+        return actions; // No valid node IDs found
+    }
+    
+    // Use the graph's topological sort
+    std::vector<Graph::NodeId> sorted_node_ids = interference_graph_.topological_sort(node_ids);
+    
+    // Convert back to actions using the existing node_id_to_action_ vector
+    std::vector<const Action*> sorted_actions;
+    for (Graph::NodeId node_id : sorted_node_ids) {
+        if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
+            sorted_actions.push_back(node_id_to_action_[node_id]);
+        }
+    }
+    
+    return sorted_actions;
+}
+
+void InterferenceAnalyzer::output_interference_graph_dot(const std::string& filename) const {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
+        return;
+    }
+    
+    std::cout << "Writing interference graph to " << filename << std::endl;
+    
+    file << "digraph InterferenceGraph {" << std::endl;
+    file << "    rankdir=LR;" << std::endl;
+    file << "    node [shape=box, style=rounded];" << std::endl;
+    file << "    edge [color=red, arrowhead=vee];" << std::endl;
+    file << std::endl;
+    
+    // Write nodes (actions)
+    for (size_t i = 0; i < node_id_to_action_.size(); ++i) {
+        const Action* action = node_id_to_action_[i];
+        if (action) {
+            file << "    " << i << " [label=\"" << action->name() << "\"];" << std::endl;
+        }
+    }
+    
+    file << std::endl;
+    
+    // Write edges (interferences)
+    for (Graph::NodeId node_id = 0; node_id < static_cast<Graph::NodeId>(node_id_to_action_.size()); ++node_id) {
+        const auto& neighbors = interference_graph_.get_neighbours(node_id);
+        for (Graph::NodeId neighbor : neighbors) {
+            file << "    " << node_id << " -> " << neighbor << ";" << std::endl;
+        }
+    }
+    
+    file << "}" << std::endl;
+    file.close();
+    
+    std::cout << "Interference graph successfully written to " << filename << std::endl;
 }
 
 } // namespace planmt

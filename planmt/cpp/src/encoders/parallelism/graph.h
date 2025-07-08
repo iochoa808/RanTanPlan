@@ -23,10 +23,22 @@ public:
     const std::vector<NodeId>& get_neighbours(NodeId node) const; // Get all neighbours (outgoing edges) of a node
     size_t num_nodes() const { return adjacency_list_.size(); } // Get the number of nodes in the graph
     size_t num_edges() const; // Get the total number of edges in the graph
+    
+    // Strongly Connected Components (SCC) analysis
+    std::vector<std::vector<NodeId>> compute_strongly_connected_components() const;
+    std::vector<int> get_scc_mapping() const; // Returns node_id -> scc_id mapping
+    
+    // Topological sorting
+    std::vector<NodeId> topological_sort(const std::vector<NodeId>& nodes) const;
 
 private:
     // Adjacency list representation: node_id -> list of neighbours
     std::vector<std::vector<NodeId>> adjacency_list_;
+    
+    // SCC caching
+    mutable std::vector<int> scc_mapping_; // Cached SCC results: node_id -> scc_id
+    mutable bool scc_computed_ = false;
+
 };
 
 } // namespace planmt

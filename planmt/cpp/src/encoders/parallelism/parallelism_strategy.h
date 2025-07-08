@@ -2,11 +2,15 @@
 
 #include "../../problem/problem.h"
 #include "../z3_variable_factory.h"
+#include "graph.h"  // Include graph header instead of forward declaration
 #include <z3++.h>
 #include <memory>
 #include <string>
 
 namespace planmt {
+
+// Forward declarations
+class InterferenceAnalyzer;
 
 /**
  * @brief Abstract base class for different parallelism encoding strategies
@@ -38,6 +42,12 @@ public:
      * @return String identifier for this strategy
      */
     virtual std::string get_name() const = 0;
+    
+    /**
+     * @brief Get access to the interference analyzer (if available)
+     * @return Pointer to the interference analyzer, or nullptr if not available
+     */
+    virtual const InterferenceAnalyzer* get_interference_analyzer() const = 0;
 };
 
 } // namespace planmt
