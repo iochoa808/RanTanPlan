@@ -47,15 +47,42 @@ void ForallSemantics::initialize(const Problem& problem, z3::context& ctx, Z3Var
 }
 
 std::shared_ptr<z3::expr> ForallSemantics::encode_parallelism(int timestep) {
-    // TODO: Implement forall parallelism semantics
-    // This should encode constraints that prevent conflicting actions from executing simultaneously
-    // For now, return a placeholder that allows any actions to execute
+    // Get the interference graph from the analyzer
+    const Graph& interference_graph = interference_analyzer_->get_interference_graph();
     
-    std::cout << "Warning: ForallSemantics::encode_parallelism not yet implemented" << std::endl;
-    std::cout << "         Falling back to allowing any number of actions (unlimited parallelism)" << std::endl;
+    z3::expr_vector mutex_constraints(*ctx_);
     
-    // Return true for now (no constraints = unlimited parallelism)
-    return std::make_shared<z3::expr>(ctx_->bool_val(true));
+    // Iterate through all nodes (actions) in the interference graph
+    for (size_t node_id = 0; node_id < interference_graph.num_nodes(); ++node_id) {
+        // Get the action corresponding to this node
+        const Action* action1 = interference_analyzer_->get_action_from_node_id(node_id);
+        if (!action1) continue;
+        
+        // Get all neighbors (actions that this action interferes with)
+        const std::vector<Graph::NodeId>& neighbors = interference_graph.get_neighbours(node_id);
+        
+        for (Graph::NodeId neighbor_id : neighbors) {
+            // Get the second action
+            const Action* action2 = interference_analyzer_->get_action_from_node_id(neighbor_id);
+            if (!action2) continue;
+            
+            // Create Z3 variables for both actions at the given timestep
+            z3::expr action1_var = variable_factory_->get_action_variable(*action1, timestep);
+            z3::expr action2_var = variable_factory_->get_action_variable(*action2, timestep);
+            
+            // Create mutex constraint: ¬(action1_t ∧ action2_t) ≡ (¬action1_t ∨ ¬action2_t)
+            z3::expr mutex = !action1_var || !action2_var;
+            mutex_constraints.push_back(mutex);
+        }
+    }
+    
+    // Combine all mutex constraints with logical AND
+    if (mutex_constraints.empty()) {
+        return std::make_shared<z3::expr>(ctx_->bool_val(true));
+    }
+    
+    z3::expr mutex_formula = z3::mk_and(mutex_constraints);
+    return std::make_shared<z3::expr>(mutex_formula);
 }
 
 std::shared_ptr<z3::expr> ForallSemantics::encode_mutex_constraints(int timestep) {
