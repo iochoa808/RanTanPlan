@@ -4,6 +4,10 @@
 
 namespace planmt {
 
+InterferenceAnalyzer::InterferenceAnalyzer(const Problem& problem) {
+    initialize(problem);
+}
+
 void InterferenceAnalyzer::initialize(const Problem& problem) {
     problem_ = &problem;
     
@@ -24,10 +28,11 @@ void InterferenceAnalyzer::initialize(const Problem& problem) {
     }
     
     std::cout << "InterferenceAnalyzer initialized with " << problem.actions().size() 
-              << " actions and analyzed their preconditions and effects" << std::endl;
+              << " actions and indexed their preconditions and effects" << std::endl;
     
     // Print the action analysis results
-    print_action_analysis();
+    //print_action_analysis();
+    build_interference_graph();
 }
 
 void InterferenceAnalyzer::build_interference_graph() {
@@ -39,7 +44,7 @@ void InterferenceAnalyzer::build_interference_graph() {
     std::cout << "Building interference graph..." << std::endl;
     analyze_action_conflicts();
     std::cout << "Interference graph built with " << interference_graph_.num_nodes() 
-              << " nodes" << std::endl;
+              << " nodes and " << interference_graph_.num_edges() << " edges" << std::endl;
 }
 
 void InterferenceAnalyzer::analyze_action_conflicts() {
@@ -65,39 +70,89 @@ void InterferenceAnalyzer::analyze_action_conflicts() {
 }
 
 bool InterferenceAnalyzer::actions_interfere(const Action& a1, const Action& a2) const {
-    // TODO: Implement expensive interference analysis (done during preprocessing)
-    // This checks if action a1 interferes with action a2 (directional relationship)
-    // Examples of interference:
-    // - a1's effects conflict with a2's preconditions
-    // - a1's effects conflict with a2's effects on the same fluent
-    // Note: interference is directional, so a1->a2 doesn't imply a2->a1
-    // This method is called O(n²) times during graph building but results are cached
-    // For now, return false (no conflicts detected)
+    // Get analysis for both actions
+    auto it1 = action_analysis_.find(a1);
+    auto it2 = action_analysis_.find(a2);
+    
+    if (it1 == action_analysis_.end() || it2 == action_analysis_.end()) {
+        return false;
+    }
+    
+    const ActionAnalysis& analysis_a1 = it1->second;
+    const ActionAnalysis& analysis_a2 = it2->second;
+    
+    // Helper lambda to check if two sets have non-empty intersection
+    auto has_intersection = [](const std::unordered_set<Expression>& set1, 
+                              const std::unordered_set<Expression>& set2) -> bool {
+        for (const auto& elem : set1) {
+            if (set2.find(elem) != set2.end()) {
+                return true;
+            }
+        }
+        return false;
+    };
+    
+    // 1. Check if effects of a1 can prevent execution of a2
+    // Effects of a1 interfere with preconditions of a2
+    
+    // a1's positive effects vs a2's negative preconditions
+    if (has_intersection(analysis_a1.positive_boolean_effects, 
+                        analysis_a2.negative_boolean_preconditions)) {
+        return true;
+    }
+    
+    // a1's negative effects vs a2's positive preconditions  
+    if (has_intersection(analysis_a1.negative_boolean_effects,
+                        analysis_a2.positive_boolean_preconditions)) {
+        return true;
+    }
+    
+    // a1's numeric effects vs a2's numeric preconditions
+    if (has_intersection(analysis_a1.numeric_effects,
+                        analysis_a2.numeric_preconditions)) {
+        return true;
+    }
+    
+    // 2. Check if effects of a1 and a2 interfere
+    
+    // a1's positive effects vs a2's negative effects (same fluent made true/false)
+    if (has_intersection(analysis_a1.positive_boolean_effects,
+                        analysis_a2.negative_boolean_effects)) {
+        return true;
+    }
+    
+    // a1's negative effects vs a2's positive effects (same fluent made false/true)
+    if (has_intersection(analysis_a1.negative_boolean_effects,
+                        analysis_a2.positive_boolean_effects)) {
+        return true;
+    }
+    
+    // numeric effects interfere if they modify the same fluent
+    if (has_intersection(analysis_a1.numeric_effects,
+                        analysis_a2.numeric_effects)) {
+        return true;
+    }
+    
     return false;
 }
 
 bool InterferenceAnalyzer::has_interference(const Action& a1, const Action& a2) const {
-    // Fast O(1) lookup in the pre-built interference graph
-    // This is called frequently during encoding, so it needs to be cheap
+
+    // Retrieve graph node IDs for both actions
     auto it1 = action_to_node_id_.find(a1);
     auto it2 = action_to_node_id_.find(a2);
-    
     if (it1 == action_to_node_id_.end() || it2 == action_to_node_id_.end()) {
         return false;
     }
-    
+    // Fast O(1) lookup in the pre-built interference graph
     return interference_graph_.has_edge(it1->second, it2->second);
 }
 
 InterferenceAnalyzer::ActionAnalysis InterferenceAnalyzer::analyze_action(const Action& action) const {
     ActionAnalysis analysis;
-    
-    // Analyze preconditions
+    // Analyze preconditions and effects
     analyze_preconditions(action, analysis);
-    
-    // Analyze effects
     analyze_effects(action, analysis);
-    
     return analysis;
 }
 
@@ -106,13 +161,18 @@ void InterferenceAnalyzer::analyze_preconditions(const Action& action, ActionAna
         return;
     }
     
-    // Use the fluent polarity collector to analyze preconditions
+    // Use the fluent polarity collector to analyze preconditions and split by polarity
     FluentPolarityCollector collector;
     collector.collect_from_expression(action.precondition());
-    
-    // Store the results
-    analysis.precondition_boolean_fluents = collector.get_boolean_fluents();
-    analysis.precondition_numeric_fluents = collector.get_numeric_fluents();
+    for (const auto& [fluent, polarity] : collector.get_boolean_fluents()) {
+        if (polarity == FluentPolarityCollector::Polarity::POSITIVE) {
+            analysis.positive_boolean_preconditions.insert(fluent);
+        } else {
+            analysis.negative_boolean_preconditions.insert(fluent);
+        }
+    }
+    // Store numeric preconditions
+    analysis.numeric_preconditions = collector.get_numeric_fluents();
 }
 
 void InterferenceAnalyzer::analyze_effects(const Action& action, ActionAnalysis& analysis) const {
@@ -170,20 +230,26 @@ void InterferenceAnalyzer::print_action_analysis() const {
     for (const auto& [action, analysis] : action_analysis_) {
         std::cout << "\nAction: " << action.name() << std::endl;
         
-        // Print boolean preconditions
-        if (!analysis.precondition_boolean_fluents.empty()) {
-            std::cout << "  Boolean preconditions:" << std::endl;
-            for (const auto& [fluent, polarity] : analysis.precondition_boolean_fluents) {
-                std::cout << "    " << fluent.to_string() << " [" 
-                         << (polarity == FluentPolarityCollector::Polarity::POSITIVE ? "POSITIVE" : "NEGATIVE") 
-                         << "]" << std::endl;
+        // Print positive boolean preconditions
+        if (!analysis.positive_boolean_preconditions.empty()) {
+            std::cout << "  Positive boolean preconditions:" << std::endl;
+            for (const auto& fluent : analysis.positive_boolean_preconditions) {
+                std::cout << "    " << fluent.to_string() << std::endl;
+            }
+        }
+        
+        // Print negative boolean preconditions
+        if (!analysis.negative_boolean_preconditions.empty()) {
+            std::cout << "  Negative boolean preconditions:" << std::endl;
+            for (const auto& fluent : analysis.negative_boolean_preconditions) {
+                std::cout << "    " << fluent.to_string() << std::endl;
             }
         }
         
         // Print numeric preconditions
-        if (!analysis.precondition_numeric_fluents.empty()) {
+        if (!analysis.numeric_preconditions.empty()) {
             std::cout << "  Numeric preconditions:" << std::endl;
-            for (const auto& fluent : analysis.precondition_numeric_fluents) {
+            for (const auto& fluent : analysis.numeric_preconditions) {
                 std::cout << "    " << fluent.to_string() << std::endl;
             }
         }
@@ -213,8 +279,12 @@ void InterferenceAnalyzer::print_action_analysis() const {
         }
         
         // Summary
-        int total_preconditions = analysis.precondition_boolean_fluents.size() + analysis.precondition_numeric_fluents.size();
-        int total_effects = analysis.positive_boolean_effects.size() + analysis.negative_boolean_effects.size() + analysis.numeric_effects.size();
+        int total_preconditions = analysis.positive_boolean_preconditions.size() + 
+                                 analysis.negative_boolean_preconditions.size() + 
+                                 analysis.numeric_preconditions.size();
+        int total_effects = analysis.positive_boolean_effects.size() + 
+                           analysis.negative_boolean_effects.size() + 
+                           analysis.numeric_effects.size();
         std::cout << "  Summary: " << total_preconditions << " preconditions, " << total_effects << " effects" << std::endl;
     }
     

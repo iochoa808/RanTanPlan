@@ -22,6 +22,7 @@ public:
     bool has_edge(NodeId source, NodeId target) const; // Check if an edge exists between two nodes
     const std::vector<NodeId>& get_neighbours(NodeId node) const; // Get all neighbours (outgoing edges) of a node
     size_t num_nodes() const { return adjacency_list_.size(); } // Get the number of nodes in the graph
+    size_t num_edges() const; // Get the total number of edges in the graph
 
 private:
     // Adjacency list representation: node_id -> list of neighbours

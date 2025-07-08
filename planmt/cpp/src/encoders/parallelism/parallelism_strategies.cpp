@@ -41,9 +41,7 @@ void ForallSemantics::initialize(const Problem& problem, z3::context& ctx, Z3Var
     variable_factory_ = &var_factory;
     
     // Create and initialize the interference analyzer
-    interference_analyzer_ = std::make_unique<InterferenceAnalyzer>();
-    interference_analyzer_->initialize(problem);
-    interference_analyzer_->build_interference_graph();
+    interference_analyzer_ = std::make_unique<InterferenceAnalyzer>(problem);
     
     std::cout << "ForallSemantics initialized with interference analysis" << std::endl;
 }
@@ -82,9 +80,7 @@ void ExistsSemantics::initialize(const Problem& problem, z3::context& ctx, Z3Var
     variable_factory_ = &var_factory;
     
     // Create and initialize the interference analyzer
-    interference_analyzer_ = std::make_unique<InterferenceAnalyzer>();
-    interference_analyzer_->initialize(problem);
-    interference_analyzer_->build_interference_graph();
+    interference_analyzer_ = std::make_unique<InterferenceAnalyzer>(problem);
     
     std::cout << "ExistsSemantics initialized with interference analysis" << std::endl;
 }

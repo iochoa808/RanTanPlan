@@ -20,10 +20,17 @@ namespace planmt {
  */
 class InterferenceAnalyzer {
 public:
+    /**
+     * @brief Construct and initialize the analyzer with a planning problem
+     * @param problem The planning problem to analyze
+     */
+    explicit InterferenceAnalyzer(const Problem& problem);
+    
+    // Default constructor for cases where problem isn't available at construction time
     InterferenceAnalyzer() = default;
     
     /**
-     * @brief Initialize the analyzer with a planning problem
+     * @brief Initialize the analyzer with a planning problem (for use with default constructor)
      * @param problem The planning problem to analyze
      */
     void initialize(const Problem& problem);
@@ -68,8 +75,9 @@ private:
     // Data structures to store action analysis results
     struct ActionAnalysis {
         // Precondition analysis
-        std::unordered_map<Expression, FluentPolarityCollector::Polarity> precondition_boolean_fluents;
-        std::unordered_set<Expression> precondition_numeric_fluents;
+        std::unordered_set<Expression> positive_boolean_preconditions;  // Boolean fluents required to be true
+        std::unordered_set<Expression> negative_boolean_preconditions;  // Boolean fluents required to be false
+        std::unordered_set<Expression> numeric_preconditions;           // Numeric fluents in preconditions
         
         // Effect analysis
         std::unordered_set<Expression> positive_boolean_effects;  // Boolean fluents made true

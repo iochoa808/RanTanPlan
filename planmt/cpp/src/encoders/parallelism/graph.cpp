@@ -40,4 +40,12 @@ const std::vector<Graph::NodeId>& Graph::get_neighbours(NodeId node) const {
     return adjacency_list_[node];
 }
 
+size_t Graph::num_edges() const {
+    size_t total = 0;
+    for (const auto& neighbours : adjacency_list_) {
+        total += neighbours.size();
+    }
+    return total;
+}
+
 } // namespace planmt
