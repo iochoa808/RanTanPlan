@@ -154,6 +154,7 @@ void InterferenceAnalyzer::analyze_preconditions(const Action& action, ActionAna
     // Use the fluent polarity collector to analyze preconditions and split by polarity
     FluentPolarityCollector collector;
     collector.collect_from_expression(action.precondition());
+    
     for (const auto& [fluent, polarity] : collector.get_boolean_fluents()) {
         if (polarity == FluentPolarityCollector::Polarity::POSITIVE) {
             analysis.positive_boolean_preconditions.insert(fluent);

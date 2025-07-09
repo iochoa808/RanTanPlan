@@ -82,38 +82,38 @@ public:
      * This handles the full expression context that individual visit methods lack.
      */
     void collect_from_expression(const Expression& expr) {
-        // Handle negation at the top level
-        bool is_negation = expr.is_not();
-        bool is_list_expr = expr.is_list();
+        // Check if this is a negation expression like (not ...)
+        auto is_negation = [&expr]() {
+            if (!expr.is_list()) return false;
+            const auto& list = expr.list();
+            return list.size() >= 2 && list[0].is_atom() && list[0].value().is_symbol() && 
+                   Expression::string_to_operator(list[0].value().symbol()) == Expression::Operator::NOT;
+        };
         
-        if (is_negation && is_list_expr) {
-            size_t list_size = expr.list().size();
+        // Handle negation expressions
+        if (is_negation()) {
+            // Enter negation context and process the negated content
+            bool old_negation = in_negation_context_;
+            in_negation_context_ = !in_negation_context_;
             
-            if (list_size == 1) {
-                // Enter negation context
-                bool old_negation = in_negation_context_;
-                in_negation_context_ = !in_negation_context_;
-                
-                // Process the negated expression
-                collect_from_expression(expr.list()[0]);
-                
-                // Restore previous context
-                in_negation_context_ = old_negation;
-                return;
+            // Process everything after the "not" operator
+            const auto& list = expr.list();
+            for (size_t i = 1; i < list.size(); ++i) {
+                collect_from_expression(list[i]);
             }
+            
+            in_negation_context_ = old_negation;
+            return;
         }
         
         // Check if this expression itself is a fluent
-        Expression::Kind kind = expr.kind();
-        
-        if (kind == Expression::Kind::FLUENT_SYMBOL || 
-            kind == Expression::Kind::STATE_VARIABLE) {
+        if (expr.kind() == Expression::Kind::FLUENT_SYMBOL || 
+            expr.kind() == Expression::Kind::STATE_VARIABLE) {
             collect_fluent(expr);
-        } else if (is_list_expr) {
-            // For list expressions, recursively process each element
-            const auto& list = expr.list();
-            for (size_t i = 0; i < list.size(); ++i) {
-                collect_from_expression(list[i]);
+        } else if (expr.is_list()) {
+            // For other list expressions, recursively process each element
+            for (const auto& element : expr.list()) {
+                collect_from_expression(element);
             }
         }
     } 

@@ -151,7 +151,7 @@ private:
      * @param analysis The analysis structure to populate
      */
     void analyze_effects(const Action& action, ActionAnalysis& analysis) const;
-    
+
     /**
      * @brief Print the action analysis results for debugging
      */
