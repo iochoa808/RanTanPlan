@@ -45,8 +45,8 @@ For more information, visit: https://github.com/pyPMT/planMT
     parser.add_argument(
         "--timeout",
         type=int,
-        default=300,
-        help="Timeout for planning in seconds (default: 300)"
+        default=3600,
+        help="Timeout for planning in seconds (default: 3600). Note is only checked between calls."
     )
     
     parser.add_argument(
