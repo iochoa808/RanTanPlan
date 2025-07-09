@@ -168,49 +168,134 @@ bool Expression::is_not() const {
 }
 
 bool Expression::is_implies() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && 
-            (atom_->symbol() == "implies" || atom_->symbol() == "=>");
+    // Handle list case: (implies ...) or (=> ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::IMPLIES;
+    }
+    // Handle atom case: expression is literally "implies" or "=>" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::IMPLIES;
+    }
+    return false;
 }
 
 bool Expression::is_iff() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && 
-            (atom_->symbol() == "iff" || atom_->symbol() == "<=>");
+    // Handle list case: (iff ...) or (<=> ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::IFF;
+    }
+    // Handle atom case: expression is literally "iff" or "<=>" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::IFF;
+    }
+    return false;
 }
 
 bool Expression::is_equals() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && 
-            (atom_->symbol() == "=" || atom_->symbol() == "==");
+    // Handle list case: (= ...) or (== ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::EQUALS;
+    }
+    // Handle atom case: expression is literally "=" or "==" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::EQUALS;
+    }
+    return false;
 }
 
 bool Expression::is_plus() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "+";
+    // Handle list case: (+ ...) or (up:plus ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::PLUS;
+    }
+    // Handle atom case: expression is literally "+" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::PLUS;
+    }
+    return false;
 }
 
 bool Expression::is_minus() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "-";
+    // Handle list case: (- ...) or (up:minus ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::MINUS;
+    }
+    // Handle atom case: expression is literally "-" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::MINUS;
+    }
+    return false;
 }
 
 bool Expression::is_multiply() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "*";
+    // Handle list case: (* ...) or (up:times ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::MULTIPLY;
+    }
+    // Handle atom case: expression is literally "*" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::MULTIPLY;
+    }
+    return false;
 }
 
 bool Expression::is_divide() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "/";
+    // Handle list case: (/ ...) or (up:div ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::DIVIDE;
+    }
+    // Handle atom case: expression is literally "/" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::DIVIDE;
+    }
+    return false;
 }
 
 bool Expression::is_less_than() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "<";
+    // Handle list case: (< ...) or (up:lt ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::LESS_THAN;
+    }
+    // Handle atom case: expression is literally "<" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::LESS_THAN;
+    }
+    return false;
 }
 
 bool Expression::is_less_equal() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "<=";
+    // Handle list case: (<= ...) or (up:le ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::LESS_EQUAL;
+    }
+    // Handle atom case: expression is literally "<=" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::LESS_EQUAL;
+    }
+    return false;
 }
 
 bool Expression::is_greater_than() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == ">";
+    // Handle list case: (> ...) or (up:gt ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::GREATER_THAN;
+    }
+    // Handle atom case: expression is literally ">" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::GREATER_THAN;
+    }
+    return false;
 }
 
 bool Expression::is_greater_equal() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == ">=";
+    // Handle list case: (>= ...) or (up:ge ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::GREATER_EQUAL;
+    }
+    // Handle atom case: expression is literally ">=" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::GREATER_EQUAL;
+    }
+    return false;
 }
 } // namespace planmt
