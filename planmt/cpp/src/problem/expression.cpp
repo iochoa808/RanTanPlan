@@ -132,15 +132,39 @@ bool Expression::operator==(const Expression& other) const {
 }
 
 bool Expression::is_and() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "and";
+    // Handle list case: (and ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::AND;
+    }
+    // Handle atom case: expression is literally "and" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::AND;
+    }
+    return false;
 }
 
 bool Expression::is_or() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "or";
+    // Handle list case: (or ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::OR;
+    }
+    // Handle atom case: expression is literally "or" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::OR;
+    }
+    return false;
 }
 
 bool Expression::is_not() const {
-    return is_atom() && atom_.has_value() && atom_->is_symbol() && atom_->symbol() == "not";
+    // Handle list case: (not ...) - this is the common case in PDDL
+    if (is_list() && !list_.empty() && list_[0].is_atom() && list_[0].value().is_symbol()) {
+        return string_to_operator(list_[0].value().symbol()) == Operator::NOT;
+    }
+    // Handle atom case: expression is literally "not" (rare, but for completeness)
+    if (is_atom() && atom_.has_value() && atom_->is_symbol()) {
+        return string_to_operator(atom_->symbol()) == Operator::NOT;
+    }
+    return false;
 }
 
 bool Expression::is_implies() const {

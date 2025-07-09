@@ -82,16 +82,8 @@ public:
      * This handles the full expression context that individual visit methods lack.
      */
     void collect_from_expression(const Expression& expr) {
-        // Check if this is a negation expression like (not ...)
-        auto is_negation = [&expr]() {
-            if (!expr.is_list()) return false;
-            const auto& list = expr.list();
-            return list.size() >= 2 && list[0].is_atom() && list[0].value().is_symbol() && 
-                   Expression::string_to_operator(list[0].value().symbol()) == Expression::Operator::NOT;
-        };
-        
-        // Handle negation expressions
-        if (is_negation()) {
+        // Handle negation expressions like (not ...)
+        if (expr.is_not()) {
             // Enter negation context and process the negated content
             bool old_negation = in_negation_context_;
             in_negation_context_ = !in_negation_context_;
