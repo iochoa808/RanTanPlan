@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <memory>
 #include <vector>
+#include <optional>
 
 namespace planmt {
 
@@ -36,6 +37,10 @@ private:
     // action_vars_[0]["move_airplane1_city1_city2"] -> z3::expr(bool variable for action at timestep 0)
     std::vector<std::unordered_map<std::string, std::shared_ptr<z3::expr>>> action_vars_;
     
+    // Reverse mappings from variable names to fluents/actions and timesteps
+    std::unordered_map<std::string, std::pair<std::shared_ptr<Fluent>, int>> state_var_name_to_fluent_;
+    std::unordered_map<std::string, std::pair<std::shared_ptr<Action>, int>> action_var_name_to_action_;
+    
 public:
     // Constructor
     explicit Z3VariableFactory(z3::context& ctx);
@@ -58,6 +63,12 @@ public:
     std::string get_fluent_var_name(const Fluent& fluent, int timestep) const;
     std::string get_action_var_name(const Action& action) const;
     std::string get_action_var_name(const Action& action, int timestep) const;
+    
+    // Reverse lookup methods
+    std::optional<std::pair<Fluent, int>> get_fluent_from_variable(const z3::expr& var) const;
+    std::optional<std::pair<Action, int>> get_action_from_variable(const z3::expr& var) const;
+    bool is_fluent_variable(const z3::expr& var) const;
+    bool is_action_variable(const z3::expr& var) const;
 
 private:
     // Helper methods for variable creation and management

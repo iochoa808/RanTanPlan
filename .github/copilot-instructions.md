@@ -87,5 +87,8 @@ Other test domains available:
 - `pddl/scanalyzer-3d-sequential-optimal-strips/` - Assembly line optimization
 
 ## Code Examples
+
+The `examples/` directory contains example code that can be used as a reference.
+
 Z3 C++ API: https://z3prover.github.io/api/html/namespacez3.html
 Z3 C++ header: https://github.com/Z3Prover/z3/blob/master/src/api/c%2B%2B/z3%2B%2B.h
