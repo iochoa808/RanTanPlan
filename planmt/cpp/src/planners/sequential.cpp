@@ -133,14 +133,13 @@ Plan SequentialPlanner::extract_plan(const z3::model& model, int max_timestep) {
             
             if (!parallel_actions.empty()) {
                 std::vector<const Action*> ordered_actions = topologically_sort_actions(parallel_actions);
-                
-                std::cout << "Timestep " << t << ": " << ordered_actions.size() << " actions in topological order" << std::endl;
-                
+                //std::cout << "Timestep " << t << ": " << ordered_actions.size() << " actions in topological order" << std::endl;
                 // Add ordered actions to plan
                 for (const Action* action : ordered_actions) {
-                    std::cout << "action: " << action->name() << std::endl;
+                //  std::cout << "action: " << action->name() << std::endl;
                     plan.add_action(action);
                 }
+                
             }
         } else {
             // Original sequential extraction logic
