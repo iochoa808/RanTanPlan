@@ -1,5 +1,5 @@
 #include "grounded_encoder.h"
-#include "parallelism/parallelism_strategies.h"
+#include "parallelism/parallelism_factory.h"
 #include <iostream>
 #include "problem/visitors/print_visitor.h"
 #include "problem/visitors/expression_visitor.h"
@@ -14,7 +14,7 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
     build_epc_index();
     
     // Initialize with sequential semantics by default
-    set_parallelism_strategy(ParallelismType::SEQUENTIAL);
+    set_parallelism_strategy(ParallelismFactory::ParallelismType::SEQUENTIAL);
 }
 
 // Helper function to convert expression to Z3 using visitor
@@ -250,18 +250,14 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
     return parallelism_strategy_->encode_parallelism(t);
 }
 
-void GroundedEncoder::set_parallelism_strategy(ParallelismType type) {
-    switch (type) {
-        case ParallelismType::SEQUENTIAL:
-            parallelism_strategy_ = std::make_unique<SequentialSemantics>();
-            break;
-        case ParallelismType::FORALL:
-            parallelism_strategy_ = std::make_unique<ForallSemantics>();
-            break;
-        case ParallelismType::EXISTS:
-            parallelism_strategy_ = std::make_unique<ExistsSemantics>();
-            break;
-    }
+void GroundedEncoder::set_parallelism_strategy(ParallelismFactory::ParallelismType type) {
+    parallelism_strategy_ = ParallelismFactory::create_strategy(type);
+    // Initialize the strategy with problem context
+    parallelism_strategy_->initialize(problem_, ctx_, variable_factory_);
+}
+
+void GroundedEncoder::set_parallelism_strategy(const std::string& strategy_name) {
+    parallelism_strategy_ = ParallelismFactory::create_strategy(strategy_name);
     // Initialize the strategy with problem context
     parallelism_strategy_->initialize(problem_, ctx_, variable_factory_);
 }

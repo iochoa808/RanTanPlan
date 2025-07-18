@@ -4,6 +4,7 @@
 #include "grounded_encoding_visitor.h"
 #include "z3_variable_factory.h"
 #include "parallelism/parallelism_strategy.h"
+#include "parallelism/parallelism_factory.h"
 #include <z3++.h>
 
 #include <vector>
@@ -14,20 +15,8 @@
 // This class is able to handle the encoding of grounded fluents and actions.
 namespace planmt {
 
-// Forward declarations
-class SequentialSemantics;
-class ForallSemantics; 
-class ExistsSemantics;
-
 class GroundedEncoder {
 public:
-    // Enum for selecting parallelism strategy
-    enum class ParallelismType {
-        SEQUENTIAL,  // Exactly one action per timestep (default)
-        FORALL,      // Actions can execute in parallel if they don't conflict  
-        EXISTS       // At least one action must execute per timestep
-    };
-
     // Constructor
     GroundedEncoder(const Problem& problem, z3::context& ctx);
 
@@ -39,7 +28,8 @@ public:
     std::shared_ptr<z3::expr> encode_parallelism(int t); // Encodes parallelism semantics
     
     // Strategy management
-    void set_parallelism_strategy(ParallelismType type);
+    void set_parallelism_strategy(ParallelismFactory::ParallelismType type);
+    void set_parallelism_strategy(const std::string& strategy_name);
     std::string get_parallelism_strategy_name() const;
     
     // Access to variable factory for plan extraction

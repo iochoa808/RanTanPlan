@@ -305,7 +305,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
                         PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
                         log_messages=[LogMessage(level=LogLevel.ERROR, message=f"Error mapping plan back: {e}")]
                     )
-            //print(f"Plan found (after mapping): {final_plan is not None}")
+            #print(f"Plan found (after mapping): {final_plan is not None}")
             print(f"Status from planner: {result_from_protobuf.status.name}")
 
             # Validate the plan if one was found

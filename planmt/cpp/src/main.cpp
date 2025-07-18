@@ -27,14 +27,7 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem, cons
     planmt::GroundedEncoder encoder(problem, ctx);
     
     // Set parallelism strategy based on parameter
-    if (parallelism_strategy == "forall") {
-        encoder.set_parallelism_strategy(planmt::GroundedEncoder::ParallelismType::FORALL);
-    } else if (parallelism_strategy == "exists") {
-        encoder.set_parallelism_strategy(planmt::GroundedEncoder::ParallelismType::EXISTS);
-    } else {
-        // Default to sequential (including "sequential" and any invalid input)
-        encoder.set_parallelism_strategy(planmt::GroundedEncoder::ParallelismType::SEQUENTIAL);
-    }
+    encoder.set_parallelism_strategy(parallelism_strategy);
     
     std::cout << "Using parallelism strategy: " << encoder.get_parallelism_strategy_name() << std::endl;
     
