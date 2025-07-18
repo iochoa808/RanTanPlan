@@ -84,7 +84,9 @@ add_executable(planmt
     src/encoders/grounded_encoding_visitor.cpp
     src/encoders/grounded_encoder.cpp
     src/encoders/parallelism/interference_analyzer.cpp
-    src/encoders/parallelism/parallelism_strategies.cpp
+    src/encoders/parallelism/sequential_semantics.cpp
+    src/encoders/parallelism/forall_semantics.cpp
+    src/encoders/parallelism/exists_semantics.cpp
     src/encoders/parallelism/parallelism_factory.cpp
     src/encoders/parallelism/graph.cpp
     src/encoders/z3_variable_factory.cpp

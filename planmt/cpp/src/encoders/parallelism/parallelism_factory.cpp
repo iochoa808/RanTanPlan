@@ -1,5 +1,7 @@
 #include "parallelism_factory.h"
-#include "parallelism_strategies.h"
+#include "sequential_semantics.h"
+#include "forall_semantics.h"
+#include "exists_semantics.h"
 #include <algorithm>
 #include <cctype>
 
