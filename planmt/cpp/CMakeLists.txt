@@ -91,6 +91,8 @@ add_executable(planmt
     src/encoders/parallelism/graph.cpp
     src/encoders/z3_variable_factory.cpp
     src/planners/sequential.cpp
+    src/planners/propagators/forall_propagator.cpp
+    src/planners/propagators/propagator_factory.cpp
 )
 
 # Define proto files and generate C++ sources

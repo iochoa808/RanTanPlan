@@ -32,6 +32,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self.executable_path = self._find_executable(options.get('executable_path'))
         self._verbose = options.get('verbose', False)
         self._parallelism = options.get('parallelism', 'sequential')
+        self._propagator = options.get('propagator', 'null')
 
     def _find_executable(self, provided_path):
         """Find the planmt executable, trying various locations."""
@@ -222,7 +223,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             with open(problem_filepath, "wb") as f:
                 f.write(pb_problem_msg.SerializeToString())
 
-            command = [self.executable_path, problem_filepath, solution_filepath, self._parallelism]
+            command = [self.executable_path, problem_filepath, solution_filepath, self._parallelism, self._propagator]
             print(f"Running planner: {' '.join(command)}")
 
             # Run the C++ planner with real-time output streaming

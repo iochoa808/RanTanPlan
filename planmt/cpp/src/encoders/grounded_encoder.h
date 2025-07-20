@@ -34,6 +34,7 @@ public:
     
     // Access to variable factory for plan extraction
     Z3VariableFactory& get_variable_factory() { return variable_factory_; }
+    const Z3VariableFactory& get_variable_factory() const { return variable_factory_; }
     
     // Get access to parallelism strategy for plan extraction
     const ParallelismStrategy* get_parallelism_strategy() const { return parallelism_strategy_.get(); }

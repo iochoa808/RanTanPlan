@@ -22,6 +22,7 @@ def parse_arguments():
 Examples:
   %(prog)s --domain examples/domain.pddl --problem examples/problem.pddl
   %(prog)s -d domain.pddl -p problem.pddl --timeout 30 --verbose
+  %(prog)s --domain domain.pddl --problem problem.pddl --parallelism forall --propagator forall
   %(prog)s --domain domain.pddl --problem problem.pddl --executable /path/to/planmt
 
 For more information, visit: https://github.com/pyPMT/planMT
@@ -69,6 +70,15 @@ For more information, visit: https://github.com/pyPMT/planMT
         help="Parallelism strategy: sequential (exactly one action per timestep), "
              "forall (actions can execute in parallel if they don't conflict), "
              "or exists (at least one action must execute per timestep). Default: sequential"
+    )
+    
+    parser.add_argument(
+        "--propagator",
+        type=str,
+        choices=["null", "forall"],
+        default="null",
+        help="Propagator strategy: null (no propagation, default), "
+             "or forall (forall-specific propagation). Default: null"
     )
     
     parser.add_argument(
@@ -155,6 +165,7 @@ def solve_problem(problem, args):
         planner_params['executable_path'] = args.executable
     planner_params['verbose'] = args.verbose
     planner_params['parallelism'] = args.parallelism
+    planner_params['propagator'] = args.propagator
     
     output_stream = sys.stdout
     
@@ -162,6 +173,7 @@ def solve_problem(problem, args):
         print(f"\n--- Starting planMT solver ---")
         print(f"Timeout: {args.timeout} seconds")
         print(f"Parallelism strategy: {args.parallelism}")
+        print(f"Propagator strategy: {args.propagator}")
         if args.executable:
             print(f"Using executable: {args.executable}")
     

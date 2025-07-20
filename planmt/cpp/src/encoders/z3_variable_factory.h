@@ -58,6 +58,10 @@ public:
     z3::expr get_fluent_variable(const Fluent& fluent, int timestep);
     z3::expr get_action_variable(const Action& action, int timestep);
     
+    // Const versions for read-only access (will lookup existing variables)
+    z3::expr get_fluent_variable(const Fluent& fluent, int timestep) const;
+    z3::expr get_action_variable(const Action& action, int timestep) const;
+    
     // Variable naming methods
     std::string get_fluent_var_name(const Fluent& fluent) const;
     std::string get_fluent_var_name(const Fluent& fluent, int timestep) const;
@@ -69,6 +73,16 @@ public:
     std::optional<std::pair<Action, int>> get_action_from_variable(const z3::expr& var) const;
     bool is_fluent_variable(const z3::expr& var) const;
     bool is_action_variable(const z3::expr& var) const;
+    
+    // Variable enumeration methods for propagators
+    std::vector<z3::expr> get_all_fluent_variables(int timestep) const;
+    std::vector<z3::expr> get_all_action_variables(int timestep) const;
+    std::vector<std::pair<z3::expr, int>> get_all_fluent_variables() const;
+    std::vector<std::pair<z3::expr, int>> get_all_action_variables() const;
+    
+    // Timestep management queries
+    int get_max_timestep() const;
+    bool has_variables_for_timestep(int timestep) const;
 
 private:
     // Helper methods for variable creation and management

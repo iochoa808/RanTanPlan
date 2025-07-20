@@ -10,12 +10,13 @@
 
 #include "problem/problem.h"
 #include "encoders/grounded_encoder.h" 
-#include "planners/sequential.h"    
+#include "planners/sequential.h"
+#include "planners/propagators/propagator_factory.h"    
 
 #include "z3++.h"
 
 // Function to print the complete planning problem structure using enhanced planning classes
-PlanGenerationResult solve_planning_problem(const planmt::Problem& problem, const std::string& parallelism_strategy = "sequential") {
+PlanGenerationResult solve_planning_problem(const planmt::Problem& problem, const std::string& parallelism_strategy = "sequential", const std::string& propagator_strategy = "null") {
     PlanGenerationResult result;
     auto* log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
@@ -25,17 +26,16 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem, cons
 
     // Instantiate the encoder/planner combination
     planmt::GroundedEncoder encoder(problem, ctx);
-    
-    // Set parallelism strategy based on parameter
     encoder.set_parallelism_strategy(parallelism_strategy);
-    
     std::cout << "Using parallelism strategy: " << encoder.get_parallelism_strategy_name() << std::endl;
     
+    // Create planner and set propagator
     planmt::SequentialPlanner planner(problem, encoder, ctx);
+    planner.set_propagator_strategy(propagator_strategy);
+        std::cout << "Using propagator strategy: " << planner.get_propagator_strategy_name() << std::endl;
 
     // Call planner.search() and get the result
     planmt::Plan plan = planner.search();
-    
     if (planner.solution_found()) {
         // Plan found (even if empty) - populate the result
         result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
@@ -63,16 +63,23 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem, cons
 int main(int argc, char* argv[]) {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-    if (argc < 3 || argc > 4) {
-        std::cerr << "Usage: " << argv[0] << " <input_problem.pb> <output_solution.pb> [parallelism_strategy]" << std::endl;
+    if (argc < 3 || argc > 5) {
+        std::cerr << "Usage: " << argv[0] << " <input_problem.pb> <output_solution.pb> [parallelism_strategy] [propagator_strategy]" << std::endl;
         std::cerr << "  parallelism_strategy: sequential (default), forall, or exists" << std::endl;
+        std::cerr << "  propagator_strategy: null (default), forall" << std::endl;
         return 1;
     }
 
     // Get parallelism strategy (optional third argument)
     std::string parallelism_strategy = "sequential"; // default
-    if (argc == 4) {
+    if (argc >= 4) {
         parallelism_strategy = argv[3];
+    }
+    
+    // Get propagator strategy (optional fourth argument)
+    std::string propagator_strategy = "null"; // default
+    if (argc >= 5) {
+        propagator_strategy = argv[4];
     }
 
     // Read the problem from the input file
@@ -87,8 +94,8 @@ int main(int argc, char* argv[]) {
     planmt::Problem planning_problem(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
 
-    // Solve the planning problem with the specified parallelism strategy
-    PlanGenerationResult result = solve_planning_problem(planning_problem, parallelism_strategy);
+    // Solve the planning problem with the specified strategies
+    PlanGenerationResult result = solve_planning_problem(planning_problem, parallelism_strategy, propagator_strategy);
 
     // Write the result to the output file
     std::fstream output(argv[2], std::ios::out | std::ios::trunc | std::ios::binary);

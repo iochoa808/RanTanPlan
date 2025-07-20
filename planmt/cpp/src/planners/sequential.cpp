@@ -1,6 +1,8 @@
 #include "sequential.h"
 #include "../encoders/parallelism/graph.h"
 #include "../encoders/parallelism/interference_analyzer.h"
+#include "propagators/null_propagator.h"
+#include "propagators/propagator_factory.h"
 #include <fstream>
 #include <iostream>
 #include <chrono>
@@ -9,8 +11,17 @@
 namespace planmt {
 
     SequentialPlanner::SequentialPlanner(const Problem& problem, GroundedEncoder& encoder, z3::context& ctx) 
-        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx) {
+        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
+          propagator_strategy_(std::make_unique<NullPropagator>()) {
         // Initialize planner with the given problem, encoder, and Z3 context
+        // Uses null propagator by default (no propagation)
+    }
+
+    SequentialPlanner::SequentialPlanner(const Problem& problem, GroundedEncoder& encoder, z3::context& ctx, 
+                                       std::unique_ptr<PropagatorStrategy> propagator) 
+        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
+          propagator_strategy_(propagator ? std::move(propagator) : std::make_unique<NullPropagator>()) {
+        // Initialize planner with the given problem, encoder, Z3 context, and propagator strategy
     }
 
 void SequentialPlanner::debug_output_constraints() {
@@ -26,13 +37,19 @@ void SequentialPlanner::debug_output_constraints() {
 }
 
 Plan SequentialPlanner::search() {
-    std::cout << "Starting search..." << std::endl;
+    std::cout << "Starting search with propagator: " << propagator_strategy_->get_name() << std::endl;
+    
+    // Initialize propagator once at the beginning
+    propagator_strategy_->initialize(solver_, encoder_);
     
     // Reset solution found flag
     solution_found_ = false;
 
     // Add initial state constraints (these are invariant)
     solver_.add(*encoder_.encode_initial_state());
+    
+    // Register variables for timestep 0 (initial state)
+    propagator_strategy_->register_timestep_variables(0);
     
     // Iterate from 0 to 100 timesteps
     for (int timestep = 0; timestep <= 100; ++timestep) {
@@ -46,6 +63,9 @@ Plan SequentialPlanner::search() {
             solver_.add(*encoder_.encode_actions(timestep-1));
             solver_.add(*encoder_.encode_frames(timestep-1));
             solver_.add(*encoder_.encode_parallelism(timestep-1));
+            
+            // Register variables for timestep after constraints are added
+            propagator_strategy_->register_timestep_variables(timestep);
         }
         
         // Make the goal literal imply the goal at this timestep
@@ -97,11 +117,14 @@ Plan SequentialPlanner::search() {
                 Plan plan = extract_plan(model, timestep);
                 std::cout << plan.to_string() << std::endl;
                 
+                // Clean up propagator before returning
+                propagator_strategy_->cleanup();
                 return plan; // Return the extracted plan
                 
             } catch (const std::exception& e) {
                 std::cout << "ERROR during plan extraction: " << e.what() << std::endl;
                 std::cout << "Returning empty plan." << std::endl;
+                propagator_strategy_->cleanup();
                 return Plan(); // Return empty plan on error
             }
             
@@ -114,6 +137,9 @@ Plan SequentialPlanner::search() {
     
     std::cout << "\n*** NO PLAN FOUND within 100 timesteps, aborting ***" << std::endl;
     std::cout << "No plan found within 100 timesteps." << std::endl;
+    
+    // Clean up propagator before returning
+    propagator_strategy_->cleanup();
     return Plan(); // Return empty plan
 }
 
@@ -208,6 +234,21 @@ std::vector<const Action*> SequentialPlanner::topologically_sort_actions(
     
     // Let the InterferenceAnalyzer handle the topological sorting
     return analyzer->topological_sort_actions(actions);
+}
+
+void SequentialPlanner::set_propagator_strategy(PropagatorFactory::PropagatorType type) {
+    propagator_strategy_ = PropagatorFactory::create_strategy(type, solver_, problem_);
+}
+
+void SequentialPlanner::set_propagator_strategy(const std::string& strategy_name) {
+    propagator_strategy_ = PropagatorFactory::create_strategy(strategy_name, solver_, problem_);
+}
+
+std::string SequentialPlanner::get_propagator_strategy_name() const {
+    if (propagator_strategy_) {
+        return propagator_strategy_->get_name();
+    }
+    return "Unknown";
 }
 
 } // namespace planmt

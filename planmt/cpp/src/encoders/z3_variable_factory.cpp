@@ -170,4 +170,109 @@ bool Z3VariableFactory::is_action_variable(const z3::expr& var) const {
     return action_var_name_to_action_.find(var_name) != action_var_name_to_action_.end();
 }
 
+// Const versions for read-only access
+z3::expr Z3VariableFactory::get_fluent_variable(const Fluent& fluent, int timestep) const {
+    std::string var_name = get_fluent_var_name(fluent, timestep);
+    
+    if (timestep >= static_cast<int>(state_vars_.size())) {
+        throw std::runtime_error("Timestep " + std::to_string(timestep) + " not allocated yet");
+    }
+    
+    const auto& timestep_vars = state_vars_[timestep];
+    auto it = timestep_vars.find(var_name);
+    if (it == timestep_vars.end()) {
+        throw std::runtime_error("Fluent variable " + var_name + " not found for timestep " + std::to_string(timestep));
+    }
+    return *(it->second);
+}
+
+z3::expr Z3VariableFactory::get_action_variable(const Action& action, int timestep) const {
+    std::string var_name = get_action_var_name(action, timestep);
+    
+    if (timestep >= static_cast<int>(action_vars_.size())) {
+        throw std::runtime_error("Timestep " + std::to_string(timestep) + " not allocated yet");
+    }
+    
+    const auto& timestep_vars = action_vars_[timestep];
+    auto it = timestep_vars.find(var_name);
+    if (it == timestep_vars.end()) {
+        throw std::runtime_error("Action variable " + var_name + " not found for timestep " + std::to_string(timestep));
+    }
+    return *(it->second);
+}
+
+// Variable enumeration methods for propagators
+std::vector<z3::expr> Z3VariableFactory::get_all_fluent_variables(int timestep) const {
+    std::vector<z3::expr> variables;
+    
+    if (timestep >= static_cast<int>(state_vars_.size())) {
+        return variables; // Empty vector if timestep not allocated
+    }
+    
+    const auto& timestep_vars = state_vars_[timestep];
+    variables.reserve(timestep_vars.size());
+    
+    for (const auto& pair : timestep_vars) {
+        variables.push_back(*(pair.second));
+    }
+    
+    return variables;
+}
+
+std::vector<z3::expr> Z3VariableFactory::get_all_action_variables(int timestep) const {
+    std::vector<z3::expr> variables;
+    
+    if (timestep >= static_cast<int>(action_vars_.size())) {
+        return variables; // Empty vector if timestep not allocated
+    }
+    
+    const auto& timestep_vars = action_vars_[timestep];
+    variables.reserve(timestep_vars.size());
+    
+    for (const auto& pair : timestep_vars) {
+        variables.push_back(*(pair.second));
+    }
+    
+    return variables;
+}
+
+std::vector<std::pair<z3::expr, int>> Z3VariableFactory::get_all_fluent_variables() const {
+    std::vector<std::pair<z3::expr, int>> variables;
+    
+    for (int timestep = 0; timestep < static_cast<int>(state_vars_.size()); ++timestep) {
+        const auto& timestep_vars = state_vars_[timestep];
+        for (const auto& pair : timestep_vars) {
+            variables.emplace_back(*(pair.second), timestep);
+        }
+    }
+    
+    return variables;
+}
+
+std::vector<std::pair<z3::expr, int>> Z3VariableFactory::get_all_action_variables() const {
+    std::vector<std::pair<z3::expr, int>> variables;
+    
+    for (int timestep = 0; timestep < static_cast<int>(action_vars_.size()); ++timestep) {
+        const auto& timestep_vars = action_vars_[timestep];
+        for (const auto& pair : timestep_vars) {
+            variables.emplace_back(*(pair.second), timestep);
+        }
+    }
+    
+    return variables;
+}
+
+// Timestep management queries
+int Z3VariableFactory::get_max_timestep() const {
+    int max_state = static_cast<int>(state_vars_.size()) - 1;
+    int max_action = static_cast<int>(action_vars_.size()) - 1;
+    return std::max(max_state, max_action);
+}
+
+bool Z3VariableFactory::has_variables_for_timestep(int timestep) const {
+    bool has_state_vars = timestep < static_cast<int>(state_vars_.size()) && !state_vars_[timestep].empty();
+    bool has_action_vars = timestep < static_cast<int>(action_vars_.size()) && !action_vars_[timestep].empty();
+    return has_state_vars || has_action_vars;
+}
+
 } // namespace planmt
