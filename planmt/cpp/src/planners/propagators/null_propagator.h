@@ -29,7 +29,7 @@ public:
     }
     
     std::string get_name() const override {
-        return "NullPropagator";
+        return "none";
     }
 };
 

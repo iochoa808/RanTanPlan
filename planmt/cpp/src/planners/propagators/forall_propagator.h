@@ -52,7 +52,6 @@ public:
     void push() override;
     void pop(unsigned num_scopes) override;
     void fixed(z3::expr const &ast, z3::expr const &value) override;
-    void final() override;
     z3::user_propagator_base* fresh(z3::context& ctx) override;
     
     // PropagatorStrategy interface
@@ -60,27 +59,6 @@ public:
     void register_timestep_variables(int timestep) override;
     void cleanup() override { } // Empty implementation for now
     std::string get_name() const override { return "ForallPropagator"; }
-
-private:
-    /**
-     * @brief Handle a state variable being fixed to a value
-     * @param var The Z3 variable that was fixed
-     * @param value The value it was fixed to
-     * @param fluent The fluent this variable represents
-     * @param timestep The timestep of this variable
-     */
-    void handle_state_variable_fixed(const z3::expr& var, const z3::expr& value, 
-                                   const Fluent& fluent, int timestep);
-    
-    /**
-     * @brief Handle an action variable being fixed to a value
-     * @param var The Z3 variable that was fixed
-     * @param value The value it was fixed to
-     * @param action The action this variable represents
-     * @param timestep The timestep of this variable
-     */
-    void handle_action_variable_fixed(const z3::expr& var, const z3::expr& value, 
-                                    const Action& action, int timestep);
 };
 
 } // namespace planmt
