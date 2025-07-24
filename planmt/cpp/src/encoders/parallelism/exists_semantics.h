@@ -8,7 +8,13 @@ namespace planmt {
 
 /**
  * @brief Exists semantics
+ *  Set of actions in a timestep can execute if there exists
+ *  at least one order where actions do not interfere with actions further
+ *  down the line.
  * 
+ * Jussi Rintanen, Keijo Heljanko, Ilkka Niemelä,
+ * Planning as satisfiability: parallel plans and algorithms for plan search,
+ * Artificial Intelligence, Volume 170, Issues 12–13, 2006,
  */
 class ExistsSemantics : public ParallelismStrategy {
 public:

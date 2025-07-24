@@ -20,8 +20,10 @@ public:
      */
     enum class ParallelismType {
         SEQUENTIAL,  // Exactly one action per timestep (default)
-        FORALL,      // Actions can execute in parallel if they don't conflict  
-        EXISTS       // At least one action must execute per timestep
+        FORALL,      // Set of actions in a timestep can execute in parallel if they don't conflict
+        EXISTS       // Set of actions in a timestep can execute if there exists
+                     //    at least one order where actions do not interfere with actions further
+                     //    down the line.
     };
 
     /**

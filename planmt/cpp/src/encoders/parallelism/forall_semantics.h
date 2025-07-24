@@ -9,8 +9,12 @@ namespace planmt {
 /**
  * @brief Forall semantics: actions can execute in parallel if they satisfy forall constraints
  * 
- * This strategy allows multiple actions to execute simultaneously as long as they
- * satisfy universal quantification constraints (e.g., no conflicting effects).
+ * This strategy allows multiple actions to execute simultaneously in the same timestep
+ * as long as none of the actions in a step affect any other one
+ * 
+ * Jussi Rintanen, Keijo Heljanko, Ilkka Niemelä,
+ * Planning as satisfiability: parallel plans and algorithms for plan search,
+ * Artificial Intelligence, Volume 170, Issues 12–13, 2006,
  */
 class ForallSemantics : public ParallelismStrategy {
 public:
