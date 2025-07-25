@@ -9,6 +9,7 @@ approach with a C++ backend and Unified Planning frontend.
 import argparse
 import os
 import sys
+from importlib import metadata
 from unified_planning.engines.results import LogLevel
 
 
@@ -89,7 +90,7 @@ For more information, visit: https://github.com/pyPMT/planMT
     parser.add_argument(
         "--version",
         action="version",
-        version="planMT 0.0.1"
+        version=f"planMT {metadata.version('planmt')}"
     )
     
     return parser.parse_args()
@@ -114,6 +115,13 @@ def validate_files(domain_file, problem_file):
         errors.append(f"Problem file is not readable: {problem_file}")
     
     return errors
+
+
+def validate_strategy_combination(parallelism, propagator):
+    """Validate that parallelism and propagator strategies are compatible."""
+    if parallelism == "forall" and propagator != "forall":
+        return f"Invalid combination: 'forall' parallelism requires 'forall' propagator, got '{propagator}'"
+    return None
 
 
 def parse_problem(domain_file, problem_file, verbose=False):
@@ -261,6 +269,12 @@ def main():
         print("Error: Invalid input files:")
         for error in file_errors:
             print(f"  - {error}")
+        sys.exit(1)
+    
+    # Validate strategy combination
+    strategy_error = validate_strategy_combination(args.parallelism, args.propagator)
+    if strategy_error:
+        print(f"Error: {strategy_error}")
         sys.exit(1)
     
     # Parse the problem
