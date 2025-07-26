@@ -176,15 +176,16 @@ TODO.txt
 venv
 .venv
 
-# build artifacts
+# build artifacts or random files
 planmt/cpp/build
 planmt/bin/planmt
 test_problem.pb
 output_solution.pb
 output.smt2
 plan_model.txt
+CLAUDE.md
+TODO.md
+out.txt
 
 # source examples that are not part of the project but can be useful for reference
 examples
-CLAUDE.md
-TODO.md

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../encoders/grounded_encoder.h"
+#include "propagator_types.h"
 #include <z3++.h>
 #include <memory>
 #include <string>
@@ -43,6 +44,12 @@ public:
      * @return String identifier for this strategy
      */
     virtual std::string get_name() const = 0;
+    
+    /**
+     * @brief Get the type of this propagator strategy
+     * @return PropagatorType enum value for this strategy
+     */
+    virtual PropagatorType get_type() const = 0;
 };
 
 } // namespace planmt

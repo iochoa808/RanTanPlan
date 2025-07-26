@@ -119,8 +119,8 @@ def validate_files(domain_file, problem_file):
 
 def validate_strategy_combination(parallelism, propagator):
     """Validate that parallelism and propagator strategies are compatible."""
-    if parallelism == "forall" and propagator != "forall":
-        return f"Invalid combination: 'forall' parallelism requires 'forall' propagator, got '{propagator}'"
+    if parallelism == "forall" and (propagator != "forall" and propagator != "null"):
+        return f"Invalid combination: 'forall' parallelism requires 'forall' or 'null' propagator, got '{propagator}'"
     return None
 
 

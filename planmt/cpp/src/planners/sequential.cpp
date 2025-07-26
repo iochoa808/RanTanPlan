@@ -62,7 +62,12 @@ Plan SequentialPlanner::search() {
         if (timestep > 0) {
             solver_.add(*encoder_.encode_actions(timestep-1));
             solver_.add(*encoder_.encode_frames(timestep-1));
-            solver_.add(*encoder_.encode_parallelism(timestep-1));
+            
+            // Only add parallelism constraints if not using ForallPropagator
+            // (ForallPropagator handles interference dynamically via propagation)
+            if (get_propagator_type() != PropagatorType::FORALL) {
+                solver_.add(*encoder_.encode_parallelism(timestep-1));
+            }
             
             // Register variables for timestep after constraints are added
             propagator_strategy_->register_timestep_variables(timestep);
@@ -236,7 +241,7 @@ std::vector<const Action*> SequentialPlanner::topologically_sort_actions(
     return analyzer->topological_sort_actions(actions);
 }
 
-void SequentialPlanner::set_propagator_strategy(PropagatorFactory::PropagatorType type) {
+void SequentialPlanner::set_propagator_strategy(PropagatorType type) {
     propagator_strategy_ = PropagatorFactory::create_strategy(type, solver_, problem_);
 }
 
@@ -245,10 +250,11 @@ void SequentialPlanner::set_propagator_strategy(const std::string& strategy_name
 }
 
 std::string SequentialPlanner::get_propagator_strategy_name() const {
-    if (propagator_strategy_) {
-        return propagator_strategy_->get_name();
-    }
-    return "Unknown";
+    return propagator_strategy_->get_name();
+}
+
+PropagatorType SequentialPlanner::get_propagator_type() const {
+    return propagator_strategy_->get_type();
 }
 
 } // namespace planmt

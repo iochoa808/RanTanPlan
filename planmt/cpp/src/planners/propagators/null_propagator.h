@@ -31,6 +31,10 @@ public:
     std::string get_name() const override {
         return "none";
     }
+    
+    PropagatorType get_type() const override {
+        return PropagatorType::NULL_PROPAGATOR;
+    }
 };
 
 } // namespace planmt

@@ -1,110 +1,137 @@
 #include "forall_propagator.h"
 #include "../../encoders/z3_variable_factory.h"
+#include "../../encoders/parallelism/interference_analyzer.h"
 #include <iostream>
 
 namespace planmt {
 
 ForallPropagator::ForallPropagator(z3::solver& solver, const Problem& problem)
-    : z3::user_propagator_base(&solver), problem_(&problem), encoder_(nullptr), fixed_values_(solver.ctx()) {
+    : z3::user_propagator_base(&solver), problem_(&problem), encoder_(nullptr) {
     
     // Define callbacks for the user propagator
     register_fixed();
-    
-    // Initialize storage for fixed variables per scope
-    fixed_cnt_.push(0);
 }
 
-/*
-    def push(self):
-        self.levels.append(len(self.trail))
-
-    def pop(self, n):
-        for _ in range(n):
-            if self.levels:
-                # Find the start of the current decision level
-                level_start = self.levels.pop()
-                # Undo all changes recorded after this level
-                while len(self.trail) > level_start:
-                    step, action = self.trail.pop()
-                    self.current[step].remove(action)
-        self.consistent = True
-*/
 void ForallPropagator::push() {
-    // Z3 is entering a new backtracking scope
-    fixed_cnt_.push(fixed_values_.size());
+    // Z3 is entering a new backtracking scope - mark decision level
+    decision_levels_.push_back(trail_.size());
 }
 
 void ForallPropagator::pop(unsigned num_scopes) {
-    // Z3 is backtracking
+    // Z3 is backtracking - undo changes for each scope
     for (unsigned i = 0; i < num_scopes; ++i) {
-        if (!fixed_cnt_.empty()) {
-            unsigned last_cnt = fixed_cnt_.top();
-            fixed_cnt_.pop();
+        if (!decision_levels_.empty()) {
+            // Find the start of the current decision level
+            size_t level_start = decision_levels_.back();
+            decision_levels_.pop_back();
             
-            // Remove fixed values that were added after this scope
-            fixed_values_.resize(last_cnt);
+            // Undo all trail entries added after this level
+            while (trail_.size() > level_start) {
+                const TrailEntry& entry = trail_.back();
+                
+                // Remove action from active set
+                auto& active_set = active_actions_per_timestep_[entry.timestep];
+                active_set.erase(entry.action);
+                
+                // Clean up empty timestep entries
+                if (active_set.empty()) {
+                    active_actions_per_timestep_.erase(entry.timestep);
+                    propagated_pairs_.erase(entry.timestep);
+                }
+                
+                trail_.pop_back();
+            }
         }
     }
+    
+    // Print trail state after backtracking
+    //print_trail_state();
 }
 
 void ForallPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
-    // This is called whenever Z3 fixes a variable to a value
-    fixed_values_.push_back(ast);
-    std::cout << "ForallPropagator::fixed() called for variable: " 
-              << ast.to_string() << " with value: " << value.to_string() << std::endl;  
-/*
+    // Extract action and timestep from the variable
+    auto action_info = encoder_->get_variable_factory().get_action_from_variable(ast);
+    if (!action_info || !value.is_true()) {
+        return; // Only process true action assignments
+    }
+    
+    const Action& action = action_info->first;
+    int timestep = action_info->second;
+    
+    // Add to trail
+    trail_.push_back({ast, true, timestep, action});
+    
+    // Update active actions for this timestep
+    active_actions_per_timestep_[timestep].insert(action);
+    
+    // Perform forall propagation logic
+    perform_forall_propagation(action, timestep, ast);  
+}
 
-    def _fixed(self, action, value):
-        if value and self.consistent:
-            # Parse action name and step
-            actions = str(action).split('_')
-            step = int(actions[-1])
-            action_name = '_'.join(actions[:-1])
-            if step >= len(self.current):
-                while step >= len(self.current):
-                    self.current.append(set())
-                self.current[step].add(action_name)
-                self.trail.append((step, action_name))
-                # There cannot be any interference: no other actions in step are True
-                return
-            literals = set()
-            self.trail.append((step, action_name))
-            self.current[step].add(action_name)
-            for dest in self.current[step] & set(self.graph.neighbors(action_name)):
-                literals.add(self.encoder.get_action_var(dest, step))
-                self.consistent = False
-            for dest in set(self.graph.neighbors(action_name)) - self.current[step] - self.propagated[step]:
-                if (dest, action_name) not in self.propagated[step]:
-                    if dest not in self.nots[step]:
-                        self.nots[step][dest] = z3.Not(self.encoder.get_action_var(dest, step))
-                    self.propagate(
-                        e=self.nots[step][dest],
-                        ids=[action],
-                        eqs=[]
-                    )
-                    self.propagated[step].add((dest, action_name))
-                    self.propagated[step].add((action_name, dest))
-
-            # Checking and adding in nodes using set intersection
-            for source in self.current[step] & set(self.graph.predecessors(action_name)):
-                literals.add(self.encoder.get_action_var(source, step))
-                self.consistent = False
-            for source in set(self.graph.neighbors(action_name)) - self.current[step]:
-                if (source, action_name) not in self.propagated[step]:
-                    if source not in self.nots[step]:
-                        self.nots[step][source] = z3.Not(self.encoder.get_action_var(source, step))
-                    self.propagate(
-                        e=self.nots[step][source],
-                        ids=[action],
-                        eqs=[]
-                    )
-                    self.propagated[step].add((source, action_name))
-                    self.propagated[step].add((action_name, source))
-            # Check if anything has caused interference
-            if literals:
-                literals.add(action)  # New action itself is only added once
-                self.conflict(deps=list(literals), eqs=[])
-*/
+void ForallPropagator::perform_forall_propagation(const Action& action, int timestep, const z3::expr& action_var) {
+    // Get interference analyzer from the parallelism strategy
+    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
+    if (!strategy) return;
+    
+    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    if (!analyzer) return;
+    
+    // Check for conflicts with currently active actions at this timestep
+    std::vector<z3::expr> conflict_literals;
+    
+    for (const Action& active_action : active_actions_per_timestep_[timestep]) {
+        if (active_action == action) continue; // Skip self
+        
+        if (analyzer->has_interference(action, active_action)) {
+            // Conflict detected - collect the conflicting action variable
+            z3::expr active_var = encoder_->get_variable_factory().get_action_variable(active_action, timestep);
+            conflict_literals.push_back(active_var);
+        }
+    }
+    
+    // If conflicts found, report to Z3
+    if (!conflict_literals.empty()) {
+        conflict_literals.push_back(action_var); // Add current action to conflict
+        
+        // Convert to z3::expr_vector for conflict API
+        z3::expr_vector conflict_vec(action_var.ctx());
+        for (const auto& lit : conflict_literals) {
+            conflict_vec.push_back(lit);
+        }
+        conflict(conflict_vec); // Report conflict to Z3
+        return;
+    }
+    
+    // Propagate negations for interfering actions not yet active
+    // Iterate through all actions in the problem to find interfering ones
+    for (const auto& other_action : problem_->actions()) {
+        if (other_action == action) continue; // Skip self
+        
+        // Check if this action interferes with the newly fixed action
+        if (analyzer->has_interference(action, other_action)) {
+            // Check if already active at this timestep
+            if (active_actions_per_timestep_[timestep].count(other_action) > 0) {
+                continue; // Already handled in conflict detection above
+            }
+            
+            // Check if we've already propagated this pair
+            if (has_propagated_pair(action, other_action, timestep)) {
+                continue; // Already propagated
+            }
+            
+            // Propagate negation of the interfering action
+            z3::expr other_action_var = encoder_->get_variable_factory().get_action_variable(other_action, timestep);
+            z3::expr negated_var = !other_action_var;
+            
+            // Propagate with current action as justification
+            z3::expr_vector justification(action_var.ctx());
+            justification.push_back(action_var);
+            propagate(justification, negated_var);
+            
+            // Mark this pair as propagated
+            mark_propagated_pair(action, other_action, timestep);
+        }
+    }
 }
 
 z3::user_propagator_base* ForallPropagator::fresh(z3::context& ctx) {
@@ -134,6 +161,52 @@ void ForallPropagator::register_timestep_variables(int timestep) {
             }
         }
     }
+}
+
+bool ForallPropagator::has_propagated_pair(const Action& a1, const Action& a2, int timestep) const {
+    auto it = propagated_pairs_.find(timestep);
+    if (it == propagated_pairs_.end()) return false;
+    
+    const auto& pairs = it->second;
+    return pairs.count({a1, a2}) > 0 || pairs.count({a2, a1}) > 0;
+}
+
+void ForallPropagator::mark_propagated_pair(const Action& a1, const Action& a2, int timestep) {
+    propagated_pairs_[timestep].insert({a1, a2});
+    propagated_pairs_[timestep].insert({a2, a1}); // Mark both directions
+}
+
+PropagatorType ForallPropagator::get_type() const {
+    return PropagatorType::FORALL;
+}
+
+void ForallPropagator::print_trail_state() const {
+    std::cout << "Trail: [";
+    for (size_t i = 0; i < trail_.size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        
+        const TrailEntry& entry = trail_[i];
+        // Determine if this is a decision or propagation by checking if it's at a decision level start
+        bool is_decision = false;
+        for (size_t level : decision_levels_) {
+            if (i == level) {
+                is_decision = true;
+                break;
+            }
+        }
+        
+        std::cout << "'" << (is_decision ? "D" : "P") << ": " 
+                  << entry.action.name() << "_t" << entry.timestep 
+                  << "=" << (entry.value ? "T" : "F") << "'";
+    }
+    std::cout << "]" << std::endl;
+    
+    std::cout << "Decision Levels: [";
+    for (size_t i = 0; i < decision_levels_.size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        std::cout << decision_levels_[i];
+    }
+    std::cout << "]" << std::endl;
 }
 
 } // namespace planmt

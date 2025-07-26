@@ -1,6 +1,7 @@
 #pragma once
 
 #include "propagator_strategy.h"
+#include "propagator_types.h"
 #include "../../problem/problem.h"
 #include <z3++.h>
 #include <memory>
@@ -17,14 +18,6 @@ namespace planmt {
  */
 class PropagatorFactory {
 public:
-    /**
-     * @brief Enum for selecting propagator strategy types
-     */
-    enum class PropagatorType {
-        NULL_PROPAGATOR,  // No propagation (default)
-        FORALL           // Forall-specific propagation
-    };
-
     /**
      * @brief Create a propagator strategy instance with solver (for user propagators)
      * @param type The type of strategy to create

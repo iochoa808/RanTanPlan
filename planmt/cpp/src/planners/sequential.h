@@ -27,9 +27,10 @@ public:
     bool solution_found() const { return solution_found_; }
     
     // Strategy management
-    void set_propagator_strategy(PropagatorFactory::PropagatorType type);
+    void set_propagator_strategy(PropagatorType type);
     void set_propagator_strategy(const std::string& strategy_name);
     std::string get_propagator_strategy_name() const;
+    PropagatorType get_propagator_type() const;
 
 private:
     const Problem& problem_;

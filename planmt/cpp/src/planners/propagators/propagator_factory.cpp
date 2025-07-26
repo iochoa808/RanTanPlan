@@ -41,7 +41,7 @@ std::string PropagatorFactory::get_strategy_name(PropagatorType type) {
     }
 }
 
-PropagatorFactory::PropagatorType PropagatorFactory::parse_strategy_type(const std::string& strategy_name) {
+PropagatorType PropagatorFactory::parse_strategy_type(const std::string& strategy_name) {
     // Convert to lowercase for case-insensitive comparison
     std::string lower_name = strategy_name;
     std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), 

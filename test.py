@@ -28,7 +28,13 @@ QUICK_TEST_DIRS = [
     "pddl/gripper-round-1-adl",
 ]
 
-PARALLELISM_STRATEGIES = ["sequential", "forall", "exists"]
+# Test configurations: (parallelism_strategy, propagator)
+TEST_CONFIGURATIONS = [
+    #("sequential", "null"),
+    ("forall", "null"),
+    ("forall", "forall"),  # Forall parallelism with forall propagator
+    #("exists", "null")
+]
 
 # --- ANSI Color Codes for Output ---
 class Colors:
@@ -91,11 +97,11 @@ def find_pddl_problems(root_dir="pddl", quick_test=False):
     return problem_paths
 
 
-def run_test(problem_name, domain_file, problem_file, strategy, verbose=False):
+def run_test(problem_name, domain_file, problem_file, strategy, propagator, verbose=False):
     """
     Runs a single planning test case.
     """
-    test_id = f"{problem_name} ({strategy})"
+    test_id = f"{problem_name} ({strategy}/{propagator})"
     print_info(f"Running test: {test_id}")
 
     try:
@@ -106,6 +112,7 @@ def run_test(problem_name, domain_file, problem_file, strategy, verbose=False):
         # 2. Configure and run the planner
         planner_params = {
             'parallelism': strategy,
+            'propagator': propagator,
             'verbose': verbose 
         }
         
@@ -161,7 +168,7 @@ def main():
     if not problems:
         sys.exit(1)
         
-    print_info(f"Found {len(problems)} problems to test against {len(PARALLELISM_STRATEGIES)} strategies.")
+    print_info(f"Found {len(problems)} problems to test against {len(TEST_CONFIGURATIONS)} configurations.")
 
     total_tests = 0
     passed_tests = 0
@@ -169,9 +176,9 @@ def main():
 
     # Run tests
     for problem_name, domain_file, problem_file in problems:
-        for strategy in PARALLELISM_STRATEGIES:
+        for strategy, propagator in TEST_CONFIGURATIONS:
             total_tests += 1
-            if run_test(problem_name, domain_file, problem_file, strategy, args.verbose):
+            if run_test(problem_name, domain_file, problem_file, strategy, propagator, args.verbose):
                 passed_tests += 1
             else:
                 failed_tests += 1
