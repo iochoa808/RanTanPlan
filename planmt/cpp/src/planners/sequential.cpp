@@ -52,6 +52,7 @@ Plan SequentialPlanner::search() {
     propagator_strategy_->register_timestep_variables(0);
     
     // Iterate from 0 to 100 timesteps
+    double total_time = 0.0; // Track total time used
     for (int timestep = 0; timestep <= 100; ++timestep) {
         auto step_start = std::chrono::high_resolution_clock::now();
         
@@ -96,13 +97,15 @@ Plan SequentialPlanner::search() {
         auto solve_time = std::chrono::duration<double>(solve_end - solve_start).count();
         
         auto step_end = std::chrono::high_resolution_clock::now();
-        auto total_time = std::chrono::duration<double>(step_end - step_start).count();
+        auto step_time = std::chrono::duration<double>(step_end - step_start).count();
+
+        total_time += step_time; // Accumulate total time
         
         // Print timing in compact format
-        std::cout << " timing: formula=" << formula_time << "s, solve=" << solve_time << "s, total=" << total_time << "s" << std::endl;
+        std::cout << " timing: formula=" << formula_time << "s, solve=" << solve_time << "s, step=" << step_time << "s" << std::endl;
         
         if (result == z3::sat) {
-            std::cout << "\n*** PLAN FOUND at timestep " << timestep << " ***" << std::endl;
+            std::cout << "\n*** PLAN FOUND at timestep " << timestep << " (total time: " << total_time << "s) ***" << std::endl;
             
             // Mark that we found a solution
             solution_found_ = true;

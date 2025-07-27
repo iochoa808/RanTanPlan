@@ -101,6 +101,15 @@ bool Action::operator==(const Action& other) const {
            effects_ == other.effects_;
 }
 
+bool Action::operator<(const Action& other) const {
+    // Lexicographic ordering: first by name, then by string representation for uniqueness
+    if (name_ != other.name_) {
+        return name_ < other.name_;
+    }
+    // If names are equal, use string representation for total ordering
+    return to_string() < other.to_string();
+}
+
 void Action::build_parameter_mappings() {
     parameter_name_to_index_.clear();
     for (size_t i = 0; i < parameters_.size(); ++i) {

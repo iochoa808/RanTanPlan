@@ -2,12 +2,14 @@
 #include "../../encoders/z3_variable_factory.h"
 #include "../../encoders/parallelism/interference_analyzer.h"
 #include <iostream>
+#include <set>
+#include <algorithm>
 
 namespace planmt {
 
 ForallPropagator::ForallPropagator(z3::solver& solver, const Problem& problem)
-    : z3::user_propagator_base(&solver), problem_(&problem), encoder_(nullptr) {
-    
+    : z3::user_propagator_base(&solver), problem_(&problem), encoder_(nullptr),
+     variable_factory_(nullptr), consistent_(true) {
     // Define callbacks for the user propagator
     register_fixed();
 }
@@ -32,26 +34,27 @@ void ForallPropagator::pop(unsigned num_scopes) {
                 // Remove action from active set
                 auto& active_set = active_actions_per_timestep_[entry.timestep];
                 active_set.erase(entry.action);
-                
-                // Clean up empty timestep entries
-                if (active_set.empty()) {
-                    active_actions_per_timestep_.erase(entry.timestep);
-                    propagated_pairs_.erase(entry.timestep);
-                }
+                // We don't want to clean up empty timestep entries
+                // as most probably they will be reused in the future
                 
                 trail_.pop_back();
             }
         }
     }
-    
-    // Print trail state after backtracking
-    //print_trail_state();
+    consistent_ = true; // Reset consistency flag on pop
 }
 
 void ForallPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
+    if (!value.is_true() && consistent_) {
+        // Only process true assignments and if propagator is consistent.
+        // Note that we can be in a situation where the propagator is inconsistent
+        // due to a previous list of propagations where we identified a conflict
+        // at the start but we are still processing fixed callbacks.
+        return;
+    }
     // Extract action and timestep from the variable
-    auto action_info = encoder_->get_variable_factory().get_action_from_variable(ast);
-    if (!action_info || !value.is_true()) {
+    auto action_info = variable_factory_->get_action_from_variable(ast);
+    if (!action_info) {
         return; // Only process true action assignments
     }
     
@@ -69,68 +72,70 @@ void ForallPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
 }
 
 void ForallPropagator::perform_forall_propagation(const Action& action, int timestep, const z3::expr& action_var) {
-    // Get interference analyzer from the parallelism strategy
-    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
-    if (!strategy) return;
+
+    // Get all actions that need to be negated when this action is true
+    // (includes both incoming and outgoing interference edges)
+    auto it = actions_interfering_with_.find(action);
+    if (it == actions_interfering_with_.end()) { return; } // No actions interfere with this one
+    const std::set<Action>& interfering_actions = it->second;
     
-    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
-    if (!analyzer) return;
+    // Get currently active actions at this timestep (empty set if none)
+    const std::set<Action>& active_actions = active_actions_per_timestep_[timestep];
     
-    // Check for conflicts with currently active actions at this timestep
-    std::vector<z3::expr> conflict_literals;
+    // Find first conflict using early-terminating intersection
+    Action first_conflict;
+    bool has_conflict = false;
     
-    for (const Action& active_action : active_actions_per_timestep_[timestep]) {
-        if (active_action == action) continue; // Skip self
-        
-        if (analyzer->has_interference(action, active_action)) {
-            // Conflict detected - collect the conflicting action variable
-            z3::expr active_var = encoder_->get_variable_factory().get_action_variable(active_action, timestep);
-            conflict_literals.push_back(active_var);
+    // Manual intersection with early termination
+    auto it1 = interfering_actions.begin();
+    auto it2 = active_actions.begin();
+    while (it1 != interfering_actions.end() && it2 != active_actions.end()) {
+        if (*it1 < *it2) { ++it1;
+        } else if (*it2 < *it1) { ++it2;
+        } else { // Found conflict - stop immediately
+            first_conflict = *it1;
+            has_conflict = true;
+            break;
         }
     }
     
-    // If conflicts found, report to Z3
-    if (!conflict_literals.empty()) {
-        conflict_literals.push_back(action_var); // Add current action to conflict
-        
-        // Convert to z3::expr_vector for conflict API
+    // If there's a conflict, report it and return
+    if (has_conflict) {
+        z3::expr interfering_var = variable_factory_->get_action_variable(first_conflict, timestep);
         z3::expr_vector conflict_vec(action_var.ctx());
-        for (const auto& lit : conflict_literals) {
-            conflict_vec.push_back(lit);
-        }
-        conflict(conflict_vec); // Report conflict to Z3
+        conflict_vec.push_back(action_var);
+        conflict_vec.push_back(interfering_var);
+        conflict(conflict_vec);
+        consistent_ = false;
         return;
     }
     
-    // Propagate negations for interfering actions not yet active
-    // Iterate through all actions in the problem to find interfering ones
-    for (const auto& other_action : problem_->actions()) {
-        if (other_action == action) continue; // Skip self
+    // We have no conflicts, so we can proceed with propagation!
+    // Find actions to negate using set difference: interfering actions that are NOT active
+    std::set<Action> actions_to_negate;
+    std::set_difference(interfering_actions.begin(), interfering_actions.end(),
+                        active_actions.begin(), active_actions.end(),
+                        std::inserter(actions_to_negate, actions_to_negate.begin()));
+    
+    // Collect all negations to propagate in one batch
+    z3::expr_vector negations_to_propagate(action_var.ctx());
+    for (const Action& action_to_negate : actions_to_negate) {
+        z3::expr interfering_var = variable_factory_->get_action_variable(action_to_negate, timestep);
+        z3::expr negated_var = !interfering_var;
+        negations_to_propagate.push_back(negated_var);
+    }
         
-        // Check if this action interferes with the newly fixed action
-        if (analyzer->has_interference(action, other_action)) {
-            // Check if already active at this timestep
-            if (active_actions_per_timestep_[timestep].count(other_action) > 0) {
-                continue; // Already handled in conflict detection above
-            }
-            
-            // Check if we've already propagated this pair
-            if (has_propagated_pair(action, other_action, timestep)) {
-                continue; // Already propagated
-            }
-            
-            // Propagate negation of the interfering action
-            z3::expr other_action_var = encoder_->get_variable_factory().get_action_variable(other_action, timestep);
-            z3::expr negated_var = !other_action_var;
-            
-            // Propagate with current action as justification
-            z3::expr_vector justification(action_var.ctx());
-            justification.push_back(action_var);
-            propagate(justification, negated_var);
-            
-            // Mark this pair as propagated
-            mark_propagated_pair(action, other_action, timestep);
-        }
+    // Propagate all negations at once with current action as justification
+    if (!negations_to_propagate.empty()) {
+        // Create justification for the propagated negations
+        z3::expr_vector justification(action_var.ctx());
+        justification.push_back(action_var);
+        // create consequence
+        z3::expr all_negations = mk_and(negations_to_propagate);
+        // and propagate the big and of all negations
+        propagate(justification, all_negations);
+        // Print the propagated clause
+        //std::cout << "Propagated clause: " << all_negations.to_string() << " with justification: " << action_var.to_string() << std::endl;
     }
 }
 
@@ -143,11 +148,20 @@ z3::user_propagator_base* ForallPropagator::fresh(z3::context& ctx) {
 void ForallPropagator::initialize(z3::solver& solver, const GroundedEncoder& encoder) {
     // Store reference to encoder for variable factory access
     encoder_ = &encoder;
+    
+    // Cache variable factory reference to avoid repeated lookups
+    variable_factory_ = &encoder.get_variable_factory();
+    
+    // Set Z3 option to persist clauses for user propagator
+    solver.set("smt.up.persist_clauses", true);
+    
+    // Build reverse interference lookup for efficient propagation
+    build_reverse_interference_lookup();
 }
 
 void ForallPropagator::register_timestep_variables(int timestep) {
     
-    const Z3VariableFactory& var_factory = encoder_->get_variable_factory();
+    const Z3VariableFactory& var_factory = *variable_factory_;
     // For timestep 0: register nothing as there are no actions
     if (timestep == 0) return;
     // For timestep t > 0: register action variables for t-1 
@@ -163,21 +177,51 @@ void ForallPropagator::register_timestep_variables(int timestep) {
     }
 }
 
-bool ForallPropagator::has_propagated_pair(const Action& a1, const Action& a2, int timestep) const {
-    auto it = propagated_pairs_.find(timestep);
-    if (it == propagated_pairs_.end()) return false;
-    
-    const auto& pairs = it->second;
-    return pairs.count({a1, a2}) > 0 || pairs.count({a2, a1}) > 0;
-}
-
-void ForallPropagator::mark_propagated_pair(const Action& a1, const Action& a2, int timestep) {
-    propagated_pairs_[timestep].insert({a1, a2});
-    propagated_pairs_[timestep].insert({a2, a1}); // Mark both directions
-}
-
 PropagatorType ForallPropagator::get_type() const {
     return PropagatorType::FORALL;
+}
+
+void ForallPropagator::build_reverse_interference_lookup() {
+    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
+    if (!strategy) return;
+    
+    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    if (!analyzer) return;
+    
+    // Clear any existing data
+    actions_interfering_with_.clear();
+    
+    // Build complete interference lookup: for each action, find all actions that need to be negated
+    // This includes both incoming edges (actions that interfere with this action) 
+    // and outgoing edges (actions that this action interferes with)
+    for (const Action& action : problem_->actions()) {
+        Graph::NodeId node_id = analyzer->get_action_node_id(action);
+        if (node_id < 0) continue;
+        
+        // Get all actions that 'action' interferes with (outgoing edges)
+        const std::vector<Graph::NodeId>& interfered_with = 
+            analyzer->get_interference_graph().get_neighbours(node_id);
+        
+        // Add outgoing edges: when 'action' is true, all actions it interferes with must be false
+        for (Graph::NodeId target_node : interfered_with) {
+            const Action* target_action = analyzer->get_action_from_node_id(target_node);
+            if (target_action) {
+                actions_interfering_with_[action].insert(*target_action);
+            }
+        }
+        
+        // Add incoming edges: when 'action' is true, all actions that interfere with it must be false
+        // (This builds the reverse lookup from the outgoing edges of other actions)
+        for (Graph::NodeId target_node : interfered_with) {
+            const Action* target_action = analyzer->get_action_from_node_id(target_node);
+            if (target_action) {
+                actions_interfering_with_[*target_action].insert(action);
+            }
+        }
+    }
+    
+    std::cout << "Built reverse interference lookup for " 
+              << actions_interfering_with_.size() << " actions" << std::endl;
 }
 
 void ForallPropagator::print_trail_state() const {

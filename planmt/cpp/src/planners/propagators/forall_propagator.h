@@ -23,7 +23,8 @@ class ForallPropagator : public z3::user_propagator_base, public PropagatorStrat
 private:
     const GroundedEncoder* encoder_;  // Access to variable factory and problem (const for initialization)
     const Problem* problem_;    // Direct access to problem structure
-    
+    const Z3VariableFactory* variable_factory_;  // Cached reference to variable factory
+
     // Trail-based state management for push/pop behavior
     struct TrailEntry {
         z3::expr variable;
@@ -31,18 +32,20 @@ private:
         int timestep;
         Action action;
     };
-    
+
     std::vector<TrailEntry> trail_;
     std::vector<size_t> decision_levels_;  // Indices into trail_ marking decision boundaries
-    
+
     // Active actions tracking per timestep
-    std::unordered_map<int, std::unordered_set<Action>> active_actions_per_timestep_;
-    
-    // Track which action pairs have been propagated to avoid redundancy
-    std::unordered_map<int, std::unordered_set<std::pair<Action, Action>>> propagated_pairs_;
-    
+    std::unordered_map<int, std::set<Action>> active_actions_per_timestep_;
+
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
+
+    // Precomputed complete interference lookup: action -> set of actions that need to be negated
+    std::unordered_map<Action, std::set<Action>> actions_interfering_with_;
+
+    bool consistent_;  // Flag to track consistency of the propagator
     
 public:
     /**
@@ -76,22 +79,10 @@ public:
 private:
     // Helper methods for forall propagation logic
     void perform_forall_propagation(const Action& action, int timestep, const z3::expr& action_var);
-    bool has_propagated_pair(const Action& a1, const Action& a2, int timestep) const;
-    void mark_propagated_pair(const Action& a1, const Action& a2, int timestep);
+    
+    // Debugging and utility methods
     void print_trail_state() const;
+    void build_reverse_interference_lookup();
 };
 
 } // namespace planmt
-
-// Hash specialization for std::pair<Action, Action> for use in unordered containers
-namespace std {
-    template<>
-    struct hash<std::pair<planmt::Action, planmt::Action>> {
-        std::size_t operator()(const std::pair<planmt::Action, planmt::Action>& pair) const {
-            // Combine hashes of both actions
-            std::size_t h1 = std::hash<planmt::Action>()(pair.first);
-            std::size_t h2 = std::hash<planmt::Action>()(pair.second);
-            return h1 ^ (h2 << 1); // Simple hash combination
-        }
-    };
-}

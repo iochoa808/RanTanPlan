@@ -58,6 +58,7 @@ public:
     // Operators
     bool operator==(const Action& other) const;
     bool operator!=(const Action& other) const { return !(*this == other); }
+    bool operator<(const Action& other) const;
 
 private:
     std::string name_;
