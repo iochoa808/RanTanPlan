@@ -93,6 +93,7 @@ add_executable(planmt
     src/planners/sequential.cpp
     src/planners/propagators/forall_propagator.cpp
     src/planners/propagators/forall_on_demand_propagator.cpp
+    src/planners/propagators/exists_propagator.cpp
     src/planners/propagators/propagator_factory.cpp
 )
 
