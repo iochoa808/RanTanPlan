@@ -189,3 +189,4 @@ out.txt
 
 # source examples that are not part of the project but can be useful for reference
 examples
+*.pdf

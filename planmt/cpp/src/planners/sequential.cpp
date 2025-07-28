@@ -66,7 +66,8 @@ Plan SequentialPlanner::search() {
             
             // Only add parallelism constraints if not using ForallPropagator
             // (ForallPropagator handles interference dynamically via propagation)
-            if (get_propagator_type() != PropagatorType::FORALL) {
+            if (get_propagator_type() != PropagatorType::FORALL
+                && get_propagator_type() != PropagatorType::FORALL_ON_DEMAND) {
                 solver_.add(*encoder_.encode_parallelism(timestep-1));
             }
             
