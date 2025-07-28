@@ -34,7 +34,7 @@ TEST_CONFIGURATIONS = [
     #("forall", "null"),
     ("forall", "forall"),  # Forall parallelism with forall propagator
     ("forall", "forall_on_demand"),  # Forall parallelism with the forall_on_demand propagator
-    #("exists", "null")
+    ("exists", "exists")
 ]
 
 # --- ANSI Color Codes for Output ---

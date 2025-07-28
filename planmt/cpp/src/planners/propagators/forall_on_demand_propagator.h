@@ -11,11 +11,14 @@
 namespace planmt {
 
 /**
- * @brief Simplified forall propagator with on-demand interference checking
- * 
- * This class implements both the Z3 user_propagator_base interface and the
- * PropagatorStrategy interface, providing simplified propagation logic that
- * negates all interfering actions without conflict detection or trail management.
+ * @brief Forall propagator with on-demand interference checking. The idea
+ * is simple: once an action is set to true, we check all its actions that
+ * can interfere with it and propagate a clause that should put all of them
+ * to false.
+ * In other words, it propagates the set of mutexes in a compact way by
+ * stating a_1 -> ¬a_2 ∧ ¬a_3 ∧ ...), which if expand, would be equivalent to
+ * ¬a_1 ∨ (¬a_2 ∧ ¬a_3 ∧ ...) 
+ * (¬a_1 ∨ ¬a_2) ∧ (¬a_1 ∨ ¬a_3) ∧ ...
  */
 class ForallOnDemandPropagator : public z3::user_propagator_base, public PropagatorStrategy {
 private:
