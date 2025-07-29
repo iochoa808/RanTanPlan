@@ -90,7 +90,7 @@ Plan SequentialPlanner::search() {
         auto formula_time = std::chrono::duration<double>(formula_end - formula_start).count();
 
         std::cout << "T" << timestep;
-        debug_output_constraints(); // Output initial constraints
+        //debug_output_constraints(); // Output initial constraints
 
         // Time solving
         auto solve_start = std::chrono::high_resolution_clock::now();
