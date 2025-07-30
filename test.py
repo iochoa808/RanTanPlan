@@ -23,9 +23,9 @@ from planmt.planner_wrapper import planMTPlanner
 
 # Add directories here for the --quick test
 QUICK_TEST_DIRS = [
-    "pddl/zenotravel",
-    "pddl/rover",
-    "pddl/gripper-round-1-adl",
+    "pddl/test/zenotravel",
+    "pddl/test/rover",
+    "pddl/test/gripper-round-1-adl",
 ]
 
 # Test configurations: (parallelism_strategy, propagator)
@@ -62,7 +62,7 @@ def print_header(message):
     print(f"\n{Colors.HEADER}{Colors.BOLD}{message}{Colors.ENDC}")
 
 
-def find_pddl_problems(root_dir="pddl", quick_test=False):
+def find_pddl_problems(root_dir="pddl/test", quick_test=False):
     """
     Finds all PDDL domain/problem pairs in the specified directory.
     

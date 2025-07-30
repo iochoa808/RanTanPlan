@@ -21,7 +21,7 @@ from collections import defaultdict
 
 # All available encoding/propagator combinations to benchmark
 BENCHMARK_CONFIGURATIONS = [
-    ("sequential", "null"),
+#    ("sequential", "null"),
     ("forall", "null"), 
     ("forall", "forall"),
     ("forall", "forall_on_demand"),
@@ -200,7 +200,8 @@ def run_parallel_benchmark(commands, jobs, results_dir, timeout=60):
             error_file = results_path / f"{job_id}.err"
             
             cmd_str = ' '.join([f"'{arg}'" if ' ' in arg else arg for arg in cmd])
-            f.write(f"{cmd_str} > '{output_file}' 2> '{error_file}'\n")
+            # Add memory limit of 4GB (4194304 KB) using ulimit -v
+            f.write(f"ulimit -v 4194304; {cmd_str} > '{output_file}' 2> '{error_file}'\n")
         
         jobs_file = f.name
     
@@ -218,10 +219,10 @@ def run_parallel_benchmark(commands, jobs, results_dir, timeout=60):
         result = subprocess.run(parallel_cmd, capture_output=True, text=True)
         
         if result.returncode != 0:
-            print_fail(f"GNU parallel failed with return code {result.returncode}")
+            print_warning(f"GNU parallel returned code {result.returncode} (some jobs may have timed out)")
             if result.stderr:
-                print_fail(f"Error output: {result.stderr}")
-            return {}, []  # Return empty results tuple
+                print_warning(f"Stderr: {result.stderr}")
+            # Continue processing results even if parallel had issues
         
         # Parse results
         return parse_results(commands, results_path)
@@ -259,12 +260,14 @@ def parse_parallel_log(log_file):
                     
                     # Extract job_id from command (it's in the output filename)
                     job_id = None
-                    if "> 'benchmark_results/" in command and ".out'" in command:
-                        # Extract the part between benchmark_results/ and .out
-                        start_idx = command.find("> 'benchmark_results/") + len("> 'benchmark_results/")
-                        end_idx = command.find(".out'", start_idx)
-                        if start_idx > 0 and end_idx > start_idx:
-                            job_id = command[start_idx:end_idx]
+                    if "> '" in command and ".out'" in command:
+                        # Find the output file path more robustly
+                        out_start = command.find("> '") + 3
+                        out_end = command.find(".out'", out_start)
+                        if out_start > 2 and out_end > out_start:
+                            full_path = command[out_start:out_end]
+                            # Extract just the filename without directory
+                            job_id = full_path.split('/')[-1] if '/' in full_path else full_path
                     
                     if job_id and runtime:
                         try:
@@ -310,8 +313,17 @@ def parse_results(commands, results_path):
                 with open(output_file, 'r') as f:
                     content = f.read()
                     # Look for success indicators in output
-                    if "Plan found" in content or "SOLVED" in content or "Solution found" in content:
+                    if ("Plan found" in content or "SOLVED" in content or "Solution found" in content or
+                        "Status: PlanGenerationResultStatus.SOLVED_SATISFICING" in content or
+                        "Status: PlanGenerationResultStatus.SOLVED_OPTIMALLY" in content):
                         success = True
+                    # Also check that it's not a timeout/failure
+                    elif ("Status: PlanGenerationResultStatus.TIMEOUT" in content or
+                          "Status: PlanGenerationResultStatus.UNSOLVABLE_PROVEN" in content or
+                          "Status: PlanGenerationResultStatus.UNSOLVABLE_INCOMPLETELY" in content or
+                          "No plan found" in content or
+                          "Planner timed out" in content):
+                        success = False
             except:
                 pass
         
