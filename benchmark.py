@@ -146,9 +146,9 @@ def discover_pddl_instances(root_dir):
 def generate_job_commands(instances_by_domain, configurations, timeout, verbose=False):
     """
     Generates individual solver commands for GNU parallel execution.
-    
+
     Returns:
-        List of (command, job_id, domain, config) tuples
+        List of (command, job_id, domain, config, instance) tuples
     """
     commands = []
     job_id = 0
@@ -175,7 +175,7 @@ def generate_job_commands(instances_by_domain, configurations, timeout, verbose=
                 if verbose:
                     cmd.append("-v")
                 
-                commands.append((cmd, current_job_id, domain_name, config_name))
+                commands.append((cmd, current_job_id, domain_name, config_name, instance_name))
                 job_id += 1
     
     return commands
@@ -194,7 +194,7 @@ def run_parallel_benchmark(commands, jobs, results_dir, timeout=60):
     
     # Write job commands to temporary file for GNU parallel
     with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.jobs') as f:
-        for cmd, job_id, _, _ in commands:
+        for cmd, job_id, *_ in commands:
             # Redirect output to individual result files
             output_file = results_path / f"{job_id}.out"
             error_file = results_path / f"{job_id}.err"
@@ -300,12 +300,8 @@ def parse_results(commands, results_path):
     timing_info = parse_parallel_log(results_path / "parallel.log")
     print_info(f"Parsed timing info for {len(timing_info)} jobs")
     
-    for _, job_id, domain, config in commands:
+    for _, job_id, domain, config, instance_name in commands:
         output_file = results_path / f"{job_id}.out"
-        
-        # Extract instance name from job_id
-        parts = job_id.split('_')
-        instance_name = parts[1] if len(parts) > 1 else "unknown"
         
         # Check if solver succeeded
         success = False
