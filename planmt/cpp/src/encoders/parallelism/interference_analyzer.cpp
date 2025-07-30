@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <fstream> // For outputting the graph to a DOT file
+#include <chrono>
 
 namespace planmt {
 
@@ -47,10 +48,16 @@ void InterferenceAnalyzer::build_interference_graph() {
     }
     
     std::cout << "Building interference graph..." << std::endl;
-    analyze_action_conflicts();
-    std::cout << "Interference graph built with " << interference_graph_.num_nodes() 
-              << " nodes and " << interference_graph_.num_edges() << " edges" << std::endl;
     
+    auto start_time = std::chrono::high_resolution_clock::now();
+    analyze_action_conflicts();
+    auto end_time = std::chrono::high_resolution_clock::now();
+    
+    auto duration = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+    
+    std::cout << "Interference graph built with " << interference_graph_.num_nodes() 
+              << " nodes and " << interference_graph_.num_edges() << " edges. "
+              << "Time taken: " << duration.count() << " seconds" << std::endl;
 }
 
 void InterferenceAnalyzer::analyze_action_conflicts() {
@@ -292,36 +299,37 @@ void InterferenceAnalyzer::print_action_analysis() const {
 }
 
 std::vector<const Action*> InterferenceAnalyzer::topological_sort_actions(const std::vector<const Action*>& actions) const {
+    std::vector<const Action*> result;
+    
     if (actions.size() <= 1) {
-        return actions; // No sorting needed
-    }
-    
-    // Convert actions to node IDs
-    std::vector<Graph::NodeId> node_ids;
-    
-    for (const Action* action : actions) {
-        Graph::NodeId node_id = get_action_node_id(*action);
-        if (node_id >= 0) { // Valid node ID
-            node_ids.push_back(node_id);
+        result = actions; // No sorting needed
+    } else {
+        // Convert actions to node IDs
+        std::vector<Graph::NodeId> node_ids;
+        
+        for (const Action* action : actions) {
+            Graph::NodeId node_id = get_action_node_id(*action);
+            if (node_id >= 0) { // Valid node ID
+                node_ids.push_back(node_id);
+            }
+        }
+        
+        if (node_ids.empty()) {
+            result = actions; // No valid node IDs found
+        } else {
+            // Use the graph's topological sort
+            std::vector<Graph::NodeId> sorted_node_ids = interference_graph_.topological_sort(node_ids);
+            
+            // Convert back to actions using the existing node_id_to_action_ vector
+            for (Graph::NodeId node_id : sorted_node_ids) {
+                if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
+                    result.push_back(node_id_to_action_[node_id]);
+                }
+            }
         }
     }
     
-    if (node_ids.empty()) {
-        return actions; // No valid node IDs found
-    }
-    
-    // Use the graph's topological sort
-    std::vector<Graph::NodeId> sorted_node_ids = interference_graph_.topological_sort(node_ids);
-    
-    // Convert back to actions using the existing node_id_to_action_ vector
-    std::vector<const Action*> sorted_actions;
-    for (Graph::NodeId node_id : sorted_node_ids) {
-        if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
-            sorted_actions.push_back(node_id_to_action_[node_id]);
-        }
-    }
-    
-    return sorted_actions;
+    return result;
 }
 
 void InterferenceAnalyzer::output_interference_graph_dot(const std::string& filename) const {
