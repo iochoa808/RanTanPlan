@@ -33,7 +33,6 @@ TEST_CONFIGURATIONS = [
     #("sequential", "null"),
     #("forall", "null"),
     ("forall", "forall"),  # Forall parallelism with forall propagator
-    ("forall", "forall_on_demand"),  # Forall parallelism with the forall_on_demand propagator
     ("exists", "exists")
 ]
 

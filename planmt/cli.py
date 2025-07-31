@@ -82,11 +82,10 @@ For more information, visit: https://github.com/pyPMT/planMT
     parser.add_argument(
         "--propagator",
         type=str,
-        choices=["null", "forall", "forall_on_demand", "exists"],
+        choices=["null", "forall", "exists"],
         default="null",
         help="Propagator strategy: null (no propagation, default), "
-             "forall (forall-specific propagation with conflict detection), "
-             "forall_on_demand (simplified forall propagation), "
+             "forall (forall-specific propagation), "
              "or exists (exists-specific propagation with cycle detection). Default: null"
     )
     
@@ -140,8 +139,8 @@ def validate_files(domain_file, problem_file):
 
 def validate_strategy_combination(parallelism, propagator):
     """Validate that parallelism and propagator strategies are compatible."""
-    if parallelism == "forall" and (propagator not in ["forall", "forall_on_demand", "null"]):
-        return f"Invalid combination: 'forall' parallelism requires 'forall', 'forall_on_demand', or 'null' propagator, got '{propagator}'"
+    if parallelism == "forall" and (propagator not in ["forall", "null"]):
+        return f"Invalid combination: 'forall' parallelism requires 'forall' or 'null' propagator, got '{propagator}'"
     if parallelism == "exists" and (propagator not in ["exists", "null"]):
         return f"Invalid combination: 'exists' parallelism requires 'exists' or 'null' propagator, got '{propagator}'"
     return None

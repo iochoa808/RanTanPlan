@@ -1,7 +1,6 @@
 #include "propagator_factory.h"
 #include "null_propagator.h"
 #include "forall_propagator.h"
-#include "forall_on_demand_propagator.h"
 #include "exists_propagator.h"
 #include <algorithm>
 #include <cctype>
@@ -18,8 +17,6 @@ std::unique_ptr<PropagatorStrategy> PropagatorFactory::create_strategy(
             return std::make_unique<NullPropagator>();
         case PropagatorType::FORALL:
             return std::make_unique<ForallPropagator>(solver, problem);
-        case PropagatorType::FORALL_ON_DEMAND:
-            return std::make_unique<ForallOnDemandPropagator>(solver, problem);
         case PropagatorType::EXISTS:
             return std::make_unique<ExistsPropagator>(solver, problem);
         default:
@@ -42,8 +39,6 @@ std::string PropagatorFactory::get_strategy_name(PropagatorType type) {
             return "null";
         case PropagatorType::FORALL:
             return "forall";
-        case PropagatorType::FORALL_ON_DEMAND:
-            return "forall_on_demand";
         case PropagatorType::EXISTS:
             return "exists";
         default:
@@ -59,8 +54,6 @@ PropagatorType PropagatorFactory::parse_strategy_type(const std::string& strateg
     
     if (lower_name == "forall") {
         return PropagatorType::FORALL;
-    } else if (lower_name == "forall_on_demand") {
-        return PropagatorType::FORALL_ON_DEMAND;
     } else if (lower_name == "exists") {
         return PropagatorType::EXISTS;
     } else if (lower_name == "null" || lower_name == "none") {
@@ -72,7 +65,7 @@ PropagatorType PropagatorFactory::parse_strategy_type(const std::string& strateg
 }
 
 std::vector<std::string> PropagatorFactory::get_available_types() {
-    return {"null", "forall", "forall_on_demand", "exists"};
+    return {"null", "forall", "exists"};
 }
 
 } // namespace planmt

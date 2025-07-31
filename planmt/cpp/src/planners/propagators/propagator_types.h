@@ -8,7 +8,6 @@ namespace planmt {
 enum class PropagatorType {
     NULL_PROPAGATOR,   // No propagation (default)
     FORALL,           // Forall-specific propagation
-    FORALL_ON_DEMAND, // Simplified forall propagation without conflict detection
     EXISTS            // Exists-specific propagation with incremental cycle detection
 };
 
