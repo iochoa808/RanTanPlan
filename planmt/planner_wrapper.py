@@ -30,9 +30,11 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._writer = ProtobufWriter()
         self._reader = ProtobufReader()
         self.executable_path = self._find_executable(options.get('executable_path'))
-        self._verbose = options.get('verbose', False)
+        self._verbosity = options.get('verbosity')  # None if not specified
         self._parallelism = options.get('parallelism', 'sequential')
         self._propagator = options.get('propagator', 'null')
+        self._max_steps = options.get('max_steps')  # None if not specified
+        self._no_persist_clauses = options.get('no_persist_clauses', False)
 
     def _find_executable(self, provided_path):
         """Find the planmt executable, trying various locations."""
@@ -223,7 +225,18 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             with open(problem_filepath, "wb") as f:
                 f.write(pb_problem_msg.SerializeToString())
 
-            command = [self.executable_path, problem_filepath, solution_filepath, self._parallelism, self._propagator]
+            command = [self.executable_path, problem_filepath, solution_filepath, 
+                      "--parallelism", self._parallelism, "--propagator", self._propagator]
+            
+            # Add optional parameters only if specified
+            if self._verbosity is not None:
+                command.extend(["--verbosity", self._verbosity])
+            
+            if self._max_steps is not None:
+                command.extend(["--max-steps", str(self._max_steps)])
+            
+            if self._no_persist_clauses:
+                command.append("--no-persist-clauses")
             print(f"Running planner: {' '.join(command)}")
 
             # Run the C++ planner with real-time output streaming

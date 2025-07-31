@@ -58,8 +58,15 @@ For more information, visit: https://github.com/pyPMT/planMT
     
     parser.add_argument(
         "-v", "--verbose",
+        action="count",
+        default=0, 
+        help="Increase verbosity level (-v: verbose, -vv: debug). Default is info level."
+    )
+    
+    parser.add_argument(
+        "--silent",
         action="store_true",
-        help="Enable verbose output"
+        help="Suppress all output"
     )
     
     parser.add_argument(
@@ -81,6 +88,18 @@ For more information, visit: https://github.com/pyPMT/planMT
              "forall (forall-specific propagation with conflict detection), "
              "forall_on_demand (simplified forall propagation), "
              "or exists (exists-specific propagation with cycle detection). Default: null"
+    )
+    
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        help="Maximum number of planning steps (default: 100)"
+    )
+    
+    parser.add_argument(
+        "--no-persist-clauses",
+        action="store_true",
+        help="Disable Z3 clause persistence in propagators"
     )
     
     parser.add_argument(
@@ -137,7 +156,7 @@ def parse_problem(domain_file, problem_file, verbose=False):
         print("Please ensure unified-planning is installed: pip install unified-planning")
         return None
     
-    if verbose:
+    if verbose and verbose >= 1:
         print(f"Parsing domain file: {domain_file}")
         print(f"Parsing problem file: {problem_file}")
     
@@ -145,7 +164,7 @@ def parse_problem(domain_file, problem_file, verbose=False):
         reader = PDDLReader()
         problem = reader.parse_problem(domain_file, problem_file)
         
-        if verbose:
+        if verbose and verbose >= 1:
             print(f"Successfully parsed problem: {problem.name}")
             print(f"Number of actions: {len(problem.actions)}")
             print(f"Number of fluents: {len(problem.fluents)}")
@@ -174,17 +193,42 @@ def solve_problem(problem, args):
     planner_params = {}
     if args.executable:
         planner_params['executable_path'] = args.executable
-    planner_params['verbose'] = args.verbose
+    
+    # Only pass verbosity if explicitly set (not default)
+    if args.silent:
+        planner_params['verbosity'] = "silent"
+    elif args.verbose > 0:
+        if args.verbose == 1:
+            planner_params['verbosity'] = "verbose"
+        else:  # 2 or higher
+            planner_params['verbosity'] = "debug"
+    # If args.verbose == 0 and not silent, don't pass verbosity (use C++ default)
+    
     planner_params['parallelism'] = args.parallelism
     planner_params['propagator'] = args.propagator
     
+    # Only pass max_steps if explicitly provided
+    if args.max_steps is not None:
+        planner_params['max_steps'] = args.max_steps
+    
+    # Only pass no_persist_clauses if explicitly set to True
+    if args.no_persist_clauses:
+        planner_params['no_persist_clauses'] = True
+    
     output_stream = sys.stdout
     
-    if args.verbose:
+    # Show verbose info unless silent
+    if not args.silent and args.verbose >= 1:
         print(f"\n--- Starting planMT solver ---")
         print(f"Timeout: {args.timeout} seconds")
         print(f"Parallelism strategy: {args.parallelism}")
         print(f"Propagator strategy: {args.propagator}")
+        if args.max_steps is not None:
+            print(f"Max steps: {args.max_steps}")
+        if 'verbosity' in planner_params:
+            print(f"Verbosity level: {planner_params['verbosity']}")
+        if args.no_persist_clauses:
+            print("Z3 clause persistence: disabled")
         if args.executable:
             print(f"Using executable: {args.executable}")
     
@@ -194,7 +238,7 @@ def solve_problem(problem, args):
                 print("Error: Could not create planMT planner.")
                 return None
             
-            if args.verbose:
+            if not args.silent and args.verbose >= 1:
                 print(f"Successfully created planner: {planner.name}")
             
             # Solve the problem
@@ -253,7 +297,7 @@ def print_result(result, args):
         print("No plan found.")
     
     # Print log messages if verbose
-    if args.verbose and result.log_messages:
+    if not args.silent and args.verbose >= 1 and result.log_messages:
         print(f"\nLog Messages:")
         for msg in result.log_messages:
             if msg.level == LogLevel.ERROR:
@@ -281,8 +325,8 @@ def main():
         print(f"Error: {strategy_error}")
         sys.exit(1)
     
-    # Parse the problem
-    problem = parse_problem(args.domain, args.problem, args.verbose)
+    # Parse the problem (pass verbosity level instead of boolean)
+    problem = parse_problem(args.domain, args.problem, 0 if args.silent else args.verbose)
     if not problem:
         sys.exit(1)
     

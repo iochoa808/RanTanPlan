@@ -65,6 +65,8 @@ endif()
 # Create main executable
 add_executable(planmt
     src/main.cpp
+    src/config/config.cpp
+    src/config/cli_parser.cpp
     src/problem/real.cpp
     src/problem/atom.cpp
     src/problem/parameter.cpp
@@ -114,6 +116,7 @@ target_include_directories(planmt PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}                      # generated protobuf sources
     ${CMAKE_CURRENT_BINARY_DIR}/proto                # generated protobuf headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src                  # our source headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/config           # config headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem          # problem representation headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem/visitors # visitor headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/encoders/        # encoders headers

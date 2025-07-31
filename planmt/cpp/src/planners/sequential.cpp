@@ -1,4 +1,5 @@
 #include "sequential.h"
+#include "../config/config.h"
 #include "../encoders/parallelism/graph.h"
 #include "../encoders/parallelism/interference_analyzer.h"
 #include "propagators/null_propagator.h"
@@ -37,7 +38,11 @@ void SequentialPlanner::debug_output_constraints() {
 }
 
 Plan SequentialPlanner::search() {
-    std::cout << "Starting search with propagator: " << propagator_strategy_->get_name() << std::endl;
+    auto& config = Config::instance();
+    
+    if (config.is_info()) {
+        std::cout << "Starting search with propagator: " << propagator_strategy_->get_name() << std::endl;
+    }
     
     // Initialize propagator once at the beginning
     propagator_strategy_->initialize(solver_, encoder_);
@@ -51,9 +56,20 @@ Plan SequentialPlanner::search() {
     // Register variables for timestep 0 (initial state)
     propagator_strategy_->register_timestep_variables(0);
     
-    // Iterate from 0 to 100 timesteps
+    // Iterate from 0 to max_steps timesteps
     double total_time = 0.0; // Track total time used
-    for (int timestep = 0; timestep <= 100; ++timestep) {
+    auto start_time = std::chrono::high_resolution_clock::now(); // Track total search time for timeout
+    
+    for (int timestep = 0; timestep <= config.planner.max_steps; ++timestep) {
+        // Check timeout
+        auto current_time = std::chrono::high_resolution_clock::now();
+        auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
+        if (elapsed_seconds >= config.global.timeout) {
+            if (config.is_info()) {
+                std::cout << "\n*** TIMEOUT reached after " << elapsed_seconds << "s ***" << std::endl;
+            }
+            break;
+        }
         auto step_start = std::chrono::high_resolution_clock::now();
         
         // Time formula creation
@@ -89,7 +105,9 @@ Plan SequentialPlanner::search() {
         auto formula_end = std::chrono::high_resolution_clock::now();
         auto formula_time = std::chrono::duration<double>(formula_end - formula_start).count();
 
-        std::cout << "T" << timestep;
+        if (config.is_info()) {
+            std::cout << "T" << timestep;
+        }
         //debug_output_constraints(); // Output initial constraints
 
         // Time solving
@@ -103,11 +121,15 @@ Plan SequentialPlanner::search() {
 
         total_time += step_time; // Accumulate total time
         
-        // Print timing in compact format
-        std::cout << " timing: formula=" << formula_time << "s, solve=" << solve_time << "s, step=" << step_time << "s" << std::endl;
+        // Print timing in compact format at INFO level
+        if (config.is_info()) {
+            std::cout << " timing: formula=" << formula_time << "s, solve=" << solve_time << "s, step=" << step_time << "s" << std::endl;
+        }
         
         if (result == z3::sat) {
-            std::cout << "\n*** PLAN FOUND at timestep " << timestep << " (total time: " << total_time << "s) ***" << std::endl;
+            if (config.is_info()) {
+                std::cout << "\n*** PLAN FOUND at timestep " << timestep << " (total time: " << total_time << "s) ***" << std::endl;
+            }
             
             // Mark that we found a solution
             solution_found_ = true;
@@ -125,15 +147,21 @@ Plan SequentialPlanner::search() {
             try {
                 // Extract plan from model
                 Plan plan = extract_plan(model, timestep);
-                std::cout << plan.to_string() << std::endl;
+                if (config.is_info()) {
+                    std::cout << plan.to_string() << std::endl;
+                }
                 
                 // Clean up propagator before returning
                 propagator_strategy_->cleanup();
                 return plan; // Return the extracted plan
                 
             } catch (const std::exception& e) {
-                std::cout << "ERROR during plan extraction: " << e.what() << std::endl;
-                std::cout << "Returning empty plan." << std::endl;
+                if (config.is_info()) {
+                    std::cout << "ERROR during plan extraction: " << e.what() << std::endl;
+                }
+                if (config.is_info()) {
+                    std::cout << "Returning empty plan." << std::endl;
+                }
                 propagator_strategy_->cleanup();
                 return Plan(); // Return empty plan on error
             }
@@ -141,12 +169,16 @@ Plan SequentialPlanner::search() {
         } else if (result == z3::unsat) {
             // let's try next iteration
         } else {
-            std::cout << "Solver returned unknown result at timestep " << timestep << std::endl;
+            if (config.is_info()) {
+                std::cout << "Solver returned unknown result at timestep " << timestep << std::endl;
+            }
         }
     }
     
-    std::cout << "\n*** NO PLAN FOUND within 100 timesteps, aborting ***" << std::endl;
-    std::cout << "No plan found within 100 timesteps." << std::endl;
+    if (config.is_info()) {
+        std::cout << "\n*** NO PLAN FOUND within " << config.planner.max_steps << " timesteps, aborting ***" << std::endl;
+        std::cout << "No plan found within " << config.planner.max_steps << " timesteps." << std::endl;
+    }
     
     // Clean up propagator before returning
     propagator_strategy_->cleanup();

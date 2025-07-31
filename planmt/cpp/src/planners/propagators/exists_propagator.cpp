@@ -1,4 +1,5 @@
 #include "exists_propagator.h"
+#include "../../config/config.h"
 #include "../../encoders/z3_variable_factory.h"
 #include "../../encoders/parallelism/interference_analyzer.h"
 #include <iostream>
@@ -80,8 +81,8 @@ void ExistsPropagator::initialize(z3::solver& solver, const GroundedEncoder& enc
     // Cache variable factory reference to avoid repeated lookups
     variable_factory_ = &encoder.get_variable_factory();
     
-    // Set Z3 option to persist clauses for user propagator
-    solver.set("smt.up.persist_clauses", true);
+    // Set Z3 option to persist clauses for user propagator based on config
+    solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
     
     // Build interference lookup for efficient propagation
     build_interference_lookup();
