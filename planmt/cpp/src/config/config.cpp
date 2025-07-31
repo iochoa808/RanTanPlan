@@ -46,7 +46,7 @@ void Config::validate() const {
     }
     
     // Validate propagator settings
-    const std::vector<std::string> valid_propagators = {"null", "forall", "exists", "sample"};
+    const std::vector<std::string> valid_propagators = {"null", "forall", "forall_on_demand", "exists", "lazy_forall_on_demand", "lazy_exists", "pairwise_exists"};
     bool valid_propagator = false;
     for (const auto& prop : valid_propagators) {
         if (propagators.type == prop) {
