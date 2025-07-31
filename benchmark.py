@@ -24,7 +24,7 @@ BENCHMARK_CONFIGURATIONS = [
 #    ("sequential", "null"),
     ("forall", "null"), 
     ("forall", "forall"),
-    ("forall", "forall_on_demand"),
+#    ("forall", "forall_on_demand"),
     ("exists", "null"),
     ("exists", "exists")
 ]
@@ -148,7 +148,7 @@ def generate_job_commands(instances_by_domain, configurations, timeout, verbose=
     Generates individual solver commands for GNU parallel execution.
 
     Returns:
-        List of (command, job_id, domain, config, instance) tuples
+        List of (command, job_id, domain, config, instance_name) tuples
     """
     commands = []
     job_id = 0
@@ -194,7 +194,7 @@ def run_parallel_benchmark(commands, jobs, results_dir, timeout=60):
     
     # Write job commands to temporary file for GNU parallel
     with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.jobs') as f:
-        for cmd, job_id, *_ in commands:
+        for cmd, job_id, _, _, _ in commands:
             # Redirect output to individual result files
             output_file = results_path / f"{job_id}.out"
             error_file = results_path / f"{job_id}.err"

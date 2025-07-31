@@ -114,13 +114,13 @@ Plan SequentialPlanner::search() {
             
             // Get and output the model to a file
             z3::model model = solver_.get_model();
-            std::ofstream model_file("plan_model.txt");
+            /*std::ofstream model_file("plan_model.txt");
             if (model_file.is_open()) {
                 model_file << "Plan found at timestep " << timestep << std::endl;
                 model_file << model << std::endl;
                 model_file.close();
                 std::cout << "Model saved to plan_model.txt" << std::endl;
-            }
+            }*/
             
             try {
                 // Extract plan from model
@@ -228,22 +228,26 @@ std::vector<const Action*> SequentialPlanner::extract_parallel_actions_at_timest
 std::vector<const Action*> SequentialPlanner::topologically_sort_actions(
     const std::vector<const Action*>& actions) {
     
+    std::vector<const Action*> result;
+    
     if (actions.size() <= 1) {
-        return actions; // No sorting needed
+        result = actions; // No sorting needed
+    } else {
+        const ParallelismStrategy* strategy = encoder_.get_parallelism_strategy();
+        if (!strategy) {
+            result = actions; // No parallelism strategy available
+        } else {
+            const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+            if (!analyzer) {
+                result = actions; // No interference analyzer available
+            } else {
+                // Let the InterferenceAnalyzer handle the topological sorting
+                result = analyzer->topological_sort_actions(actions);
+            }
+        }
     }
     
-    const ParallelismStrategy* strategy = encoder_.get_parallelism_strategy();
-    if (!strategy) {
-        return actions; // No parallelism strategy available
-    }
-    
-    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
-    if (!analyzer) {
-        return actions; // No interference analyzer available
-    }
-    
-    // Let the InterferenceAnalyzer handle the topological sorting
-    return analyzer->topological_sort_actions(actions);
+    return result;
 }
 
 void SequentialPlanner::set_propagator_strategy(PropagatorType type) {
