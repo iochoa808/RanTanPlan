@@ -1,4 +1,6 @@
 #include "interference_analyzer.h"
+#include "../../util/memory_tracker.h"
+#include "../../config/config.h"
 #include <iostream>
 #include <algorithm>
 #include <unordered_map>
@@ -15,6 +17,8 @@ InterferenceAnalyzer::InterferenceAnalyzer(const Problem& problem) {
 void InterferenceAnalyzer::initialize(const Problem& problem) {
     problem_ = &problem;
     
+    // Memory tracking is always enabled
+    
     // Clear any existing data
     action_to_node_id_.clear();
     node_id_to_action_.clear();
@@ -30,10 +34,12 @@ void InterferenceAnalyzer::initialize(const Problem& problem) {
         // Analyze this action and store the results
         action_analysis_[action] = analyze_action(action);
     }
-    
+
+    // Report memory usage after action analysis
+    double current_memory = MemoryTracker::instance().get_current_memory_mb();
     std::cout << "InterferenceAnalyzer initialized with " << problem.actions().size() 
-              << " actions and indexed their preconditions and effects" << std::endl;
-    
+              << " actions and indexed their preconditions and effects. "
+              << "Memory: " << current_memory << " MB" << std::endl;
     // Print the action analysis results
     build_interference_graph();
     // DEBUG
@@ -55,9 +61,11 @@ void InterferenceAnalyzer::build_interference_graph() {
     
     auto duration = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
     
+    // Report memory usage after O(n²) graph building
+    double current_memory = MemoryTracker::instance().get_current_memory_mb();
     std::cout << "Interference graph built with " << interference_graph_.num_nodes() 
               << " nodes and " << interference_graph_.num_edges() << " edges. "
-              << "Time taken: " << duration.count() << " seconds" << std::endl;
+              << "Time: " << duration.count() << "s, Memory: " << current_memory << " MB" << std::endl;
 }
 
 void InterferenceAnalyzer::analyze_action_conflicts() {

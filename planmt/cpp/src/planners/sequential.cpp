@@ -4,6 +4,7 @@
 #include "../encoders/parallelism/interference_analyzer.h"
 #include "propagators/null_propagator.h"
 #include "propagators/propagator_factory.h"
+#include "../util/memory_tracker.h"
 #include <fstream>
 #include <iostream>
 #include <chrono>
@@ -123,7 +124,10 @@ Plan SequentialPlanner::search() {
         
         // Print timing in compact format at INFO level
         if (config.is_info()) {
-            std::cout << " timing: formula=" << formula_time << "s, solve=" << solve_time << "s, step=" << step_time << "s" << std::endl;
+            double current_memory = MemoryTracker::instance().get_current_memory_mb();
+            std::cout << " timing: formula=" << formula_time << "s, solve=" << solve_time << "s, step=" << step_time << "s";
+            std::cout << ", memory=" << current_memory << "MB";
+            std::cout << std::endl;
         }
         
         if (result == z3::sat) {

@@ -237,6 +237,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             
             if self._no_persist_clauses:
                 command.append("--no-persist-clauses")
+            
             print(f"Running planner: {' '.join(command)}")
 
             # Run the C++ planner with real-time output streaming

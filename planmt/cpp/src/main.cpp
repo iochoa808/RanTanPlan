@@ -12,13 +12,17 @@
 #include "problem/problem.h"
 #include "encoders/grounded_encoder.h" 
 #include "planners/sequential.h"
-#include "planners/propagators/propagator_factory.h"    
+#include "planners/propagators/propagator_factory.h"
+#include "util/memory_tracker.h"
 
 #include "z3++.h"
 
 // Function to print the complete planning problem structure using enhanced planning classes
 PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     auto& config = planmt::Config::instance();
+    
+    // Memory tracking is always enabled
+    
     PlanGenerationResult result;
     auto* log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
@@ -69,6 +73,13 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
         log_message->set_level(LogMessage_LogLevel_INFO);
         log_message->set_message("Finished solving the problem.");
     }
+    
+    // Add memory tracking information to result
+    double current_memory = planmt::MemoryTracker::instance().get_current_memory_mb();
+    
+    log_message = result.add_log_messages();
+    log_message->set_level(LogMessage_LogLevel_INFO);
+    log_message->set_message("Memory usage - Current: " + std::to_string(current_memory) + " MB");
 
     return result;
 }

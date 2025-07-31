@@ -277,6 +277,13 @@ def print_result(result, args):
     print(f"\n--- planMT Result ---")
     print(f"Status: {result.status}")
     
+    # Display memory stats prominently
+    if result.log_messages:
+        for msg in result.log_messages:
+            if "Memory usage" in msg.message:
+                print(f"Memory: {msg.message.replace('Memory usage - Current: ', '').replace(' MB', '')} MB")
+                break
+    
     plan_found = result.plan is not None
     
     if plan_found:
