@@ -1,5 +1,6 @@
 #include "exists_propagator.h"
 #include "../../config/config.h"
+#include "../../util/memory_tracker.h"
 #include "../../encoders/z3_variable_factory.h"
 #include "../../encoders/parallelism/interference_analyzer.h"
 #include <iostream>
@@ -85,7 +86,9 @@ void ExistsPropagator::initialize(z3::solver& solver, const GroundedEncoder& enc
     solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
     
     // Build interference lookup for efficient propagation
+    std::cout << "Memory before lookup: " << MemoryTracker::instance().get_current_memory_mb()<< " MB" << std::endl;
     build_interference_lookup();
+    std::cout << "Memory after lookup: " << MemoryTracker::instance().get_current_memory_mb()<< " MB" << std::endl;
 }
 
 void ExistsPropagator::register_timestep_variables(int timestep) {
@@ -134,7 +137,7 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
         if (it != interference_neighbours_.end()) {
             for (const Action& neighbour : it->second) {
                 // Only add edges between active actions
-                if (active_actions.count(neighbour) > 0) {
+                if (active_actions.find(neighbour) != active_actions.end()) {
                     successors[active_action].insert(neighbour);
                 }
             }
@@ -183,7 +186,7 @@ bool ExistsPropagator::find_cycle_dfs(const Action& current, const Action& targe
     if (it != successors.end()) {
         for (const Action& successor : it->second) {
             // Only consider active actions
-            if (active_actions.count(successor) == 0) continue;
+            if (active_actions.find(successor) == active_actions.end()) continue;
             
             if (successor == target && path.size() > 1) {
                 // Found cycle back to target
@@ -228,7 +231,7 @@ void ExistsPropagator::build_interference_lookup() {
             if (target_action) {
                 interference_neighbours_[action].insert(*target_action);
                 // Also add reverse lookup for symmetric interference
-                interference_neighbours_[*target_action].insert(action);
+                //interference_neighbours_[*target_action].insert(action);
             }
         }
     }

@@ -17,8 +17,6 @@ InterferenceAnalyzer::InterferenceAnalyzer(const Problem& problem) {
 void InterferenceAnalyzer::initialize(const Problem& problem) {
     problem_ = &problem;
     
-    // Memory tracking is always enabled
-    
     // Clear any existing data
     action_to_node_id_.clear();
     node_id_to_action_.clear();
