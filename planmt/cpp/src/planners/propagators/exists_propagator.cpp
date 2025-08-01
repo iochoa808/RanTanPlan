@@ -84,11 +84,6 @@ void ExistsPropagator::initialize(z3::solver& solver, const GroundedEncoder& enc
     
     // Set Z3 option to persist clauses for user propagator based on config
     solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
-    
-    // Build interference lookup for efficient propagation
-    std::cout << "Memory before lookup: " << MemoryTracker::instance().get_current_memory_mb()<< " MB" << std::endl;
-    build_interference_lookup();
-    std::cout << "Memory after lookup: " << MemoryTracker::instance().get_current_memory_mb()<< " MB" << std::endl;
 }
 
 void ExistsPropagator::register_timestep_variables(int timestep) {
@@ -130,16 +125,26 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
     // Get currently active actions at this timestep (including the current action)
     const std::set<Action>& active_actions = active_actions_per_timestep_[timestep];
     
-    // Build interference graph for active actions only (local variable)
-    std::unordered_map<Action, std::unordered_set<Action>> successors;
+    // Get interference analyzer from encoder
+    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
+    if (!strategy) return;
+    
+    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    if (!analyzer) return;
+    
+    // Build interference graph for active actions using existing analyzer mappings
+    std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>> successors;
     for (const Action& active_action : active_actions) {
-        auto it = interference_neighbours_.find(active_action);
-        if (it != interference_neighbours_.end()) {
-            for (const Action& neighbour : it->second) {
-                // Only add edges between active actions
-                if (active_actions.find(neighbour) != active_actions.end()) {
-                    successors[active_action].insert(neighbour);
-                }
+        Graph::NodeId node_id = analyzer->get_action_node_id(active_action);
+        if (node_id < 0) continue;
+        
+        const std::vector<Graph::NodeId>& neighbours = 
+            analyzer->get_interference_graph().get_neighbours(node_id);
+
+        for (Graph::NodeId neighbour_node : neighbours) {
+            const Action* neighbour_action = analyzer->get_action_from_node_id(neighbour_node);
+            if (neighbour_action && active_actions.find(*neighbour_action) != active_actions.end()) {
+                successors[node_id].insert(neighbour_node);
             }
         }
     }
@@ -158,42 +163,67 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
 }
 
 bool ExistsPropagator::find_cycle_among_active_actions(const std::set<Action>& active_actions, 
-                                                     const std::unordered_map<Action, std::unordered_set<Action>>& successors,
+                                                     const std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>>& successors,
                                                      std::vector<Action>& cycle) {
+    // Get interference analyzer from encoder
+    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
+    if (!strategy) return false;
+    
+    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    if (!analyzer) return false;
+    
     // Try to find a cycle starting from each active action
     for (const Action& start_action : active_actions) {
-        std::unordered_set<Action> visited;
-        std::vector<Action> path;
+        Graph::NodeId start_node_id = analyzer->get_action_node_id(start_action);
+        if (start_node_id < 0) continue;
         
-        if (find_cycle_dfs(start_action, start_action, active_actions, successors, visited, path)) {
-            cycle = path;
+        std::unordered_set<Graph::NodeId> visited;
+        std::vector<Graph::NodeId> path;
+        
+        if (find_cycle_dfs(start_node_id, start_node_id, active_actions, successors, visited, path)) {
+            // Convert node ID path back to actions
+            cycle.clear();
+            for (Graph::NodeId node_id : path) {
+                const Action* action = analyzer->get_action_from_node_id(node_id);
+                if (action) {
+                    cycle.push_back(*action);
+                }
+            }
             return true;
         }
     }
     return false;
 }
 
-bool ExistsPropagator::find_cycle_dfs(const Action& current, const Action& target, 
+bool ExistsPropagator::find_cycle_dfs(Graph::NodeId current, Graph::NodeId target, 
                                      const std::set<Action>& active_actions,
-                                     const std::unordered_map<Action, std::unordered_set<Action>>& successors,
-                                     std::unordered_set<Action>& visited, 
-                                     std::vector<Action>& path) {
+                                     const std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>>& successors,
+                                     std::unordered_set<Graph::NodeId>& visited, 
+                                     std::vector<Graph::NodeId>& path) {
     path.push_back(current);
     visited.insert(current);
+    
+    // Get interference analyzer for node-to-action mapping
+    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
+    if (!strategy) return false;
+    
+    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    if (!analyzer) return false;
     
     // Check successors
     auto it = successors.find(current);
     if (it != successors.end()) {
-        for (const Action& successor : it->second) {
-            // Only consider active actions
-            if (active_actions.find(successor) == active_actions.end()) continue;
+        for (Graph::NodeId successor : it->second) {
+            // Only consider active actions - need to convert node ID to action first
+            const Action* successor_action = analyzer->get_action_from_node_id(successor);
+            if (!successor_action || active_actions.find(*successor_action) == active_actions.end()) continue;
             
             if (successor == target && path.size() > 1) {
                 // Found cycle back to target
                 return true;
             }
             
-            if (visited.count(successor) == 0) {
+            if (visited.find(successor) == visited.end()) {
                 if (find_cycle_dfs(successor, target, active_actions, successors, visited, path)) {
                     return true;
                 }
@@ -206,38 +236,5 @@ bool ExistsPropagator::find_cycle_dfs(const Action& current, const Action& targe
     return false;
 }
 
-void ExistsPropagator::build_interference_lookup() {
-    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
-    if (!strategy) return;
-    
-    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
-    if (!analyzer) return;
-    
-    // Clear any existing data
-    interference_neighbours_.clear();
-    
-    // Build interference lookup: for each action, find all actions that interfere with it
-    for (const Action& action : problem_->actions()) {
-        Graph::NodeId node_id = analyzer->get_action_node_id(action);
-        if (node_id < 0) continue;
-        
-        // Get all actions that this action interferes with (outgoing edges)
-        const std::vector<Graph::NodeId>& interfered_with = 
-            analyzer->get_interference_graph().get_neighbours(node_id);
-        
-        // Add to interference neighbours
-        for (Graph::NodeId target_node : interfered_with) {
-            const Action* target_action = analyzer->get_action_from_node_id(target_node);
-            if (target_action) {
-                interference_neighbours_[action].insert(*target_action);
-                // Also add reverse lookup for symmetric interference
-                //interference_neighbours_[*target_action].insert(action);
-            }
-        }
-    }
-    
-    std::cout << "Built interference lookup for " 
-              << interference_neighbours_.size() << " actions" << std::endl;
-}
 
 } // namespace planmt

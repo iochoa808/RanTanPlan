@@ -4,6 +4,7 @@
 #include "../../problem/problem.h"
 #include "../../problem/fluent.h"
 #include "../../problem/action.h"
+#include "../../encoders/parallelism/graph.h"
 #include <z3++.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -45,8 +46,6 @@ private:
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
 
-    // Precomputed interference lookup: action -> set of interfering actions
-    std::unordered_map<Action, std::set<Action>> interference_neighbours_;
     
 public:
     /**
@@ -78,16 +77,14 @@ private:
     // Helper methods for exists propagation logic
     void perform_exists_propagation(const Action& action, int timestep, const z3::expr& action_var);
     
-    // Cycle detection methods for active actions
+    // Cycle detection methods for active actions using node IDs
     bool find_cycle_among_active_actions(const std::set<Action>& active_actions, 
-                                         const std::unordered_map<Action, std::unordered_set<Action>>& successors,
+                                         const std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>>& successors,
                                          std::vector<Action>& cycle);
-    bool find_cycle_dfs(const Action& current, const Action& target, 
+    bool find_cycle_dfs(Graph::NodeId current, Graph::NodeId target, 
                         const std::set<Action>& active_actions,
-                        const std::unordered_map<Action, std::unordered_set<Action>>& successors,
-                        std::unordered_set<Action>& visited, std::vector<Action>& path);
-    
-    void build_interference_lookup();
+                        const std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>>& successors,
+                        std::unordered_set<Graph::NodeId>& visited, std::vector<Graph::NodeId>& path);
 
 };
 
