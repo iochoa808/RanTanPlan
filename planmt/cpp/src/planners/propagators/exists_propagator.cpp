@@ -132,20 +132,19 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
     const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
     if (!analyzer) return;
     
-    // Build interference graph for active actions using pairwise edge checks
-    // Previous: iterate all neighbors, filter for active actions - O(A × N_avg)
-    // Current: check pairwise edges between active actions only - O(A²), better when A is small
+    // Build interference graph for active actions using existing analyzer mappings
     std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>> successors;
+    for (const Action& active_action : active_actions) {
+        Graph::NodeId node_id = analyzer->get_action_node_id(active_action);
+        if (node_id < 0) continue;
+        
+        const std::vector<Graph::NodeId>& neighbours = 
+            analyzer->get_interference_graph().get_neighbours(node_id);
 
-    // Check pairwise interference between active actions directly
-    for (const Action& action1 : active_actions) {
-        for (const Action& action2 : active_actions) {
-            if (action1 != action2) {
-                Graph::NodeId node1 = analyzer->get_action_node_id(action1);
-                Graph::NodeId node2 = analyzer->get_action_node_id(action2);
-                if (node1 >= 0 && node2 >= 0 && analyzer->get_interference_graph().has_edge(node1, node2)) {
-                    successors[node1].insert(node2);
-                }
+        for (Graph::NodeId neighbour_node : neighbours) {
+            const Action* neighbour_action = analyzer->get_action_from_node_id(neighbour_node);
+            if (neighbour_action && active_actions.find(*neighbour_action) != active_actions.end()) {
+                successors[node_id].insert(neighbour_node);
             }
         }
     }
@@ -236,6 +235,5 @@ bool ExistsPropagator::find_cycle_dfs(Graph::NodeId current, Graph::NodeId targe
     path.pop_back();
     return false;
 }
-
 
 } // namespace planmt
