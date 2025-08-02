@@ -1,8 +1,6 @@
 #include "memory_tracker.h"
-#include <iostream>
 #include <fstream>
 #include <sstream>
-#include <algorithm>
 
 // Platform-specific includes
 #ifdef __APPLE__

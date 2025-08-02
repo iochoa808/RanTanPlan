@@ -1,15 +1,11 @@
 #pragma once
 
-#include <string>
-#include <chrono>
-#include <memory>
-
 namespace planmt {
 
 /**
  * @brief Simple memory tracking utility for monitoring RSS memory usage
  * 
- * Provides lightweight tracking of current and peak memory usage during
+ * Provides lightweight tracking of current memory usage during
  * planning operations. Platform-specific implementations for Linux and macOS.
  */
 class MemoryTracker {
@@ -23,7 +19,7 @@ public:
     
     /**
      * @brief Get current memory usage
-     * @return Current RSS memory in MB
+     * @return Current RSS memory in MB, or 0.0 if unable to read
      */
     double get_current_memory_mb();
 
