@@ -33,8 +33,7 @@ private:
     // Trail-based state management for push/pop behavior
     struct TrailEntry {
         z3::expr variable;
-        int timestep;
-        Action action;
+        // timestep and action are derived from variable during pop via get_action_from_variable()
     };
 
     std::vector<TrailEntry> trail_;

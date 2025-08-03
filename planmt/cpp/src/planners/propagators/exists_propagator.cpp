@@ -33,9 +33,16 @@ void ExistsPropagator::pop(unsigned num_scopes) {
             while (trail_.size() > level_start) {
                 const TrailEntry& entry = trail_.back();
                 
-                // Remove action from active set
-                auto& active_set = active_actions_per_timestep_[entry.timestep];
-                active_set.erase(entry.action);
+                // Derive action and timestep from variable
+                auto action_info = variable_factory_->get_action_from_variable(entry.variable);
+                if (action_info) {
+                    const Action& action = action_info->first;
+                    int timestep = action_info->second;
+                    
+                    // Remove action from active set
+                    auto& active_set = active_actions_per_timestep_[timestep];
+                    active_set.erase(action);
+                }
                 
                 // No ordering graph to clean up
                 
@@ -61,7 +68,7 @@ void ExistsPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
     int timestep = action_info->second;
     
     // Add to trail
-    trail_.push_back({ast, timestep, action});
+    trail_.push_back({ast});
     
     // Update active actions for this timestep
     active_actions_per_timestep_[timestep].insert(action);
