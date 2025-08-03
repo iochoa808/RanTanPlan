@@ -81,9 +81,10 @@ Plan SequentialPlanner::search() {
             solver_.add(*encoder_.encode_actions(timestep-1));
             solver_.add(*encoder_.encode_frames(timestep-1));
             
-            // Only add parallelism constraints if not using ForallPropagator
-            // (ForallPropagator handles interference dynamically via propagation)
+            // Only add parallelism constraints if not using ForallPropagator or LazyForallPropagator
+            // (ForallPropagator and LazyForallPropagator handle interference dynamically via propagation)
             if (get_propagator_type() != PropagatorType::FORALL
+                && get_propagator_type() != PropagatorType::LAZY_FORALL
                 && get_propagator_type() != PropagatorType::EXISTS) {
                 solver_.add(*encoder_.encode_parallelism(timestep-1));
             }

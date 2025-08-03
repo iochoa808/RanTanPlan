@@ -8,6 +8,7 @@ namespace planmt {
 enum class PropagatorType {
     NULL_PROPAGATOR,   // No propagation (default)
     FORALL,           // Forall-specific propagation
+    LAZY_FORALL,      // LazyForall-specific propagation
     EXISTS            // Exists-specific propagation with incremental cycle detection
 };
 
