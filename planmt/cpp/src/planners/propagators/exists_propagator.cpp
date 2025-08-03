@@ -139,19 +139,21 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
     const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
     if (!analyzer) return;
     
-    // Build interference graph for active actions using existing analyzer mappings
+    // Build interference graph for active actions using direct interference checks
     std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>> successors;
     for (const Action& active_action : active_actions) {
         Graph::NodeId node_id = analyzer->get_action_node_id(active_action);
         if (node_id < 0) continue;
         
-        const std::vector<Graph::NodeId>& neighbours = 
-            analyzer->get_interference_graph().get_neighbours(node_id);
-
-        for (Graph::NodeId neighbour_node : neighbours) {
-            const Action* neighbour_action = analyzer->get_action_from_node_id(neighbour_node);
-            if (neighbour_action && active_actions.find(*neighbour_action) != active_actions.end()) {
-                successors[node_id].insert(neighbour_node);
+        // Check interference with other active actions
+        for (const Action& other_action : active_actions) {
+            if (active_action == other_action) continue;
+            
+            if (analyzer->has_interference(active_action, other_action)) {
+                Graph::NodeId other_node_id = analyzer->get_action_node_id(other_action);
+                if (other_node_id >= 0) {
+                    successors[node_id].insert(other_node_id);
+                }
             }
         }
     }
