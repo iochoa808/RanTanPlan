@@ -22,8 +22,9 @@ from unified_planning.shortcuts import OneshotPlanner, PlanValidator
 from unified_planning.engines.results import PlanGenerationResultStatus
 from unified_planning.engines import ValidationResultStatus
 
-# Import the planner wrapper
+# Import the planner wrapper and strategies
 from planmt.planner_wrapper import planMTPlanner
+from planmt.strategies import STRATEGIES, get_strategy_config
 
 # --- Test Configuration ---
 
@@ -34,24 +35,8 @@ QUICK_TEST_DIRS = [
     "pddl/test/gripper-round-1-adl",
 ]
 
-# Test configurations: (parallelism_strategy, propagator, lazy_interference)
-# lazy_interference: True = use lazy interference analysis, False = use eager (default)
-#
-# Configuration explanations:
-# 1. Sequential: No parallelism, actions execute one at a time
-# 2. Forall/null/eager: Forall semantics without propagator, pre-computed interference graph
-# 3. Exists/null/eager: Exists semantics without propagator, pre-computed interference graph  
-# 4. Forall/forall/eager: Forall semantics with forall propagator, pre-computed interference graph
-# 5. Forall/lazy_forall/lazy: Forall semantics with lazy forall propagator, on-demand interference computation
-# 6. Exists/exists/lazy: Exists semantics with exists propagator, on-demand interference computation
-TEST_CONFIGURATIONS = [
-    ("sequential", "null", False),                    # Sequential (no parallelism)
-    ("forall", "null", False),                       # Forall without propagator, eager interferences
-    ("exists", "null", False),                       # Exists without propagator, eager interferences  
-    ("forall", "forall", False),                     # Forall with forall propagator, eager interferences
-    ("forall", "lazy_forall", True),                 # Forall with LazyForall propagator, lazy interferences
-    ("exists", "exists", True)                       # Exists with exists propagator, lazy interferences
-]
+# Test all available strategies
+TEST_STRATEGIES = list(STRATEGIES.keys())
 
 # --- ANSI Color Codes for Output ---
 class Colors:
@@ -114,12 +99,11 @@ def find_pddl_problems(root_dir="pddl/test", quick_test=False):
     return problem_paths
 
 
-def run_test(problem_name, domain_file, problem_file, strategy, propagator, lazy_interference=False, verbose=False):
+def run_test(problem_name, domain_file, problem_file, strategy_name, verbose=False):
     """
-    Runs a single planning test case.
+    Runs a single planning test case with strategy preset.
     """
-    interference_type = "lazy" if lazy_interference else "eager"
-    test_id = f"{problem_name} ({strategy}/{propagator}/{interference_type})"
+    test_id = f"{problem_name} ({strategy_name})"
     print_info(f"Running test: {test_id}")
 
     try:
@@ -127,13 +111,18 @@ def run_test(problem_name, domain_file, problem_file, strategy, propagator, lazy
         reader = PDDLReader()
         problem = reader.parse_problem(str(domain_file), str(problem_file))
 
-        # 2. Configure and run the planner
+        # 2. Get strategy configuration
+        strategy_config = get_strategy_config(strategy_name)
+        
+        # 3. Configure and run the planner
         planner_params = {
-            'parallelism': strategy,
-            'propagator': propagator,
-            'lazy_interference': lazy_interference,
+            'parallelism': strategy_config.parallelism,
+            'propagator': strategy_config.propagator,
             'verbose': verbose 
         }
+        
+        if strategy_config.lazy_interference:
+            planner_params['lazy_interference'] = True
         
         with OneshotPlanner(name='planMT', params=planner_params) as planner:
             result = planner.solve(problem, timeout=60)
@@ -187,7 +176,7 @@ def main():
     if not problems:
         sys.exit(1)
         
-    print_info(f"Found {len(problems)} problems to test against {len(TEST_CONFIGURATIONS)} configurations.")
+    print_info(f"Found {len(problems)} problems to test against {len(TEST_STRATEGIES)} strategies.")
 
     total_tests = 0
     passed_tests = 0
@@ -195,9 +184,9 @@ def main():
 
     # Run tests
     for problem_name, domain_file, problem_file in problems:
-        for strategy, propagator, lazy_interference in TEST_CONFIGURATIONS:
+        for strategy_name in TEST_STRATEGIES:
             total_tests += 1
-            if run_test(problem_name, domain_file, problem_file, strategy, propagator, lazy_interference, args.verbose):
+            if run_test(problem_name, domain_file, problem_file, strategy_name, args.verbose):
                 passed_tests += 1
             else:
                 failed_tests += 1

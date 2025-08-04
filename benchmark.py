@@ -3,9 +3,15 @@
 Comprehensive benchmarking script for the planMT planning system.
 
 This script runs systematic performance comparisons across multiple PDDL domains
-and instances using different encoding strategies and propagators. It uses GNU
-parallel for efficient CPU utilization and generates results tables showing
-the number of instances solved per approach within a given timeout.
+and instances using different parallelism semantics, propagators, and interference
+analysis strategies (eager vs lazy). It uses GNU parallel for efficient CPU 
+utilization and generates results tables showing the number of instances solved 
+per approach within a given timeout.
+
+Benchmark configurations include:
+- Sequential vs parallel semantics (forall/exists)
+- Various propagator strategies (null, forall, lazy_forall, exists)
+- Eager vs lazy interference analysis (pre-computed vs on-demand)
 """
 import os
 import sys
@@ -16,17 +22,17 @@ import subprocess
 import csv
 from pathlib import Path
 from collections import defaultdict
+from planmt.strategies import STRATEGIES, get_strategy_config
 
 # --- Benchmark Configuration ---
 
-# All available encoding/propagator combinations to benchmark
-BENCHMARK_CONFIGURATIONS = [
-#    ("sequential", "null"),
-    ("forall", "null"), 
-    ("forall", "forall"),
-#    ("forall", "forall_on_demand"),
-    ("exists", "null"),
-    ("exists", "exists")
+# Benchmark strategies (excluding sequential for performance focus)
+BENCHMARK_STRATEGIES = [
+    "forall-basic",
+    "exists-basic", 
+    "forall-optimized",
+    "forall-lazy",
+    "exists-optimized"
 ]
 
 # Default timeout per solver run (seconds)
@@ -155,10 +161,11 @@ def generate_job_commands(instances_by_domain, configurations, timeout, verbose=
     
     for domain_name, instances in instances_by_domain.items():
         for domain_file, problem_file in instances:
-            for strategy, propagator in configurations:
+            for strategy, propagator, lazy_interference in configurations:
                 # Create unique job identifier
                 instance_name = problem_file.stem
-                config_name = f"{strategy}-{propagator}"
+                interference_type = "lazy" if lazy_interference else "eager"
+                config_name = f"{strategy}-{propagator}-{interference_type}"
                 # Use simpler job_id format for easier parsing
                 current_job_id = f"{domain_name}_{instance_name}_{config_name}_{job_id}"
                 
@@ -171,6 +178,10 @@ def generate_job_commands(instances_by_domain, configurations, timeout, verbose=
                     "--propagator", propagator,
                     "--timeout", str(timeout)
                 ]
+                
+                # Add lazy interference flag if requested
+                if lazy_interference:
+                    cmd.append("--lazy-interference")
                 
                 if verbose:
                     cmd.append("-v")
@@ -200,9 +211,9 @@ def run_parallel_benchmark(commands, jobs, results_dir, timeout=60):
             error_file = results_path / f"{job_id}.err"
             
             cmd_str = ' '.join([f"'{arg}'" if ' ' in arg else arg for arg in cmd])
-            # Add memory limit of 4GB (4194304 KB) using ulimit -v
-            f.write(f"ulimit -v 4194304; {cmd_str} > '{output_file}' 2> '{error_file}'\n")
-        
+            # Add memory limit of 8GB (8388608 KB) using ulimit -v
+            f.write(f"ulimit -v 8388608; {cmd_str} > '{output_file}' 2> '{error_file}'\n")
+
         jobs_file = f.name
     
     try:
@@ -363,7 +374,8 @@ def generate_summary_csv(results, configurations, output_file):
     """
     Generates CSV with number of instances solved per domain and configuration.
     """
-    config_names = [f"{strategy}-{propagator}" for strategy, propagator in configurations]
+    config_names = [f"{strategy}-{propagator}-{'lazy' if lazy_interference else 'eager'}" 
+                    for strategy, propagator, lazy_interference in configurations]
     
     with open(output_file, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -413,7 +425,8 @@ def print_summary_table(results, configurations):
     """
     Prints a simple text summary table to console.
     """
-    config_names = [f"{strategy}-{propagator}" for strategy, propagator in configurations]
+    config_names = [f"{strategy}-{propagator}-{'lazy' if lazy_interference else 'eager'}" 
+                    for strategy, propagator, lazy_interference in configurations]
     
     print("\n# Benchmark Summary")
     print("\nInstances solved per domain:")
@@ -479,11 +492,11 @@ def main():
     
     args = parser.parse_args()
     
-    # Load configurations
-    configurations = BENCHMARK_CONFIGURATIONS
+    # Load strategies
+    strategies = BENCHMARK_STRATEGIES
     if args.configs:
         with open(args.configs, 'r') as f:
-            configurations = json.load(f)
+            strategies = json.load(f)
     
     print_header("--- Starting planMT Benchmark Suite ---")
     print_info(f"PDDL directory: {args.pddl_dir}")
