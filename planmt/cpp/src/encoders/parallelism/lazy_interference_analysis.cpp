@@ -70,7 +70,12 @@ const Action* LazyInterferenceAnalysis::get_action_from_node_id(Graph::NodeId no
 
 std::vector<const Action*> LazyInterferenceAnalysis::topological_sort_actions(const std::vector<const Action*>& actions) const {
     if (actions.size() <= 1) {
-        return actions; // No sorting needed
+        std::vector<const Action*> result;
+        result.reserve(actions.size());
+        for (const auto& action : actions) {
+            result.push_back(action);
+        }
+        return result;
     }
     
     // Convert actions to their existing node IDs from the base class mappings
