@@ -68,6 +68,10 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         else if (arg == "--no-persist-clauses") {
             config.propagators.persist_clauses = false;
         }
+        // Interference Analyzer options
+        else if (arg == "--lazy-interference") {
+            config.interference_analyzer.lazy_computation = true;
+        }
     }
 }
 

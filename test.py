@@ -3,8 +3,14 @@
 Comprehensive test script for the planMT planning system.
 
 This script discovers all PDDL problems in the `pddl/` directory and runs the 
-planMT planner against them with various parallelism strategies. It then validates
-the resulting plans to ensure correctness.
+planMT planner against them with various parallelism strategies, propagators, 
+and interference analysis methods (eager vs lazy). It then validates the 
+resulting plans to ensure correctness.
+
+Test configurations include:
+- Different parallelism semantics (sequential, forall, exists)
+- Various propagator strategies (null, forall, lazy_forall, exists)
+- Eager vs lazy interference analysis (pre-computed vs on-demand)
 """
 import os
 import sys
@@ -28,12 +34,23 @@ QUICK_TEST_DIRS = [
     "pddl/test/gripper-round-1-adl",
 ]
 
-# Test configurations: (parallelism_strategy, propagator)
+# Test configurations: (parallelism_strategy, propagator, lazy_interference)
+# lazy_interference: True = use lazy interference analysis, False = use eager (default)
+#
+# Configuration explanations:
+# 1. Sequential: No parallelism, actions execute one at a time
+# 2. Forall/null/eager: Forall semantics without propagator, pre-computed interference graph
+# 3. Exists/null/eager: Exists semantics without propagator, pre-computed interference graph  
+# 4. Forall/forall/eager: Forall semantics with forall propagator, pre-computed interference graph
+# 5. Forall/lazy_forall/lazy: Forall semantics with lazy forall propagator, on-demand interference computation
+# 6. Exists/exists/lazy: Exists semantics with exists propagator, on-demand interference computation
 TEST_CONFIGURATIONS = [
-    #("sequential", "null"),
-    #("forall", "null"),
-    ("forall", "forall"),  # Forall parallelism with forall propagator
-    ("exists", "exists")
+    ("sequential", "null", False),                    # Sequential (no parallelism)
+    ("forall", "null", False),                       # Forall without propagator, eager interferences
+    ("exists", "null", False),                       # Exists without propagator, eager interferences  
+    ("forall", "forall", False),                     # Forall with forall propagator, eager interferences
+    ("forall", "lazy_forall", True),                 # Forall with LazyForall propagator, lazy interferences
+    ("exists", "exists", True)                       # Exists with exists propagator, lazy interferences
 ]
 
 # --- ANSI Color Codes for Output ---
@@ -97,11 +114,12 @@ def find_pddl_problems(root_dir="pddl/test", quick_test=False):
     return problem_paths
 
 
-def run_test(problem_name, domain_file, problem_file, strategy, propagator, verbose=False):
+def run_test(problem_name, domain_file, problem_file, strategy, propagator, lazy_interference=False, verbose=False):
     """
     Runs a single planning test case.
     """
-    test_id = f"{problem_name} ({strategy}/{propagator})"
+    interference_type = "lazy" if lazy_interference else "eager"
+    test_id = f"{problem_name} ({strategy}/{propagator}/{interference_type})"
     print_info(f"Running test: {test_id}")
 
     try:
@@ -113,6 +131,7 @@ def run_test(problem_name, domain_file, problem_file, strategy, propagator, verb
         planner_params = {
             'parallelism': strategy,
             'propagator': propagator,
+            'lazy_interference': lazy_interference,
             'verbose': verbose 
         }
         
@@ -176,9 +195,9 @@ def main():
 
     # Run tests
     for problem_name, domain_file, problem_file in problems:
-        for strategy, propagator in TEST_CONFIGURATIONS:
+        for strategy, propagator, lazy_interference in TEST_CONFIGURATIONS:
             total_tests += 1
-            if run_test(problem_name, domain_file, problem_file, strategy, propagator, args.verbose):
+            if run_test(problem_name, domain_file, problem_file, strategy, propagator, lazy_interference, args.verbose):
                 passed_tests += 1
             else:
                 failed_tests += 1

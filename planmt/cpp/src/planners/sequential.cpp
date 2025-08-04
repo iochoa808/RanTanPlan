@@ -1,7 +1,7 @@
 #include "sequential.h"
 #include "../config/config.h"
 #include "../encoders/parallelism/graph.h"
-#include "../encoders/parallelism/interference_analyzer.h"
+#include "../encoders/parallelism/interference_analysis.h"
 #include "propagators/null_propagator.h"
 #include "propagators/propagator_factory.h"
 #include "../util/memory_tracker.h"
@@ -273,11 +273,11 @@ std::vector<const Action*> SequentialPlanner::topologically_sort_actions(
         if (!strategy) {
             result = actions; // No parallelism strategy available
         } else {
-            const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+            const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
             if (!analyzer) {
                 result = actions; // No interference analyzer available
             } else {
-                // Let the InterferenceAnalyzer handle the topological sorting
+                // Let the InterferenceAnalysis handle the topological sorting
                 result = analyzer->topological_sort_actions(actions);
             }
         }

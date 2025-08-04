@@ -103,6 +103,12 @@ For more information, visit: https://github.com/pyPMT/planMT
     )
     
     parser.add_argument(
+        "--lazy-interference",
+        action="store_true",
+        help="Use lazy interference computation (compute on-demand instead of eagerly)"
+    )
+    
+    parser.add_argument(
         "--output-plan",
         type=str,
         help="Save the plan to a file (if found)"
@@ -214,6 +220,10 @@ def solve_problem(problem, args):
     # Only pass no_persist_clauses if explicitly set to True
     if args.no_persist_clauses:
         planner_params['no_persist_clauses'] = True
+    
+    # Only pass lazy_interference if explicitly set to True
+    if args.lazy_interference:
+        planner_params['lazy_interference'] = True
     
     output_stream = sys.stdout
     

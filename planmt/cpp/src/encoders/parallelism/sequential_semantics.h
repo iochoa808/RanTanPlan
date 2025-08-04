@@ -21,7 +21,7 @@ public:
     std::string get_name() const override { return "SequentialSemantics"; }
     
     // Analyzer access methods (not applicable for sequential semantics)
-    const InterferenceAnalyzer* get_interference_analyzer() const override { return nullptr; }
+    const InterferenceAnalysis* get_interference_analyzer() const override { return nullptr; }
 
 private:
     const Problem* problem_;

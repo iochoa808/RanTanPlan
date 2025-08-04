@@ -1,7 +1,7 @@
 #include "lazy_forall_propagator.h"
 #include "../../config/config.h"
 #include "../../encoders/z3_variable_factory.h"
-#include "../../encoders/parallelism/interference_analyzer.h"
+#include "../../encoders/parallelism/interference_analysis.h"
 #include <iostream>
 
 namespace planmt {
@@ -73,7 +73,7 @@ void LazyForallPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
 }
 
 void LazyForallPropagator::check_and_generate_conflicts(const Action& action, int timestep, const z3::expr& action_var) {
-    const InterferenceAnalyzer* analyzer = get_interference_analyzer();
+    const InterferenceAnalysis* analyzer = get_interference_analyzer();
     if (!analyzer) {
         return; // No interference analyzer available
     }
@@ -166,7 +166,7 @@ void LazyForallPropagator::cleanup() {
     registered_action_vars_.clear();
 }
 
-const InterferenceAnalyzer* LazyForallPropagator::get_interference_analyzer() const {
+const InterferenceAnalysis* LazyForallPropagator::get_interference_analyzer() const {
     const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
     if (!strategy) {
         return nullptr;

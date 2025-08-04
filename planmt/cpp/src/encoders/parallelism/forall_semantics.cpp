@@ -1,4 +1,5 @@
 #include "forall_semantics.h"
+#include "interference_analysis_factory.h"
 #include "../../problem/action.h"
 #include <iostream>
 
@@ -9,8 +10,8 @@ void ForallSemantics::initialize(const Problem& problem, z3::context& ctx, Z3Var
     ctx_ = &ctx;
     variable_factory_ = &var_factory;
     
-    // Create and initialize the interference analyzer
-    interference_analyzer_ = std::make_unique<InterferenceAnalyzer>(problem);
+    // Create and initialize the interference analyzer using factory
+    interference_analyzer_ = InterferenceAnalysisFactory::create_from_config(problem);
     
     std::cout << "ForallSemantics initialized with interference analysis" << std::endl;
 }
@@ -56,7 +57,7 @@ std::shared_ptr<z3::expr> ForallSemantics::encode_parallelism(int timestep) {
     return std::make_shared<z3::expr>(mutex_formula);
 }
 
-const InterferenceAnalyzer* ForallSemantics::get_interference_analyzer() const {
+const InterferenceAnalysis* ForallSemantics::get_interference_analyzer() const {
     return interference_analyzer_.get();
 }
 

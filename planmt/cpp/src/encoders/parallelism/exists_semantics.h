@@ -1,7 +1,7 @@
 #pragma once
 
 #include "parallelism_strategy.h"
-#include "interference_analyzer.h"
+#include "interference_analysis.h"
 #include <memory>
 
 namespace planmt {
@@ -27,13 +27,13 @@ public:
     std::string get_name() const override { return "ExistsSemantics"; }
     
     // Analyzer access methods
-    const InterferenceAnalyzer* get_interference_analyzer() const override;
+    const InterferenceAnalysis* get_interference_analyzer() const override;
 
 private:
     const Problem* problem_;
     z3::context* ctx_;
     Z3VariableFactory* variable_factory_;
-    std::unique_ptr<InterferenceAnalyzer> interference_analyzer_;
+    std::unique_ptr<InterferenceAnalysis> interference_analyzer_;
 };
 
 } // namespace planmt

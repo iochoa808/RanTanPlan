@@ -10,7 +10,7 @@
 namespace planmt {
 
 // Forward declarations
-class InterferenceAnalyzer;
+class InterferenceAnalysis;
 
 /**
  * @brief Abstract base class for different parallelism encoding strategies
@@ -47,7 +47,7 @@ public:
      * @brief Get access to the interference analyzer (if available)
      * @return Pointer to the interference analyzer, or nullptr if not available
      */
-    virtual const InterferenceAnalyzer* get_interference_analyzer() const = 0;
+    virtual const InterferenceAnalysis* get_interference_analyzer() const = 0;
 };
 
 } // namespace planmt

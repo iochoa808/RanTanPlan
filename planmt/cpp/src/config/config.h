@@ -34,6 +34,10 @@ public:
         bool persist_clauses = true;
     } propagators;
     
+    struct InterferenceAnalyzer {
+        bool lazy_computation = false;  // false = eager (default), true = lazy
+    } interference_analyzer;
+    
     void initialize(int argc, char* argv[]);
     void validate() const;
     

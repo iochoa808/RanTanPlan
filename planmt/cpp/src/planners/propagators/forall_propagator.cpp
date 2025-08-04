@@ -1,7 +1,7 @@
 #include "forall_propagator.h"
 #include "../../config/config.h"
 #include "../../encoders/z3_variable_factory.h"
-#include "../../encoders/parallelism/interference_analyzer.h"
+#include "../../encoders/parallelism/interference_analysis.h"
 #include <iostream>
 #include <set>
 
@@ -103,7 +103,7 @@ void ForallPropagator::build_reverse_interference_lookup() {
     const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
     if (!strategy) return;
     
-    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
     if (!analyzer) return;
     
     // Clear any existing data

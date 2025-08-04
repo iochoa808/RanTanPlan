@@ -2,7 +2,7 @@
 #include "../../config/config.h"
 #include "../../util/memory_tracker.h"
 #include "../../encoders/z3_variable_factory.h"
-#include "../../encoders/parallelism/interference_analyzer.h"
+#include "../../encoders/parallelism/interference_analysis.h"
 #include <iostream>
 #include <set>
 #include <algorithm>
@@ -136,7 +136,7 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
     const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
     if (!strategy) return;
     
-    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
     if (!analyzer) return;
     
     // Build interference graph for active actions using direct interference checks
@@ -178,7 +178,7 @@ bool ExistsPropagator::find_cycle_among_active_actions(const std::set<Action>& a
     const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
     if (!strategy) return false;
     
-    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
     if (!analyzer) return false;
     
     // Try to find a cycle starting from each active action
@@ -216,7 +216,7 @@ bool ExistsPropagator::find_cycle_dfs(Graph::NodeId current, Graph::NodeId targe
     const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
     if (!strategy) return false;
     
-    const InterferenceAnalyzer* analyzer = strategy->get_interference_analyzer();
+    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
     if (!analyzer) return false;
     
     // Check successors

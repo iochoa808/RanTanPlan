@@ -1,0 +1,149 @@
+#include "lazy_interference_analysis.h"
+#include "../../util/memory_tracker.h"
+#include "../../config/config.h"
+#include <iostream>
+#include <algorithm>
+#include <stdexcept>
+#include <queue>
+#include <unordered_set>
+
+namespace planmt {
+
+LazyInterferenceAnalysis::LazyInterferenceAnalysis(const Problem& problem) {
+    initialize(problem);
+}
+
+void LazyInterferenceAnalysis::initialize(const Problem& problem) {
+    problem_ = &problem;
+    
+    // Clear any existing data
+    action_analysis_.clear();
+    interference_cache_.clear();
+    
+    // Setup common functionality using base class methods
+    setup_action_node_mapping();
+    analyze_all_actions();
+
+    // Report memory usage after action analysis (but without graph building)
+    double current_memory = MemoryTracker::instance().get_current_memory_mb();
+    std::cout << "LazyInterferenceAnalysis initialized with " << problem.actions().size() 
+              << " actions and indexed their preconditions and effects. "
+              << "Memory: " << current_memory << " MB" << std::endl;
+}
+
+bool LazyInterferenceAnalysis::has_interference(const Action& a1, const Action& a2) const {
+    return compute_interference(a1, a2);
+}
+
+bool LazyInterferenceAnalysis::compute_interference(const Action& a1, const Action& a2) const {
+    // Create a directional cache key: "source_action -> target_action"
+    // This makes it clear that we're checking if source interferes with target
+    std::string cache_key = a1.name() + " interferes_with " + a2.name();
+    
+    // Check if result is already cached
+    auto cache_it = interference_cache_.find(cache_key);
+    if (cache_it != interference_cache_.end()) {
+        return cache_it->second;
+    }
+    
+    // Compute directional interference: does a1 interfere with a2?
+    bool interferes = actions_interfere(a1, a2);
+    interference_cache_[cache_key] = interferes;
+    
+    return interferes;
+}
+
+
+
+
+Graph::NodeId LazyInterferenceAnalysis::get_action_node_id(const Action& action) const {
+    auto it = action_to_node_id_.find(action);
+    return (it != action_to_node_id_.end()) ? it->second : -1;
+}
+
+const Action* LazyInterferenceAnalysis::get_action_from_node_id(Graph::NodeId node_id) const {
+    if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
+        return node_id_to_action_[node_id];
+    }
+    return nullptr;
+}
+
+std::vector<const Action*> LazyInterferenceAnalysis::topological_sort_actions(const std::vector<const Action*>& actions) const {
+    if (actions.size() <= 1) {
+        return actions; // No sorting needed
+    }
+    
+    // Convert actions to their existing node IDs from the base class mappings
+    std::vector<Graph::NodeId> node_ids;
+    for (const Action* action : actions) {
+        Graph::NodeId node_id = get_action_node_id(*action);
+        if (node_id >= 0) { // Valid node ID found
+            node_ids.push_back(node_id);
+        }
+    }
+    
+    if (node_ids.empty()) {
+        return actions; // No valid node IDs found, return as-is
+    }
+    
+    // Build a temporary subgraph using existing node IDs and cached interferences
+    // This reuses all existing mappings and cached interference computations
+    Graph temp_subgraph(node_id_to_action_.size());
+    
+    // Add edges using cached interference results (no recomputation needed!)
+    for (size_t i = 0; i < actions.size(); ++i) {
+        for (size_t j = 0; j < actions.size(); ++j) {
+            if (i != j) {
+                const Action* action1 = actions[i];
+                const Action* action2 = actions[j];
+                
+                // Use cached interference check - no recomputation since this runs after planning
+                if (has_interference(*action1, *action2)) {
+                    Graph::NodeId node1 = get_action_node_id(*action1);
+                    Graph::NodeId node2 = get_action_node_id(*action2);
+                    if (node1 >= 0 && node2 >= 0) {
+                        temp_subgraph.add_edge(node1, node2);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Use Graph's topological sort which implements DFS post-order traversal
+    // This produces EXECUTION ORDER (reverse topological order):
+    // - If A interferes with B (A -> B), then B appears before A in the result
+    // - This ensures safe execution: interfered-with actions execute first
+    std::vector<Graph::NodeId> sorted_node_ids = temp_subgraph.topological_sort(node_ids);
+    
+    // Convert back to actions using existing base class mappings
+    std::vector<const Action*> result;
+    for (Graph::NodeId node_id : sorted_node_ids) {
+        const Action* action = get_action_from_node_id(node_id);
+        if (action) {
+            result.push_back(action);
+        }
+    }
+    
+    return result;
+}
+
+// Graph-based methods (NOT supported by lazy analysis)
+
+const Graph& LazyInterferenceAnalysis::get_interference_graph() const {
+    throw std::runtime_error("LazyInterferenceAnalysis does not support get_interference_graph(). "
+                            "This method is only available with eager analysis. "
+                            "Use has_interference() for individual interference checks instead.");
+}
+
+const std::vector<Graph::NodeId>& LazyInterferenceAnalysis::get_neighbours(Graph::NodeId node_id) const {
+    throw std::runtime_error("LazyInterferenceAnalysis does not support get_neighbours(). "
+                            "This method is only available with eager analysis. "
+                            "Use has_interference() for individual interference checks instead.");
+}
+
+void LazyInterferenceAnalysis::output_interference_graph_dot(const std::string& filename) const {
+    throw std::runtime_error("LazyInterferenceAnalysis does not support output_interference_graph_dot(). "
+                            "This method is only available with eager analysis as it requires the full graph.");
+}
+
+} // namespace planmt

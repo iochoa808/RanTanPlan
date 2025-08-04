@@ -71,7 +71,7 @@ private:
     void check_and_generate_conflicts(const Action& action, int timestep, const z3::expr& action_var);
     
     // Get interference analyzer from the encoder's parallelism strategy
-    const InterferenceAnalyzer* get_interference_analyzer() const;
+    const InterferenceAnalysis* get_interference_analyzer() const;
 };
 
 } // namespace planmt
