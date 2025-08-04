@@ -15,37 +15,37 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         parallelism="sequential",
         propagator="null", 
         lazy_interference=False,
-        description="No parallelism - safest option"
+        description="Classic sequential encoding"
     ),
     "forall-basic": StrategyConfig(
         parallelism="forall",
         propagator="null",
         lazy_interference=False, 
-        description="Parallel actions without propagation"
+        description="Classic Forall-step semantics with pre-computed syntactic interferences"
     ),
     "forall-optimized": StrategyConfig(
         parallelism="forall",
         propagator="forall",
         lazy_interference=False,
-        description="Parallel actions with forall propagation"  
+        description="Forall-step semantics, with pre-computed interferences and a propagator that propagates neighbours as false" 
     ),
     "forall-lazy": StrategyConfig(
         parallelism="forall",
         propagator="lazy_forall",
         lazy_interference=True,
-        description="Memory-efficient parallel with lazy propagation"
+        description="Forall-step semantics with lazy interference analysis, only propagating neighbours as false"
     ),
     "exists-basic": StrategyConfig(
         parallelism="exists", 
         propagator="null",
         lazy_interference=False,
-        description="At-least-one action semantics"
+        description="Classic Exists-step semantics with pre-computed syntactic interferences"
     ),
     "exists-optimized": StrategyConfig(
         parallelism="exists",
         propagator="exists", 
         lazy_interference=True,
-        description="Advanced exists with propagation"
+        description="Exists-step semantics with lazy interference analysis, throwing a conflict when a cycle is detected"
     ),
 }
 
