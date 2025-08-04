@@ -54,7 +54,7 @@ void LiftedEncodingVisitor::visit_function_application(const std::string& functi
     }
     
     // Use enum-based operator handling for efficiency and type safety
-    std::cout << "Handling function application: " << function_name << std::endl;
+    // std::cout << "Handling function application: " << function_name << std::endl;
     Expression::Operator op = Expression::string_to_operator(function_name);
     
     switch (op) {
@@ -157,11 +157,11 @@ std::optional<z3::expr> LiftedEncodingVisitor::handle_and(const std::vector<z3::
         return ctx_.bool_val(true);
     }
     
-    z3::expr result = args[0];
-    for (size_t i = 1; i < args.size(); ++i) {
-        result = result && args[i];
+    z3::expr_vector z3_args(ctx_);
+    for (const auto& arg : args) {
+        z3_args.push_back(arg);
     }
-    return result;
+    return z3::mk_and(z3_args);
 }
 
 std::optional<z3::expr> LiftedEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
@@ -169,11 +169,11 @@ std::optional<z3::expr> LiftedEncodingVisitor::handle_or(const std::vector<z3::e
         return ctx_.bool_val(false);
     }
     
-    z3::expr result = args[0];
-    for (size_t i = 1; i < args.size(); ++i) {
-        result = result || args[i];
+    z3::expr_vector z3_args(ctx_);
+    for (const auto& arg : args) {
+        z3_args.push_back(arg);
     }
-    return result;
+    return z3::mk_or(z3_args);
 }
 
 std::optional<z3::expr> LiftedEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
@@ -281,8 +281,7 @@ std::optional<z3::expr> LiftedEncodingVisitor::handle_uninterpreted_function(
                                  return_sort);
         symbol_table_.emplace(function_name, func_decl);
         func_it = symbol_table_.find(function_name);
-        
-        std::cout << "Created function declaration: " << func_decl << std::endl;
+        //std::cout << "Created function declaration: " << func_decl << std::endl;
     }
     
     z3::func_decl func_decl = std::get<z3::func_decl>(func_it->second);

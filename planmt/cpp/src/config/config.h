@@ -38,6 +38,10 @@ public:
         bool lazy_computation = false;  // false = eager (default), true = lazy
     } interference_analyzer;
     
+    struct Symmetry {
+        bool detect_symmetries = false;  // Enable symmetry detection
+    } symmetry;
+    
     void initialize(int argc, char* argv[]);
     void validate() const;
     

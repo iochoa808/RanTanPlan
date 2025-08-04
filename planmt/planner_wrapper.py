@@ -36,6 +36,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._max_steps = options.get('max_steps')  # None if not specified
         self._no_persist_clauses = options.get('no_persist_clauses', False)
         self._lazy_interference = options.get('lazy_interference', False)
+        self._detect_symmetries = options.get('detect_symmetries', False)
 
     def _find_executable(self, provided_path):
         """Find the planmt executable, trying various locations."""
@@ -241,6 +242,9 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             
             if self._lazy_interference:
                 command.append("--lazy-interference")
+            
+            if self._detect_symmetries:
+                command.append("--detect-symmetries")
             
             print(f"Running planner: {' '.join(command)}")
 

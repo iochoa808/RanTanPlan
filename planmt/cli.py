@@ -62,6 +62,8 @@ Examples:
     # Additional flags that work with all strategies
     parser.add_argument("--no-persist-clauses", action="store_true",
                        help="Disable Z3 clause persistence")
+    parser.add_argument("--detect-symmetries", action="store_true",
+                       help="Enable symmetry detection and output")
     
     parser.add_argument(
         "--version",
@@ -105,6 +107,8 @@ def solve_problem(problem, args):
         planner_params['max_steps'] = args.max_steps  
     if args.no_persist_clauses:
         planner_params['no_persist_clauses'] = True
+    if args.detect_symmetries:
+        planner_params['detect_symmetries'] = True
         
     # Handle verbosity
     if args.silent:

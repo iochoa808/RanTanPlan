@@ -72,6 +72,10 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         else if (arg == "--lazy-interference") {
             config.interference_analyzer.lazy_computation = true;
         }
+        // Symmetry options
+        else if (arg == "--detect-symmetries") {
+            config.symmetry.detect_symmetries = true;
+        }
     }
 }
 

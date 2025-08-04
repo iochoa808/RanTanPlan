@@ -102,6 +102,7 @@ add_executable(planmt
     src/planners/propagators/lazy_forall_propagator.cpp
     src/planners/propagators/exists_propagator.cpp
     src/planners/propagators/propagator_factory.cpp
+    src/symmetries/smt_symmetry_checker.cpp
 )
 
 # Define proto files and generate C++ sources
@@ -126,7 +127,8 @@ target_include_directories(planmt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem          # problem representation headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/problem/visitors # visitor headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/encoders/        # encoders headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/planners/        # encoders headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/planners/        # planners headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/symmetries/      # symmetries headers
     ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
     ${Z3_INCLUDE_DIR}                                # Z3 headers
 )

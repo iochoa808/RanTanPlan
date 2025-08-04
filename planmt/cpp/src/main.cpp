@@ -14,6 +14,7 @@
 #include "planners/sequential.h"
 #include "planners/propagators/propagator_factory.h"
 #include "util/memory_tracker.h"
+#include "symmetries/smt_symmetry_checker.h"
 
 #include "z3++.h"
 
@@ -113,6 +114,20 @@ int main(int argc, char* argv[]) {
     planmt::Problem planning_problem(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
 
+    // Check if symmetry detection is requested
+    auto& config = planmt::Config::instance();  
+    if (config.symmetry.detect_symmetries) {
+        if (config.is_info()) {
+            std::cout << "SMT-based symmetry detection enabled..." << std::endl;
+        }
+        
+        // Create Z3 context for SMT-based symmetry checking
+        z3::context ctx;
+        
+        planmt::SMTSymmetryChecker checker(&planning_problem, ctx);
+        checker.detect_all_object_swaps();
+    }
+
     // Solve the planning problem using configuration
     PlanGenerationResult result = solve_planning_problem(planning_problem);
 
@@ -122,8 +137,6 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: Could not write result to file: " << argv[2] << std::endl;
         return 1;
     }
-
-    auto& config = planmt::Config::instance();
     if (config.is_info()) {
         std::cout << "C++ Planner: Successfully wrote result to: " << argv[2] << std::endl;
     }

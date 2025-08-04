@@ -178,11 +178,11 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_and(const std::vector<z3
         return ctx_.bool_val(true);
     }
     
-    z3::expr result = args[0];
-    for (size_t i = 1; i < args.size(); ++i) {
-        result = result && args[i];
+    z3::expr_vector z3_args(ctx_);
+    for (const auto& arg : args) {
+        z3_args.push_back(arg);
     }
-    return result;
+    return z3::mk_and(z3_args);
 }
 
 std::optional<z3::expr> GroundedEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
@@ -190,11 +190,11 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_or(const std::vector<z3:
         return ctx_.bool_val(false);
     }
     
-    z3::expr result = args[0];
-    for (size_t i = 1; i < args.size(); ++i) {
-        result = result || args[i];
+    z3::expr_vector z3_args(ctx_);
+    for (const auto& arg : args) {
+        z3_args.push_back(arg);
     }
-    return result;
+    return z3::mk_or(z3_args);
 }
 
 std::optional<z3::expr> GroundedEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
