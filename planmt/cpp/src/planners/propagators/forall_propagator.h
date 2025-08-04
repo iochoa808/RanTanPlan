@@ -4,6 +4,7 @@
 #include "../../problem/problem.h"
 #include "../../problem/fluent.h"
 #include "../../problem/action.h"
+#include "../../encoders/parallelism/graph.h"
 #include <z3++.h>
 #include <memory>
 #include <unordered_map>
@@ -29,8 +30,8 @@ private:
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
 
-    // Precomputed complete interference lookup: action -> set of actions that need to be negated
-    std::unordered_map<Action, std::set<Action>> actions_interfering_with_;
+    // Precomputed complete interference lookup: node_id -> set of node_ids that need to be negated
+    std::unordered_map<Graph::NodeId, std::set<Graph::NodeId>> actions_interfering_with_;
     
 public:
     /**
