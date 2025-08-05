@@ -1,6 +1,8 @@
 # planMT
 
-A high-performance automated planner that uses a planning-as-satisfiability approach
+An automated planning system that uses a planning-as-satisfiability approach. It combines a Python frontend with a C++ backend for SMT-based planning.
+
+Supports three parallelism strategies (sequential, forall, exists) with optimization configurations and interference analysis.
 
 ## Architecture
 
@@ -34,7 +36,7 @@ A high-performance automated planner that uses a planning-as-satisfiability appr
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │              C++ planMT Engine                          │    │
 │  │                                                         │    │
-│  │ • SAT-based planning                                    │    │
+│  │ • SMT-based planning                                    │    │
 │  │ • PDDL parsing                                          │    │
 │  │ • Optimization                                          │    │
 │  │ • Executable: planmt/bin/planmt                         │    │
@@ -47,9 +49,16 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
 
 ## Features
 
-- **Easy Installation**: Install as a Python package with `pip install`
-- **CLI Interface**: Run from command line with `planmt -d domain.pddl -p problem.pddl`
-- **High Performance**: C++ backend for efficient SAT-based planning
+- Install as a Python package
+- Command line interface with strategy configuration
+- C++ backend for SMT-based planning
+- Three parallelism strategies:
+  - `sequential`: One action per timestep
+  - `forall`: Parallel actions if none interfere
+  - `exists`: Actions execute if non-interfering order exists
+- Eager and lazy interference analysis
+- Unified Planning library integration
+- Test suite with 30+ PDDL domains
 
 ## Installation
 
@@ -58,7 +67,10 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
 - Python 3.8+
 - CMake (for building the C++ planner)
 - Git
-- protobuf libraries
+- **protobuf libraries** (external dependency - install via system package manager)
+  - Ubuntu/Debian: `sudo apt-get install libprotobuf-dev protobuf-compiler`
+  - macOS: `brew install protobuf`
+  - Other systems: See [protobuf installation guide](https://protobuf.dev/downloads/)
 
 ### Install from Source
 
@@ -68,28 +80,52 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
    cd planMT
    ```
 
-2. Install the package:
+2. Create and activate a virtual environment:
    ```bash
-   pip install -e .
-   python build.py # build the C++ planner
+   python -m venv .venv
+   source .venv/bin/activate  # Required for all build/run operations
+   ```
+
+3. Install the package:
+   ```bash
+   pip install -e .          # Install in development mode
+   python build.py           # Build the C++ planner
    ```
 
 ## Usage
 
 ### Command Line Interface
 
-Once installed, you can use planMT from anywhere:
+Basic usage:
 
 ```bash
-# Basic usage
-planmt --domain examples/domain.pddl --problem examples/problem.pddl
+# Basic usage with sequential strategy
+planmt -d pddl/test/zenotravel/domain.pddl -p pddl/test/zenotravel/problem.pddl --strategy sequential
+
+# Use optimized forall strategy with timeout
+planmt -d domain.pddl -p problem.pddl --strategy forall-optimized --timeout 120
+
+# Verbose output with exists strategy
+planmt -v -d domain.pddl -p problem.pddl --strategy exists-basic
 
 # Save plan to file
-planmt -d domain.pddl -p problem.pddl --output-plan solution.txt
+planmt -d domain.pddl -p problem.pddl --strategy forall-lazy --output-plan solution.txt
 
 # Show help
 planmt --help
 ```
+
+#### Available Strategies
+
+**Basic:**
+- `sequential`: Sequential encoding
+- `forall-basic`: Forall semantics with pre-computed interference
+- `exists-basic`: Exists semantics with pre-computed interference
+
+**Optimized:**
+- `forall-optimized`: Forall with propagation
+- `forall-lazy`: Forall with lazy interference analysis
+- `exists-optimized`: Exists with lazy interference and cycle detection
 
 ### Library Usage (Unified Planning)
 
@@ -118,6 +154,37 @@ planner = planMTPlanner()
 
 # Solve a problem
 result = planner.solve(problem)
+```
+
+## Testing and Development
+
+### Running Tests
+
+```bash
+# Activate virtual environment first
+source .venv/bin/activate
+
+# Run comprehensive tests (all strategies, all domains)
+python test.py
+
+# Quick test subset for development
+python test.py --quick
+
+# Verbose test output
+python test.py -v
+```
+
+### Building and Cleaning
+
+```bash
+# Standard build
+python build.py
+
+# Clean build
+python build.py --clean
+
+# Debug build
+python build.py --build-type debug
 ```
 
 ## Citation
