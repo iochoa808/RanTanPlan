@@ -10,6 +10,7 @@ import argparse
 import os
 import sys
 from importlib import metadata
+from typing import Any, Dict
 from unified_planning.engines.results import LogLevel
 from planmt.strategies import get_strategy_config, list_strategies
 
@@ -64,6 +65,8 @@ Examples:
                        help="Disable Z3 clause persistence")
     parser.add_argument("--detect-symmetries", action="store_true",
                        help="Enable symmetry detection and output")
+    parser.add_argument("--no-cnf-normalization", action="store_true",
+                       help="Disable CNF normalization of goals and preconditions")
     
     parser.add_argument(
         "--version",
@@ -92,8 +95,8 @@ def solve_problem(problem, args):
     # Get strategy configuration
     strategy_config = get_strategy_config(args.strategy)
     
-    # Build planner parameters
-    planner_params = {
+    # Build planner parameters (use object to satisfy type checker for mixed types)
+    planner_params: Dict[str, object] = {
         'parallelism': strategy_config.parallelism,
         'propagator': strategy_config.propagator,
     }
@@ -109,6 +112,9 @@ def solve_problem(problem, args):
         planner_params['no_persist_clauses'] = True
     if args.detect_symmetries:
         planner_params['detect_symmetries'] = True
+    # Pass CNF normalization toggle to planner (default is enabled when flag not set)
+    if getattr(args, 'no_cnf_normalization', False):
+        planner_params['no_cnf_normalization'] = True
         
     # Handle verbosity
     if args.silent:
@@ -125,8 +131,10 @@ def solve_problem(problem, args):
               f"{'/lazy' if strategy_config.lazy_interference else ''}")
     
     try:
-        with OneshotPlanner(name='planMT', params=planner_params) as planner:
-            result = planner.solve(problem, timeout=args.timeout)
+        # Cast to Any to avoid static typing issues with UP engines
+        PlannerClass: Any = OneshotPlanner
+        with PlannerClass(name='planMT', params=planner_params) as planner:  # type: ignore[func-returns-value]
+            result = planner.solve(problem, timeout=args.timeout)  # type: ignore[attr-defined]
             return result
     except Exception as e:
         print(f"Error during planning: {e}")

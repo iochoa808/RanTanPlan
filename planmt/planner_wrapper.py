@@ -10,6 +10,7 @@ from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.exceptions import UPException
 from .delete_then_set_compiler import DeleteThenSetRemover
+from .cnf_condition_compiler import CNFConditionCompiler
 from unified_planning.model import ProblemKind, Problem
 from unified_planning.plans import SequentialPlan, ActionInstance
 from unified_planning.shortcuts import get_environment
@@ -37,6 +38,8 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._no_persist_clauses = options.get('no_persist_clauses', False)
         self._lazy_interference = options.get('lazy_interference', False)
         self._detect_symmetries = options.get('detect_symmetries', False)
+        # allow disabling CNF normalization via planner params (default: enabled)
+        self._no_cnf_normalization = options.get('no_cnf_normalization', False)
 
     def _find_executable(self, provided_path):
         """Find the planmt executable, trying various locations."""
@@ -136,7 +139,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         """
         try:
             with PlanValidator(problem_kind=problem.kind, plan_kind=plan.kind) as validator:
-                validation_result = validator.validate(problem, plan)
+                validation_result = validator.validate(problem, plan)  # type: ignore[attr-defined]
                 
                 if validation_result.status == ValidationResultStatus.VALID:
                     print("Plan validation: VALID")
@@ -409,6 +412,23 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             print("  Quantifier removal completed.")
         else:
             print("  Quantifier removal not needed for this problem type.")
+
+        # Step 2b: CNF normalization of goals and preconditions (NNF + distribute)
+        try:
+            if not self._no_cnf_normalization:
+                cnf_compiler = CNFConditionCompiler()
+                if cnf_compiler.supports(current_problem.kind):
+                    print("  Applying CNF normalization (goals and preconditions)...")
+                    cnf_result = cnf_compiler.compile(current_problem, CompilationKind.GROUNDING)
+                    current_problem = cnf_result.problem
+                    compilation_maps.append(cnf_result)
+                    print("  CNF normalization completed.")
+                else:
+                    print("  CNF normalization not needed for this problem type.")
+            else:
+                print("  CNF normalization disabled by configuration.")
+        except Exception as e:
+            print(f"  CNF normalization skipped due to error: {e}")
         
         # Step 3: Ground the problem
         print("  Applying grounding...")
