@@ -13,7 +13,7 @@ GroundedEncodingVisitor::GroundedEncodingVisitor(z3::context& ctx,
       variable_factory_(factory) {}
 
 void GroundedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, const Type* type) {
-    std::cout << "Visiting symbol: " << symbol << ", kind: " << static_cast<int>(kind) << ", type: " << (type ? type->name() : "null") << std::endl;
+    //std::cout << "Visiting symbol: " << symbol << ", kind: " << static_cast<int>(kind) << ", type: " << (type ? type->name() : "null") << std::endl;
     // Use the factory to create symbol variables with proper types
     // Note: kind is not used in grounded encoding since all symbols become constants
     result_ = variable_factory_->create_symbol_variable(symbol, type);

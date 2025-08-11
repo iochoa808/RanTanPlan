@@ -40,7 +40,7 @@ public:
     // Get access to parallelism strategy for plan extraction
     const ParallelismStrategy* get_parallelism_strategy() const override { return parallelism_strategy_.get(); }
 
-private:
+protected:
     // Helper function to convert expression to Z3 using visitor
     std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1);
     
@@ -50,7 +50,7 @@ private:
     // Helper function to print EPC index for debugging
     void print_epc_index(const std::string& context) const;
     
-    // Member variables
+    // Member variables accessible to derived classes
     const Problem& problem_; // The planning problem instance
     z3::context& ctx_;       // Z3 context (shared)
     Z3VariableFactory variable_factory_; // Factory for creating and managing Z3 variables

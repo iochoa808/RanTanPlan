@@ -109,6 +109,7 @@ Plan SequentialPlanner::search() {
         if (config.is_info()) {
             std::cout << "T" << timestep;
         }
+
         //debug_output_constraints(); // Output initial constraints
 
         // Time solving
@@ -155,6 +156,7 @@ Plan SequentialPlanner::search() {
                     std::cout << plan.to_string() << std::endl;
                 }
                 
+                
                 // Clean up propagator before returning
                 propagator_strategy_->cleanup();
                 return plan; // Return the extracted plan
@@ -183,6 +185,7 @@ Plan SequentialPlanner::search() {
         std::cout << "\n*** NO PLAN FOUND within " << config.planner.max_steps << " timesteps, aborting ***" << std::endl;
         std::cout << "No plan found within " << config.planner.max_steps << " timesteps." << std::endl;
     }
+    
     
     // Clean up propagator before returning
     propagator_strategy_->cleanup();

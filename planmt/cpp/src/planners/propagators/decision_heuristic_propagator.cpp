@@ -213,8 +213,8 @@ void DecisionHeuristicPropagator::build_literal_producer_mapping() {
             literal_producers_[effect_literal].push_back(&action);
             
             if (Config::instance().is_debug()) {
-                std::cout << "DecisionHeuristic: Action " << action.name() 
-                          << " can produce literal: " << effect_literal << std::endl;
+//                std::cout << "DecisionHeuristic: Action " << action.name() 
+//                          << " can produce literal: " << effect_literal << std::endl;
             }
         }
     }
@@ -244,8 +244,8 @@ void DecisionHeuristicPropagator::build_action_precondition_mapping() {
         action_preconditions_[&action] = std::move(preconditions);
         
         if (Config::instance().is_debug() && !action_preconditions_[&action].empty()) {
-            std::cout << "DecisionHeuristic: Action " << action.name() << " has " 
-                      << action_preconditions_[&action].size() << " precondition literals" << std::endl;
+//            std::cout << "DecisionHeuristic: Action " << action.name() << " has " 
+//                      << action_preconditions_[&action].size() << " precondition literals" << std::endl;
         }
     }
 }
