@@ -10,7 +10,7 @@
 
 #include "config/config.h"
 #include "problem/problem.h"
-#include "encoders/grounded_encoder.h" 
+#include "encoders/encoder_factory.h" 
 #include "planners/sequential.h"
 #include "planners/propagators/propagator_factory.h"
 #include "util/memory_tracker.h"
@@ -28,18 +28,19 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     auto* log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
 
-    // Create Z3 context
+        // Create Z3 context
     z3::context ctx;
 
     // Instantiate the encoder/planner combination
-    planmt::GroundedEncoder encoder(problem, ctx);
-    encoder.set_parallelism_strategy(config.planner.strategy);
+    auto encoder = planmt::EncoderFactory::create_encoder(config.planner.encoder, problem, ctx);
+    encoder->set_parallelism_strategy(config.planner.parallelism_strategy);
     if (config.is_info()) {
-        std::cout << "Using parallelism strategy: " << encoder.get_parallelism_strategy_name() << std::endl;
+        std::cout << "Using encoder type: " << config.planner.encoder << std::endl;
+        std::cout << "Using parallelism strategy: " << encoder->get_parallelism_strategy_name() << std::endl;
     }
     
     // Create planner and set propagator
-    planmt::SequentialPlanner planner(problem, encoder, ctx);
+    planmt::SequentialPlanner planner(problem, *encoder, ctx);
     planner.set_propagator_strategy(config.propagators.type);
     if (config.is_info()) {
         std::cout << "Using propagator strategy: " << planner.get_propagator_strategy_name() << std::endl;

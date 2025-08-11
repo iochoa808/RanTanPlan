@@ -25,7 +25,8 @@ public:
     } global;
     
     struct Planner {
-        std::string strategy = "sequential";
+        std::string parallelism_strategy = "sequential";
+        std::string encoder = "grounded";
         int max_steps = 100;
     } planner;
     

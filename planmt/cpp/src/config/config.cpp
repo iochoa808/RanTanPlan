@@ -36,17 +36,30 @@ void Config::validate() const {
     const std::vector<std::string> valid_strategies = {"sequential", "forall", "exists"};
     bool valid_strategy = false;
     for (const auto& strategy : valid_strategies) {
-        if (planner.strategy == strategy) {
+        if (planner.parallelism_strategy == strategy) {
             valid_strategy = true;
             break;
         }
     }
     if (!valid_strategy) {
-        throw std::invalid_argument("Invalid planner strategy: " + planner.strategy);
+        throw std::invalid_argument("Invalid planner strategy: " + planner.parallelism_strategy);
+    }
+    
+    // Validate encoder settings
+    const std::vector<std::string> valid_encoders = {"grounded", "reified"};
+    bool valid_encoder = false;
+    for (const auto& encoder : valid_encoders) {
+        if (planner.encoder == encoder) {
+            valid_encoder = true;
+            break;
+        }
+    }
+    if (!valid_encoder) {
+        throw std::invalid_argument("Invalid encoder type: " + planner.encoder);
     }
     
     // Validate propagator settings
-    const std::vector<std::string> valid_propagators = {"null", "forall", "lazy_forall", "exists"};
+    const std::vector<std::string> valid_propagators = {"null", "forall", "lazy_forall", "exists", "heuristic"};
     bool valid_propagator = false;
     for (const auto& prop : valid_propagators) {
         if (propagators.type == prop) {

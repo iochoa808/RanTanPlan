@@ -2,7 +2,7 @@
 
 #include "../problem/problem.h"
 #include "../problem/plan.h"
-#include "../encoders/grounded_encoder.h"
+#include "../encoders/base_encoder.h"
 #include "propagators/propagator_strategy.h"
 #include "propagators/propagator_factory.h"
 #include <z3++.h>
@@ -14,10 +14,10 @@ namespace planmt {
 class SequentialPlanner {
 public:
     // Constructor
-    SequentialPlanner(const Problem& problem, GroundedEncoder& encoder, z3::context& ctx);
+    SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx);
     
     // Constructor with propagator support
-    SequentialPlanner(const Problem& problem, GroundedEncoder& encoder, z3::context& ctx, 
+    SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx, 
                      std::unique_ptr<PropagatorStrategy> propagator);
 
     // Search for a plan and return it
@@ -34,7 +34,7 @@ public:
 
 private:
     const Problem& problem_;
-    GroundedEncoder& encoder_;
+    BaseEncoder& encoder_;
     z3::context& ctx_;
     z3::solver solver_;  // Solver to maintain current constraints state
     bool solution_found_ = false;  // Track if last search found a solution

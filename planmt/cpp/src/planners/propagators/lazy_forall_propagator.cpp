@@ -123,7 +123,7 @@ z3::user_propagator_base* LazyForallPropagator::fresh(z3::context& ctx) {
     return nullptr;
 }
 
-void LazyForallPropagator::initialize(z3::solver& solver, const GroundedEncoder& encoder) {
+void LazyForallPropagator::initialize(z3::solver& solver, const BaseEncoder& encoder) {
     // Store reference to encoder for variable factory access
     encoder_ = &encoder;
     

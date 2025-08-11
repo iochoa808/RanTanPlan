@@ -34,6 +34,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._verbosity = options.get('verbosity')  # None if not specified
         self._parallelism = options.get('parallelism', 'sequential')
         self._propagator = options.get('propagator', 'null')
+        self._encoder = options.get('encoder', 'grounded')
         self._max_steps = options.get('max_steps')  # None if not specified
         self._no_persist_clauses = options.get('no_persist_clauses', False)
         self._lazy_interference = options.get('lazy_interference', False)
@@ -231,7 +232,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
                 f.write(pb_problem_msg.SerializeToString())
 
             command = [self.executable_path, problem_filepath, solution_filepath, 
-                      "--parallelism", self._parallelism, "--propagator", self._propagator]
+                      "--parallelism", self._parallelism, "--propagator", self._propagator, "--encoder", self._encoder]
             
             # Add optional parameters only if specified
             if self._verbosity is not None:

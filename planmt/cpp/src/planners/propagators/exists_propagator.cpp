@@ -82,7 +82,7 @@ z3::user_propagator_base* ExistsPropagator::fresh(z3::context& ctx) {
     return nullptr;
 }
 
-void ExistsPropagator::initialize(z3::solver& solver, const GroundedEncoder& encoder) {
+void ExistsPropagator::initialize(z3::solver& solver, const BaseEncoder& encoder) {
     // Store reference to encoder for variable factory access
     encoder_ = &encoder;
     

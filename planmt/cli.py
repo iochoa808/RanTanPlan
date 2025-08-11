@@ -99,6 +99,7 @@ def solve_problem(problem, args):
     planner_params: Dict[str, object] = {
         'parallelism': strategy_config.parallelism,
         'propagator': strategy_config.propagator,
+        'encoder': strategy_config.encoder,
     }
     
     if strategy_config.lazy_interference:
@@ -127,7 +128,7 @@ def solve_problem(problem, args):
     # Show configuration info
     if not args.silent and args.verbose >= 1:
         print(f"Strategy: {args.strategy} ({strategy_config.description})")
-        print(f"Configuration: {strategy_config.parallelism}/{strategy_config.propagator}"
+        print(f"Configuration: {strategy_config.encoder}/{strategy_config.parallelism}/{strategy_config.propagator}"
               f"{'/lazy' if strategy_config.lazy_interference else ''}")
     
     try:

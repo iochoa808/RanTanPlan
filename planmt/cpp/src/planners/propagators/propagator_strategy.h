@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../encoders/grounded_encoder.h"
+#include "../../encoders/base_encoder.h"
 #include "propagator_types.h"
 #include <z3++.h>
 #include <memory>
@@ -9,7 +9,7 @@
 namespace planmt {
 
 // Forward declarations
-class GroundedEncoder;
+class BaseEncoder;
 
 /**
  * @brief Abstract base class for different propagator strategies
@@ -24,9 +24,9 @@ public:
     /**
      * @brief Initialize the propagator with the solver and encoder
      * @param solver The Z3 solver instance to register with
-     * @param encoder The grounded encoder providing variable factory access
+     * @param encoder The base encoder providing variable factory access
      */
-    virtual void initialize(z3::solver& solver, const GroundedEncoder& encoder) = 0;
+    virtual void initialize(z3::solver& solver, const BaseEncoder& encoder) = 0;
     
         /**
      * @brief Register variables for a specific timestep after constraints are added

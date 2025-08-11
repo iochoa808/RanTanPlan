@@ -26,7 +26,7 @@ namespace planmt {
  */
 class ExistsPropagator : public z3::user_propagator_base, public PropagatorStrategy {
 private:
-    const GroundedEncoder* encoder_;  // Access to variable factory and problem
+    const BaseEncoder* encoder_;  // Access to variable factory and problem
     const Problem* problem_;    // Direct access to problem structure
     const Z3VariableFactory* variable_factory_;  // Cached reference to variable factory
 
@@ -66,7 +66,7 @@ public:
     z3::user_propagator_base* fresh(z3::context& ctx) override;
     
     // PropagatorStrategy interface
-    void initialize(z3::solver& solver, const GroundedEncoder& encoder) override;
+    void initialize(z3::solver& solver, const BaseEncoder& encoder) override;
     void register_timestep_variables(int timestep) override;
     void cleanup() override { } // Empty implementation for now
     std::string get_name() const override { return "ExistsPropagator"; }

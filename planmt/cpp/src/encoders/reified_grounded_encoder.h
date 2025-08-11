@@ -16,10 +16,10 @@
 // This class is able to handle the encoding of grounded fluents and actions.
 namespace planmt {
 
-class GroundedEncoder : public BaseEncoder {
+class ReifiedGroundedEncoder : public BaseEncoder {
 public:
     // Constructor
-    GroundedEncoder(const Problem& problem, z3::context& ctx);
+    ReifiedGroundedEncoder(const Problem& problem, z3::context& ctx);
 
     // Encoding steps
     std::shared_ptr<z3::expr> encode_initial_state() override;

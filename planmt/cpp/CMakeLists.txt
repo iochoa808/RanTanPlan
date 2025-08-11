@@ -86,6 +86,8 @@ add_executable(planmt
     src/encoders/lifted_encoding_visitor.cpp
     src/encoders/grounded_encoding_visitor.cpp
     src/encoders/grounded_encoder.cpp
+    src/encoders/reified_grounded_encoder.cpp
+    src/encoders/encoder_factory.cpp
     src/encoders/parallelism/interference_analyzer.cpp
     src/encoders/parallelism/interference_analysis.cpp
     src/encoders/parallelism/eager_interference_analysis.cpp
@@ -101,6 +103,7 @@ add_executable(planmt
     src/planners/propagators/forall_propagator.cpp
     src/planners/propagators/lazy_forall_propagator.cpp
     src/planners/propagators/exists_propagator.cpp
+    src/planners/propagators/decision_heuristic_propagator.cpp
     src/planners/propagators/propagator_factory.cpp
     src/symmetries/smt_symmetry_checker.cpp
 )

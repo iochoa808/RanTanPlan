@@ -3,6 +3,7 @@
 #include "forall_propagator.h"
 #include "lazy_forall_propagator.h"
 #include "exists_propagator.h"
+#include "decision_heuristic_propagator.h"
 #include <algorithm>
 #include <cctype>
 
@@ -22,6 +23,8 @@ std::unique_ptr<PropagatorStrategy> PropagatorFactory::create_strategy(
             return std::make_unique<LazyForallPropagator>(solver, problem);
         case PropagatorType::EXISTS:
             return std::make_unique<ExistsPropagator>(solver, problem);
+        case PropagatorType::HEURISTIC:
+            return std::make_unique<DecisionHeuristicPropagator>(solver, problem);
         default:
             return std::make_unique<NullPropagator>();
     }
@@ -46,6 +49,8 @@ std::string PropagatorFactory::get_strategy_name(PropagatorType type) {
             return "lazy_forall";
         case PropagatorType::EXISTS:
             return "exists";
+        case PropagatorType::HEURISTIC:
+            return "heuristic";
         default:
             return "null";
     }
@@ -63,6 +68,8 @@ PropagatorType PropagatorFactory::parse_strategy_type(const std::string& strateg
         return PropagatorType::LAZY_FORALL;
     } else if (lower_name == "exists") {
         return PropagatorType::EXISTS;
+    } else if (lower_name == "heuristic") {
+        return PropagatorType::HEURISTIC;
     } else if (lower_name == "null" || lower_name == "none") {
         return PropagatorType::NULL_PROPAGATOR;
     } else {
@@ -72,7 +79,7 @@ PropagatorType PropagatorFactory::parse_strategy_type(const std::string& strateg
 }
 
 std::vector<std::string> PropagatorFactory::get_available_types() {
-    return {"null", "forall", "lazy_forall", "exists"};
+    return {"null", "forall", "lazy_forall", "exists", "heuristic"};
 }
 
 } // namespace planmt

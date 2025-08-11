@@ -45,9 +45,16 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         // Planner options
         else if (arg == "--parallelism") {
             if (i + 1 < argc) {
-                config.planner.strategy = argv[++i];
+                config.planner.parallelism_strategy = argv[++i];
             } else {
                 throw std::invalid_argument("--parallelism requires a value");
+            }
+        }
+        else if (arg == "--encoder") {
+            if (i + 1 < argc) {
+                config.planner.encoder = argv[++i];
+            } else {
+                throw std::invalid_argument("--encoder requires a value");
             }
         }
         else if (arg == "--max-steps") {

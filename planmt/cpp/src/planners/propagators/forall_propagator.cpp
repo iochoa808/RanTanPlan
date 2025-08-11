@@ -80,7 +80,7 @@ z3::user_propagator_base* ForallPropagator::fresh(z3::context& ctx) {
     return nullptr;
 }
 
-void ForallPropagator::initialize(z3::solver& solver, const GroundedEncoder& encoder) {
+void ForallPropagator::initialize(z3::solver& solver, const BaseEncoder& encoder) {
     // Store reference to encoder for variable factory access
     encoder_ = &encoder;
     
