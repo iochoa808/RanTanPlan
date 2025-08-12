@@ -235,7 +235,6 @@ public:
     // TYPE CHECKING CONVENIENCE METHODS
     // ========================================================================
     
-    /*
     bool is_bool_type() const { return type_ && type_->is_bool(); }
     bool is_int_type() const { return type_ && type_->is_int(); }
     bool is_real_type() const { return type_ && type_->is_real(); }
@@ -243,7 +242,6 @@ public:
     bool is_subtype_of(const Type* supertype) const {
         return type_ && type_->is_subtype_of(supertype);
     }
-    */
     
     // ========================================================================
     // STRUCTURAL TYPE CHECKING
@@ -277,6 +275,20 @@ public:
     bool is_less_equal() const;
     bool is_greater_than() const;
     bool is_greater_equal() const;
+    
+    /**
+     * @brief Check if this expression represents boolean true
+     * 
+     * @return true if this is an atom with boolean value true, false otherwise
+     */
+    bool is_boolean_true() const;
+    
+    /**
+     * @brief Check if this expression represents boolean false
+     * 
+     * @return true if this is an atom with boolean value false, false otherwise
+     */
+    bool is_boolean_false() const;
     
     // ========================================================================
     // UTILITY METHODS

@@ -298,4 +298,13 @@ bool Expression::is_greater_equal() const {
     }
     return false;
 }
+
+bool Expression::is_boolean_true() const {
+    return is_atom() && atom_.has_value() && atom_->is_boolean() && atom_->boolean();
+}
+
+bool Expression::is_boolean_false() const {
+    return is_atom() && atom_.has_value() && atom_->is_boolean() && !atom_->boolean();
+}
+
 } // namespace planmt
