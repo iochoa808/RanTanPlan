@@ -95,6 +95,12 @@ bool EagerInterferenceAnalysis::has_interference(const Action& a1, const Action&
     return interference_graph_.has_edge(it1->second, it2->second);
 }
 
+bool EagerInterferenceAnalysis::has_interference(Graph::NodeId node_id1, Graph::NodeId node_id2) const {
+    // DIRECTIONAL CHECK: Does node_id1 interfere with node_id2? (node_id1 -> node_id2)
+    // This is NOT symmetric: has_interference(A,B) != has_interference(B,A) in general
+    // This optimized version works directly with node IDs, avoiding Action object lookups
+    return interference_graph_.has_edge(node_id1, node_id2);
+}
 
 Graph::NodeId EagerInterferenceAnalysis::get_action_node_id(const Action& action) const {
     auto it = action_to_node_id_.find(action);

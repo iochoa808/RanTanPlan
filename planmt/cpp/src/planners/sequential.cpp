@@ -45,9 +45,6 @@ Plan SequentialPlanner::search() {
         std::cout << "Starting search with propagator: " << propagator_strategy_->get_name() << std::endl;
     }
     
-    // Initialize propagator once at the beginning
-    propagator_strategy_->initialize(solver_, encoder_);
-    
     // Reset solution found flag
     solution_found_ = false;
 
@@ -290,11 +287,11 @@ std::vector<const Action*> SequentialPlanner::topologically_sort_actions(
 }
 
 void SequentialPlanner::set_propagator_strategy(PropagatorType type) {
-    propagator_strategy_ = PropagatorFactory::create_strategy(type, solver_, problem_);
+    propagator_strategy_ = PropagatorFactory::create_strategy(type, solver_, problem_, encoder_);
 }
 
 void SequentialPlanner::set_propagator_strategy(const std::string& strategy_name) {
-    propagator_strategy_ = PropagatorFactory::create_strategy(strategy_name, solver_, problem_);
+    propagator_strategy_ = PropagatorFactory::create_strategy(strategy_name, solver_, problem_, encoder_);
 }
 
 std::string SequentialPlanner::get_propagator_strategy_name() const {

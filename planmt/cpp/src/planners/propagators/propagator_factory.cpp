@@ -12,19 +12,20 @@ namespace planmt {
 std::unique_ptr<PropagatorStrategy> PropagatorFactory::create_strategy(
     PropagatorType type, 
     z3::solver& solver,
-    const Problem& problem) {
+    const Problem& problem,
+    const BaseEncoder& encoder) {
     
     switch (type) {
         case PropagatorType::NULL_PROPAGATOR:
             return std::make_unique<NullPropagator>();
         case PropagatorType::FORALL:
-            return std::make_unique<ForallPropagator>(solver, problem);
+            return std::make_unique<ForallPropagator>(solver, problem, encoder);
         case PropagatorType::LAZY_FORALL:
-            return std::make_unique<LazyForallPropagator>(solver, problem);
+            return std::make_unique<LazyForallPropagator>(solver, problem, encoder);
         case PropagatorType::EXISTS:
-            return std::make_unique<ExistsPropagator>(solver, problem);
+            return std::make_unique<ExistsPropagator>(solver, problem, encoder);
         case PropagatorType::HEURISTIC:
-            return std::make_unique<DecisionHeuristicPropagator>(solver, problem);
+            return std::make_unique<DecisionHeuristicPropagator>(solver, problem, encoder);
         default:
             return std::make_unique<NullPropagator>();
     }
@@ -33,10 +34,11 @@ std::unique_ptr<PropagatorStrategy> PropagatorFactory::create_strategy(
 std::unique_ptr<PropagatorStrategy> PropagatorFactory::create_strategy(
     const std::string& strategy_name,
     z3::solver& solver,
-    const Problem& problem) {
+    const Problem& problem,
+    const BaseEncoder& encoder) {
     
     PropagatorType type = parse_strategy_type(strategy_name);
-    return create_strategy(type, solver, problem);
+    return create_strategy(type, solver, problem, encoder);
 }
 
 std::string PropagatorFactory::get_strategy_name(PropagatorType type) {

@@ -45,6 +45,20 @@ public:
     virtual bool has_interference(const Action& a1, const Action& a2) const = 0;
     
     /**
+     * @brief Check if first action interferes with second action by node IDs (DIRECTIONAL)
+     * 
+     * IMPORTANT: This checks if node_id1 interferes with node_id2, NOT if they interfere with each other.
+     * Interference is directional: has_interference(A, B) != has_interference(B, A) in general.
+     * 
+     * This is an optimized version that works directly with node IDs, avoiding Action object lookups.
+     * 
+     * @param node_id1 The node ID of the potentially interfering action  
+     * @param node_id2 The node ID of the potentially interfered-with action
+     * @return True if node_id1 interferes with node_id2, false otherwise
+     */
+    virtual bool has_interference(Graph::NodeId node_id1, Graph::NodeId node_id2) const = 0;
+    
+    /**
      * @brief Get the node ID for an action in the interference graph
      * @param action The action to get the node ID for
      * @return Node ID in the graph, or -1 if action not found

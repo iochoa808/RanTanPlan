@@ -16,10 +16,6 @@ public:
     NullPropagator() = default;
     ~NullPropagator() override = default;
     
-    void initialize(z3::solver& solver, const BaseEncoder& encoder) override {
-        // No-op: null propagator does nothing
-    }
-    
     void register_timestep_variables(int timestep) override {
         // No-op: null propagator doesn't register variables
     }

@@ -27,7 +27,7 @@ private:
     // TODO: Add heuristic state and analysis structures
     
 public:
-    DecisionHeuristicPropagator(z3::solver& solver, const Problem& problem);
+    DecisionHeuristicPropagator(z3::solver& solver, const Problem& problem, const BaseEncoder& encoder);
     ~DecisionHeuristicPropagator() override = default;
     
     // Z3 user_propagator_base interface
@@ -38,7 +38,6 @@ public:
     z3::user_propagator_base* fresh(z3::context& ctx) override;
     
     // PropagatorStrategy interface
-    void initialize(z3::solver& solver, const BaseEncoder& encoder) override;
     void register_timestep_variables(int timestep) override;
     void cleanup() override;
     std::string get_name() const override { return "heuristic"; }

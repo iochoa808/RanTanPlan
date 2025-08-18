@@ -35,6 +35,13 @@ bool LazyInterferenceAnalysis::has_interference(const Action& a1, const Action& 
     return compute_interference(a1, a2);
 }
 
+bool LazyInterferenceAnalysis::has_interference(Graph::NodeId node_id1, Graph::NodeId node_id2) const {
+    // Convert node IDs back to actions, then use existing compute_interference logic
+    const Action* action1 = get_action_from_node_id(node_id1);
+    const Action* action2 = get_action_from_node_id(node_id2);
+    return compute_interference(*action1, *action2);
+}
+
 bool LazyInterferenceAnalysis::compute_interference(const Action& a1, const Action& a2) const {
     // Create a directional cache key: "source_action -> target_action"
     // This makes it clear that we're checking if source interferes with target

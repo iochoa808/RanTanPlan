@@ -23,24 +23,28 @@ public:
      * @param type The type of strategy to create
      * @param solver Z3 solver for the propagator (enables user propagator callbacks)
      * @param problem The planning problem (required for planning propagators)
+     * @param encoder The base encoder providing variable factory access
      * @return A unique pointer to the created strategy
      */
     static std::unique_ptr<PropagatorStrategy> create_strategy(
         PropagatorType type, 
         z3::solver& solver,
-        const Problem& problem);
+        const Problem& problem,
+        const BaseEncoder& encoder);
 
     /**
      * @brief Create a propagator strategy instance from string with solver
      * @param strategy_name The name of the strategy ("null", "forall")
      * @param solver Z3 solver for the propagator (enables user propagator callbacks)
      * @param problem The planning problem (required for planning propagators)
+     * @param encoder The base encoder providing variable factory access
      * @return A unique pointer to the created strategy
      */
     static std::unique_ptr<PropagatorStrategy> create_strategy(
         const std::string& strategy_name,
         z3::solver& solver,
-        const Problem& problem);
+        const Problem& problem,
+        const BaseEncoder& encoder);
 
     /**
      * @brief Get the string name for a propagator type

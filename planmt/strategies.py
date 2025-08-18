@@ -54,13 +54,13 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         encoder="grounded",
         description="Exists-step semantics with lazy interference analysis, throwing a conflict when a cycle is detected"
     ),
-    "sequential-heuristic": StrategyConfig(
-        parallelism="sequential",
-        propagator="heuristic",
-        lazy_interference=False,
-        encoder="reified",
-        description="Sequential encoding with goal-directed decision heuristic"
-    ),
+#    "sequential-heuristic": StrategyConfig(
+#        parallelism="sequential",
+#        propagator="heuristic",
+#        lazy_interference=False,
+#        encoder="reified",
+#        description="Sequential encoding with goal-directed decision heuristic"
+#    ),
 
 }
 

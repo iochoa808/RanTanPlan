@@ -117,9 +117,14 @@ def run_test(problem_name, domain_file, problem_file, strategy_name, verbose=Fal
         # 3. Configure and run the planner
         planner_params = {
             'parallelism': strategy_config.parallelism,
-            'propagator': strategy_config.propagator,
-            'verbose': verbose 
+            'propagator': strategy_config.propagator
         }
+        
+        # Set verbosity level based on verbose flag
+        if verbose:
+            planner_params['verbosity'] = 'info'  # Enable verbose output
+        else:
+            planner_params['verbosity'] = 'silent'  # Suppress output
         
         if strategy_config.lazy_interference:
             planner_params['lazy_interference'] = True

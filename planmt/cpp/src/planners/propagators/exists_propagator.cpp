@@ -6,14 +6,21 @@
 #include <iostream>
 #include <set>
 #include <algorithm>
+#include <functional>
 
 namespace planmt {
 
-ExistsPropagator::ExistsPropagator(z3::solver& solver, const Problem& problem)
-    : z3::user_propagator_base(&solver), problem_(&problem), encoder_(nullptr),
-     variable_factory_(nullptr) {
+ExistsPropagator::ExistsPropagator(z3::solver& solver, const Problem& problem, const BaseEncoder& encoder)
+    : z3::user_propagator_base(&solver), problem_(&problem), encoder_(&encoder),
+     variable_factory_(&encoder.get_variable_factory()),
+     parallelism_strategy_(encoder.get_parallelism_strategy()),
+     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()) {
     // Define callbacks for the user propagator
     register_fixed();
+    register_final();
+    
+    // Set Z3 option to persist clauses for user propagator based on config
+    solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
 }
 
 void ExistsPropagator::push() {
@@ -31,20 +38,11 @@ void ExistsPropagator::pop(unsigned num_scopes) {
             
             // Undo all trail entries added after this level
             while (trail_.size() > level_start) {
-                const TrailEntry& entry = trail_.back();
+                const auto& [action_node_id, timestep] = trail_.back();
                 
-                // Derive action and timestep from variable
-                auto action_info = variable_factory_->get_action_from_variable(entry.variable);
-                if (action_info) {
-                    const Action& action = action_info->first;
-                    int timestep = action_info->second;
-                    
-                    // Remove action from active set
-                    auto& active_set = active_actions_per_timestep_[timestep];
-                    active_set.erase(action);
-                }
-                
-                // No ordering graph to clean up
+                // Remove action from active set using NodeId
+                auto& active_set = active_actions_per_timestep_[timestep];
+                active_set.erase(action_node_id);
                 
                 trail_.pop_back();
             }
@@ -53,28 +51,29 @@ void ExistsPropagator::pop(unsigned num_scopes) {
 }
 
 void ExistsPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
-    if (!value.is_true()) {
-        // Only process true assignments
-        return;
-    }
+    if (!value.is_true()) return; // Only process true assignments
     
     // Extract action and timestep from the variable
     auto action_info = variable_factory_->get_action_from_variable(ast);
-    if (!action_info) {
-        return; // Only process true action assignments
-    }
-    
     const Action& action = action_info->first;
     int timestep = action_info->second;
     
-    // Add to trail
-    trail_.push_back({ast});
+    // Get NodeId for the action
+    Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
     
-    // Update active actions for this timestep
-    active_actions_per_timestep_[timestep].insert(action);
+    // Add to trail using NodeId and timestep
+    trail_.push_back({action_node_id, timestep});
+    
+    // Update active actions for this timestep using NodeId
+    active_actions_per_timestep_[timestep].insert(action_node_id);
     
     // Perform exists propagation logic
     perform_exists_propagation(action, timestep, ast);
+}
+
+void ExistsPropagator::final() {
+    // Final constraint validation check
+    // TODO: we need this?
 }
 
 z3::user_propagator_base* ExistsPropagator::fresh(z3::context& ctx) {
@@ -82,16 +81,6 @@ z3::user_propagator_base* ExistsPropagator::fresh(z3::context& ctx) {
     return nullptr;
 }
 
-void ExistsPropagator::initialize(z3::solver& solver, const BaseEncoder& encoder) {
-    // Store reference to encoder for variable factory access
-    encoder_ = &encoder;
-    
-    // Cache variable factory reference to avoid repeated lookups
-    variable_factory_ = &encoder.get_variable_factory();
-    
-    // Set Z3 option to persist clauses for user propagator based on config
-    solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
-}
 
 void ExistsPropagator::register_timestep_variables(int timestep) {
     const Z3VariableFactory& var_factory = *variable_factory_;
@@ -99,7 +88,7 @@ void ExistsPropagator::register_timestep_variables(int timestep) {
     if (timestep == 0) return;
     
     // For timestep t > 0: register action variables for t-1 
-    if (registered_action_vars_.find(timestep - 1) == registered_action_vars_.end()) {
+    if (!registered_action_vars_.contains(timestep - 1)) {
         auto prev_action_vars = var_factory.get_all_action_variables(timestep - 1);
         if (!prev_action_vars.empty()) {
             registered_action_vars_[timestep - 1] = std::move(prev_action_vars);
@@ -129,119 +118,73 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
      * conflict with ALL actions in the cycle: {action_A, action_B, action_C}
      */
     
-    // Get currently active actions at this timestep (including the current action)
-    const std::set<Action>& active_actions = active_actions_per_timestep_[timestep];
-    
-    // Get interference analyzer from encoder
-    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
-    if (!strategy) return;
-    
-    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
-    if (!analyzer) return;
-    
-    // Build interference graph for active actions using direct interference checks
-    std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>> successors;
-    for (const Action& active_action : active_actions) {
-        Graph::NodeId node_id = analyzer->get_action_node_id(active_action);
-        if (node_id < 0) continue;
-        
-        // Check interference with other active actions
-        for (const Action& other_action : active_actions) {
-            if (active_action == other_action) continue;
-            
-            if (analyzer->has_interference(active_action, other_action)) {
-                Graph::NodeId other_node_id = analyzer->get_action_node_id(other_action);
-                if (other_node_id >= 0) {
-                    successors[node_id].insert(other_node_id);
-                }
-            }
-        }
-    }
+    // Get currently active action node IDs at this timestep (including the current action)
+    const std::unordered_set<Graph::NodeId>& active_node_ids = active_actions_per_timestep_[timestep];
     
     // Check if there's a cycle among the active actions
-    std::vector<Action> cycle;
-    if (find_cycle_among_active_actions(active_actions, successors, cycle)) {
+    std::vector<Graph::NodeId> cycle;
+    if (find_cycle_in_active_actions(active_node_ids, cycle)) {
         // Report conflict with all actions in the cycle
         z3::expr_vector conflict_actions(action_var.ctx());
-        for (const Action& cycle_action : cycle) {
-            z3::expr cycle_var = variable_factory_->get_action_variable(cycle_action, timestep);
+        for (Graph::NodeId cycle_node_id : cycle) {
+            // Convert NodeId back to Action to get the variable
+            const Action* cycle_action = interference_analyzer_->get_action_from_node_id(cycle_node_id);
+            z3::expr cycle_var = variable_factory_->get_action_variable(*cycle_action, timestep);
             conflict_actions.push_back(cycle_var);
         }
         conflict(conflict_actions);
     }
 }
 
-bool ExistsPropagator::find_cycle_among_active_actions(const std::set<Action>& active_actions, 
-                                                     const std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>>& successors,
-                                                     std::vector<Action>& cycle) {
-    // Get interference analyzer from encoder
-    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
-    if (!strategy) return false;
+bool ExistsPropagator::find_cycle_in_active_actions(const std::unordered_set<Graph::NodeId>& active_node_ids, 
+                                                   std::vector<Graph::NodeId>& cycle) {
+    if (active_node_ids.size() < 2) return false;
     
-    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
-    if (!analyzer) return false;
+    std::unordered_set<Graph::NodeId> visited;
+    std::unordered_set<Graph::NodeId> recursion_stack;
+    std::vector<Graph::NodeId> path;
     
-    // Try to find a cycle starting from each active action
-    for (const Action& start_action : active_actions) {
-        Graph::NodeId start_node_id = analyzer->get_action_node_id(start_action);
-        if (start_node_id < 0) continue;
+    // Lambda for DFS with inline graph building
+    std::function<bool(Graph::NodeId)> dfs = [&](Graph::NodeId current) -> bool {
+        visited.insert(current);
+        recursion_stack.insert(current);
+        path.push_back(current);
         
-        std::unordered_set<Graph::NodeId> visited;
-        std::vector<Graph::NodeId> path;
-        
-        if (find_cycle_dfs(start_node_id, start_node_id, active_actions, successors, visited, path)) {
-            // Convert node ID path back to actions
-            cycle.clear();
-            for (Graph::NodeId node_id : path) {
-                const Action* action = analyzer->get_action_from_node_id(node_id);
-                if (action) {
-                    cycle.push_back(*action);
-                }
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-bool ExistsPropagator::find_cycle_dfs(Graph::NodeId current, Graph::NodeId target, 
-                                     const std::set<Action>& active_actions,
-                                     const std::unordered_map<Graph::NodeId, std::unordered_set<Graph::NodeId>>& successors,
-                                     std::unordered_set<Graph::NodeId>& visited, 
-                                     std::vector<Graph::NodeId>& path) {
-    path.push_back(current);
-    visited.insert(current);
-    
-    // Get interference analyzer for node-to-action mapping
-    const ParallelismStrategy* strategy = encoder_->get_parallelism_strategy();
-    if (!strategy) return false;
-    
-    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
-    if (!analyzer) return false;
-    
-    // Check successors
-    auto it = successors.find(current);
-    if (it != successors.end()) {
-        for (Graph::NodeId successor : it->second) {
-            // Only consider active actions - need to convert node ID to action first
-            const Action* successor_action = analyzer->get_action_from_node_id(successor);
-            if (!successor_action || active_actions.find(*successor_action) == active_actions.end()) continue;
+        // Check interference with other active nodes
+        for (Graph::NodeId other_node : active_node_ids) {
+            if (other_node == current) continue;
             
-            if (successor == target && path.size() > 1) {
-                // Found cycle back to target
-                return true;
-            }
-            
-            if (visited.find(successor) == visited.end()) {
-                if (find_cycle_dfs(successor, target, active_actions, successors, visited, path)) {
+            if (interference_analyzer_->has_interference(current, other_node)) {
+                if (recursion_stack.contains(other_node)) {
+                    // Found back edge - cycle detected
+                    auto cycle_start = std::find(path.begin(), path.end(), other_node);
+                    cycle.assign(cycle_start, path.end());
                     return true;
                 }
+                
+                if (!visited.contains(other_node)) {
+                    if (dfs(other_node)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        // Backtrack
+        recursion_stack.erase(current);
+        path.pop_back();
+        return false;
+    };
+    
+    // Try to find cycle starting from each unvisited node
+    for (Graph::NodeId start_node : active_node_ids) {
+        if (!visited.count(start_node)) {
+            if (dfs(start_node)) {
+                return true;
             }
         }
     }
     
-    // Backtrack
-    path.pop_back();
     return false;
 }
 

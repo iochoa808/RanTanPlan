@@ -22,13 +22,6 @@ public:
     virtual ~PropagatorStrategy() = default;
     
     /**
-     * @brief Initialize the propagator with the solver and encoder
-     * @param solver The Z3 solver instance to register with
-     * @param encoder The base encoder providing variable factory access
-     */
-    virtual void initialize(z3::solver& solver, const BaseEncoder& encoder) = 0;
-    
-        /**
      * @brief Register variables for a specific timestep after constraints are added
      * @param timestep The timestep for which to register variables
      */
