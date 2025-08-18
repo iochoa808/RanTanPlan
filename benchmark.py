@@ -149,7 +149,7 @@ def discover_pddl_instances(root_dir):
     return dict(instances_by_domain)
 
 
-def generate_job_commands(instances_by_domain, configurations, timeout, verbose=False):
+def generate_job_commands(instances_by_domain, strategy_names, timeout, verbose=False):
     """
     Generates individual solver commands for GNU parallel execution.
 
@@ -161,11 +161,10 @@ def generate_job_commands(instances_by_domain, configurations, timeout, verbose=
     
     for domain_name, instances in instances_by_domain.items():
         for domain_file, problem_file in instances:
-            for strategy, propagator, lazy_interference in configurations:
+            for strategy_name in strategy_names:
                 # Create unique job identifier
                 instance_name = problem_file.stem
-                interference_type = "lazy" if lazy_interference else "eager"
-                config_name = f"{strategy}-{propagator}-{interference_type}"
+                config_name = strategy_name
                 # Use simpler job_id format for easier parsing
                 current_job_id = f"{domain_name}_{instance_name}_{config_name}_{job_id}"
                 
@@ -174,14 +173,9 @@ def generate_job_commands(instances_by_domain, configurations, timeout, verbose=
                     "planmt",
                     "-d", str(domain_file),
                     "-p", str(problem_file),
-                    "--parallelism", strategy,
-                    "--propagator", propagator,
+                    "--strategy", strategy_name,
                     "--timeout", str(timeout)
                 ]
-                
-                # Add lazy interference flag if requested
-                if lazy_interference:
-                    cmd.append("--lazy-interference")
                 
                 if verbose:
                     cmd.append("-v")
@@ -370,24 +364,21 @@ def parse_results(commands, results_path):
     return dict(success_counts), detailed_results
 
 
-def generate_summary_csv(results, configurations, output_file):
+def generate_summary_csv(results, strategy_names, output_file):
     """
     Generates CSV with number of instances solved per domain and configuration.
     """
-    config_names = [f"{strategy}-{propagator}-{'lazy' if lazy_interference else 'eager'}" 
-                    for strategy, propagator, lazy_interference in configurations]
-    
     with open(output_file, 'w', newline='') as f:
         writer = csv.writer(f)
         
         # Write header
-        writer.writerow(['Domain'] + config_names)
+        writer.writerow(['Domain'] + strategy_names)
         
         # Write data rows
         for domain in sorted(results.keys()):
             row = [domain]
-            for config in config_names:
-                count = results[domain].get(config, 0)
+            for strategy in strategy_names:
+                count = results[domain].get(strategy, 0)
                 row.append(count)
             writer.writerow(row)
     
@@ -421,13 +412,10 @@ def generate_detailed_csv(detailed_results, output_file):
     print_info(f"Detailed results written to {output_file}")
 
 
-def print_summary_table(results, configurations):
+def print_summary_table(results, strategy_names):
     """
     Prints a simple text summary table to console.
     """
-    config_names = [f"{strategy}-{propagator}-{'lazy' if lazy_interference else 'eager'}" 
-                    for strategy, propagator, lazy_interference in configurations]
-    
     print("\n# Benchmark Summary")
     print("\nInstances solved per domain:")
     print()
@@ -438,17 +426,17 @@ def print_summary_table(results, configurations):
     
     # Print header
     header = f"{'Domain':<{domain_width}}"
-    for config in config_names:
-        header += f" {config:>12}"
+    for strategy in strategy_names:
+        header += f" {strategy:>20}"
     print(header)
     print("-" * len(header))
     
     # Print data rows
     for domain in sorted(results.keys()):
         row = f"{domain:<{domain_width}}"
-        for config in config_names:
-            count = results[domain].get(config, 0)
-            row += f" {count:>12}"
+        for strategy in strategy_names:
+            count = results[domain].get(strategy, 0)
+            row += f" {count:>20}"
         print(row)
 
 
@@ -498,11 +486,21 @@ def main():
         with open(args.configs, 'r') as f:
             strategies = json.load(f)
     
+    # Validate that all strategies exist
+    valid_strategies = []
+    for strategy_name in strategies:
+        try:
+            get_strategy_config(strategy_name)  # Just validate it exists
+            valid_strategies.append(strategy_name)
+        except ValueError as e:
+            print_warning(f"Skipping unknown strategy '{strategy_name}': {e}")
+            continue
+    
     print_header("--- Starting planMT Benchmark Suite ---")
     print_info(f"PDDL directory: {args.pddl_dir}")
     print_info(f"Timeout per run: {args.timeout}s")
     print_info(f"Parallel jobs: {args.jobs if args.jobs > 0 else 'auto'}")
-    print_info(f"Configurations: {len(configurations)}")
+    print_info(f"Strategies: {len(valid_strategies)}")
     
     # Discover PDDL instances
     instances_by_domain = discover_pddl_instances(args.pddl_dir)
@@ -510,13 +508,13 @@ def main():
         sys.exit(1)
     
     total_instances = sum(len(instances) for instances in instances_by_domain.values())
-    total_jobs = total_instances * len(configurations)
+    total_jobs = total_instances * len(valid_strategies)
     
     print_info(f"Found {len(instances_by_domain)} domains with {total_instances} total instances")
     print_info(f"Total benchmark jobs: {total_jobs}")
     
     # Generate job commands
-    commands = generate_job_commands(instances_by_domain, configurations, args.timeout, args.verbose)
+    commands = generate_job_commands(instances_by_domain, valid_strategies, args.timeout, args.verbose)
     
     # Run parallel benchmark
     success_counts, detailed_results = run_parallel_benchmark(commands, args.jobs, args.results_dir, args.timeout)
@@ -528,11 +526,11 @@ def main():
     summary_file = base_dir / f"{base_name}_summary.csv"
     detailed_file = base_dir / f"{base_name}_detailed.csv"
     
-    generate_summary_csv(success_counts, configurations, summary_file)
+    generate_summary_csv(success_counts, valid_strategies, summary_file)
     generate_detailed_csv(detailed_results, detailed_file)
     
     # Print summary to console
-    print_summary_table(success_counts, configurations)
+    print_summary_table(success_counts, valid_strategies)
     
     print_header("--- Benchmark Complete ---")
 
