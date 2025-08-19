@@ -1,5 +1,6 @@
 #include "grounded_encoder.h"
 #include "parallelism/parallelism_factory.h"
+#include "../util/stats.h"
 #include <iostream>
 #include "problem/visitors/print_visitor.h"
 #include "problem/visitors/expression_visitor.h"
@@ -80,6 +81,7 @@ std::optional<z3::expr> GroundedEncoder::convert_effect_to_z3(const EffectExpres
  */
 std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
    z3::expr_vector initial_state(ctx_);
+    auto& stats = Stats::instance();
     
     // Process each assignment in the initial state at timestep 0
     for (const auto& assignment : problem_.initial_state()) {
@@ -87,6 +89,9 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
         auto value_expr = convert_expression_to_z3(assignment.value(), 0);
         initial_state.push_back(*fluent_expr == *value_expr);
     }
+    
+    // Collect statistics
+    stats.set("encoder.initial_constraints", initial_state.size());
     
     // Combine all initial state constraints with logical AND
     if (initial_state.empty()) {
@@ -98,6 +103,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
     z3::expr_vector action_constraints(ctx_);
+    auto& stats = Stats::instance();
 
     for (const Action& action : problem_.actions()) {
         z3::expr action_var = variable_factory_.get_action_variable(action, t); 
@@ -127,6 +133,9 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
         }
     }
     
+    // Collect statistics
+    stats.add("encoder.action_constraints", action_constraints.size());
+    
     // Combine all action constraints. Can't see why we could have no actions, but handle it gracefully.
     if (action_constraints.empty()) {
         auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
@@ -152,6 +161,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
  */
 std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
     std::vector<z3::expr> frame_axioms;
+    auto& stats = Stats::instance();
     
     // Iterate through all fluents in the EPC index
     for (const auto& [fluent, action_effects] : epc_index_) {
@@ -197,6 +207,9 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
         frame_axioms.push_back(frame_axiom);
     }
     
+    // Collect statistics
+    stats.add("encoder.frame_axioms", frame_axioms.size());
+    
     // Combine all frame axioms with logical AND
     if (frame_axioms.empty()) {
         auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
@@ -215,6 +228,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
 std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
     // Retrieve goals from the problem
     const auto& goals = problem_.goals();
+    auto& stats = Stats::instance();
     
     if (goals.empty()) {
         return std::make_shared<z3::expr>(ctx_.bool_val(true)); // If no goals, vacuously satisfied
@@ -232,6 +246,10 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
             std::cerr << "Error: Failed to encode goal expression: " << goal.to_string() << std::endl;
         }
     }
+    
+    // Collect statistics
+    stats.set("encoder.goal_constraints", goal_formulas.size());
+    
     // Combine all goal formulas with logical AND
     if (goal_formulas.empty()) {
         return std::make_shared<z3::expr>(ctx_.bool_val(true));

@@ -1,5 +1,6 @@
 #include "sequential_semantics.h"
 #include "../../problem/action.h"
+#include "../../util/stats.h"
 #include <iostream>
 
 namespace planmt {
@@ -27,6 +28,10 @@ std::shared_ptr<z3::expr> SequentialSemantics::encode_parallelism(int timestep) 
     // Use Z3's dedicated pseudo-boolean equality constraint with all coefficients = 1
     std::vector<int> coeffs(action_vars.size(), 1);
     z3::expr exactly_one = z3::pbeq(action_vars, coeffs.data(), 1);
+    
+    auto& stats = Stats::instance();
+    stats.add("encoder.parallelism_sequential_constraints", 1);
+    
     return std::make_shared<z3::expr>(exactly_one);
 }
 

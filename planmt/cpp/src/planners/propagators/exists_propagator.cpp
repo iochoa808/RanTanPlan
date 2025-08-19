@@ -1,6 +1,7 @@
 #include "exists_propagator.h"
 #include "../../config/config.h"
 #include "../../util/memory_tracker.h"
+#include "../../util/stats.h"
 #include "../../encoders/z3_variable_factory.h"
 #include "../../encoders/parallelism/interference_analysis.h"
 #include <iostream>
@@ -101,6 +102,11 @@ void ExistsPropagator::register_timestep_variables(int timestep) {
 
 PropagatorType ExistsPropagator::get_type() const {
     return PropagatorType::EXISTS;
+}
+
+void ExistsPropagator::cleanup() {
+    auto& stats = Stats::instance();
+    stats.set("propagator.exists_total_cycles", cycle_count_);
 }
 
 void ExistsPropagator::perform_exists_propagation(const Action& action, int timestep, const z3::expr& action_var) {

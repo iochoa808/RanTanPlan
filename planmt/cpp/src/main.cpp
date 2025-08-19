@@ -14,6 +14,7 @@
 #include "planners/sequential.h"
 #include "planners/propagators/propagator_factory.h"
 #include "util/memory_tracker.h"
+#include "util/stats.h"
 #include "symmetries/smt_symmetry_checker.h"
 
 #include "z3++.h"
@@ -131,6 +132,16 @@ int main(int argc, char* argv[]) {
 
     // Solve the planning problem using configuration
     PlanGenerationResult result = solve_planning_problem(planning_problem);
+
+    // Print statistics if in debug mode, and optionally write to file
+    if (config.is_debug()) {
+        planmt::Stats::instance().print_all();
+    }
+    
+    // Write statistics to file if specified
+    if (!config.global.stats_file.empty()) {
+        planmt::Stats::instance().write_to_file(config.global.stats_file);
+    }
 
     // Write the result to the output file
     std::fstream output(argv[2], std::ios::out | std::ios::trunc | std::ios::binary);

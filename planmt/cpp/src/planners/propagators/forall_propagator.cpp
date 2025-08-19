@@ -2,6 +2,7 @@
 #include "../../config/config.h"
 #include "../../encoders/z3_variable_factory.h"
 #include "../../encoders/parallelism/interference_analysis.h"
+#include "../../util/stats.h"
 #include <iostream>
 #include <set>
 #include <cassert>
@@ -103,6 +104,11 @@ void ForallPropagator::register_timestep_variables(int timestep) {
             }
         }
     }
+}
+
+void ForallPropagator::cleanup() {
+    auto& stats = Stats::instance();
+    stats.set("propagator.forall_total_propagations", propagation_count_);
 }
 
 PropagatorType ForallPropagator::get_type() const {

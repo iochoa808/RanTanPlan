@@ -39,6 +39,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._no_persist_clauses = options.get('no_persist_clauses', False)
         self._lazy_interference = options.get('lazy_interference', False)
         self._detect_symmetries = options.get('detect_symmetries', False)
+        self._stats_file = options.get('stats_file')  # None if not specified
         # allow disabling CNF normalization via planner params (default: enabled)
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
 
@@ -249,6 +250,9 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             
             if self._detect_symmetries:
                 command.append("--detect-symmetries")
+            
+            if self._stats_file is not None:
+                command.extend(["--stats-file", self._stats_file])
             
             print(f"Running planner: {' '.join(command)}")
 

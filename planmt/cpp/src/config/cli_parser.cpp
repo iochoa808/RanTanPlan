@@ -83,6 +83,14 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         else if (arg == "--detect-symmetries") {
             config.symmetry.detect_symmetries = true;
         }
+        // Statistics options
+        else if (arg == "--stats-file") {
+            if (i + 1 < argc) {
+                config.global.stats_file = argv[++i];
+            } else {
+                throw std::invalid_argument("--stats-file requires a filename");
+            }
+        }
     }
 }
 

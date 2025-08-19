@@ -5,10 +5,12 @@
 #include "propagators/null_propagator.h"
 #include "propagators/propagator_factory.h"
 #include "../util/memory_tracker.h"
+#include "../util/stats.h"
 #include <fstream>
 #include <iostream>
 #include <chrono>
 #include <unordered_map>
+#include <iomanip>
 
 namespace planmt {
 
@@ -38,15 +40,36 @@ void SequentialPlanner::debug_output_constraints() {
     }
 }
 
+void SequentialPlanner::collect_statistics() {
+    auto& stats = Stats::instance();
+    
+    // Collect key Z3 solver statistics (just the important numbers)
+    z3::stats z3_stats = solver_.statistics();
+    for (unsigned i = 0; i < z3_stats.size(); ++i) {
+        std::string key = "z3." + z3_stats.key(i);
+        
+        if (z3_stats.is_uint(i)) {
+            stats.set(key, static_cast<double>(z3_stats.uint_value(i)));
+        } else if (z3_stats.is_double(i)) {
+            stats.set(key, z3_stats.double_value(i));
+        }
+    }
+    
+    // Add memory info
+    stats.set("memory.current_mb", MemoryTracker::instance().get_current_memory_mb());
+}
+
 Plan SequentialPlanner::search() {
     auto& config = Config::instance();
+    auto& stats = Stats::instance();
     
     if (config.is_info()) {
         std::cout << "Starting search with propagator: " << propagator_strategy_->get_name() << std::endl;
     }
     
-    // Reset solution found flag
+    // Reset solution found flag and statistics
     solution_found_ = false;
+    stats.clear();
 
     // Add initial state constraints (these are invariant)
     solver_.add(*encoder_.encode_initial_state());
@@ -120,6 +143,12 @@ Plan SequentialPlanner::search() {
 
         total_time += step_time; // Accumulate total time
         
+        // Collect basic statistics
+        stats.add("planner.timesteps_explored");
+        stats.add("planner.formula_time", formula_time);
+        stats.add("planner.solve_time", solve_time);
+        stats.add("planner.total_time", step_time);
+        
         // Print timing in compact format at INFO level
         if (config.is_info()) {
             double current_memory = MemoryTracker::instance().get_current_memory_mb();
@@ -149,10 +178,14 @@ Plan SequentialPlanner::search() {
             try {
                 // Extract plan from model
                 Plan plan = extract_plan(model, timestep);
-                if (config.is_info()) {
+                if (config.is_debug()) {
                     std::cout << plan.to_string() << std::endl;
                 }
                 
+                // Record successful solve
+                stats.set("planner.plan_length", plan.length());
+                stats.set("planner.solution_timestep", timestep);
+                collect_statistics();
                 
                 // Clean up propagator before returning
                 propagator_strategy_->cleanup();
@@ -165,6 +198,8 @@ Plan SequentialPlanner::search() {
                 if (config.is_info()) {
                     std::cout << "Returning empty plan." << std::endl;
                 }
+                // Collect statistics even on error
+                collect_statistics();
                 propagator_strategy_->cleanup();
                 return Plan(); // Return empty plan on error
             }
@@ -183,6 +218,8 @@ Plan SequentialPlanner::search() {
         std::cout << "No plan found within " << config.planner.max_steps << " timesteps." << std::endl;
     }
     
+    // Collect statistics after unsuccessful search
+    collect_statistics();
     
     // Clean up propagator before returning
     propagator_strategy_->cleanup();

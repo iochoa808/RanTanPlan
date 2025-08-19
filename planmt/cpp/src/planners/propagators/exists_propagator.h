@@ -69,10 +69,7 @@ public:
     
     // PropagatorStrategy interface
     void register_timestep_variables(int timestep) override;
-    void cleanup() override {
-        // Print cycle count statistics when propagator is destroyed
-        std::cout << "ExistsPropagator detected " << cycle_count_ << " cycles (conflicts)" << std::endl;
-    }
+    void cleanup() override;
     std::string get_name() const override { return "ExistsPropagator"; }
     PropagatorType get_type() const override;
 

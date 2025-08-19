@@ -63,10 +63,7 @@ public:
     
     // PropagatorStrategy interface
     void register_timestep_variables(int timestep) override;
-    void cleanup() override {
-        // Print propagation count statistics when propagator is destroyed
-        std::cout << "ForallPropagator made " << propagation_count_ << " propagations" << std::endl;
-    }
+    void cleanup() override;
     std::string get_name() const override { return "ForallPropagator"; }
     PropagatorType get_type() const override;
 

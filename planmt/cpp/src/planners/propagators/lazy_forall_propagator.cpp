@@ -2,6 +2,7 @@
 #include "../../config/config.h"
 #include "../../encoders/z3_variable_factory.h"
 #include "../../encoders/parallelism/interference_analysis.h"
+#include "../../util/stats.h"
 #include <iostream>
 
 namespace planmt {
@@ -141,8 +142,8 @@ PropagatorType LazyForallPropagator::get_type() const {
 }
 
 void LazyForallPropagator::cleanup() {
-    // Print conflict count statistics when propagator is destroyed
-    std::cout << "LazyForallPropagator threw " << conflict_count_ << " conflicts" << std::endl;
+    auto& stats = Stats::instance();
+    stats.set("propagator.lazy_forall_total_conflicts", conflict_count_);
     
     // Clear all state
     active_actions_per_timestep_.clear();

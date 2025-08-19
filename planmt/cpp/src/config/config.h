@@ -22,6 +22,7 @@ public:
         bool debug_mode = false;
         int timeout = 3600;
         std::string log_level = "INFO";
+        std::string stats_file = "";  // Empty means no file output
     } global;
     
     struct Planner {

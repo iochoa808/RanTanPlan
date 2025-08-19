@@ -53,6 +53,8 @@ Examples:
                        help="Path to planMT C++ executable")
     parser.add_argument("--output-plan", type=str,
                        help="Save plan to file")
+    parser.add_argument("--stats-file", type=str,
+                       help="Save statistics to file")
     
     # Verbosity
     parser.add_argument("-v", "--verbose", action="count", default=0,
@@ -109,6 +111,8 @@ def solve_problem(problem, args):
         planner_params['executable_path'] = args.executable
     if args.max_steps:
         planner_params['max_steps'] = args.max_steps  
+    if args.stats_file:
+        planner_params['stats_file'] = args.stats_file
     if args.no_persist_clauses:
         planner_params['no_persist_clauses'] = True
     if args.detect_symmetries:

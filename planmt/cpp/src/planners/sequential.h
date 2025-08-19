@@ -51,6 +51,9 @@ private:
     
     // Debug method to output constraints for a given timestep
     void debug_output_constraints();
+    
+    // Collect comprehensive statistics
+    void collect_statistics();
 };
 
 } // namespace planmt

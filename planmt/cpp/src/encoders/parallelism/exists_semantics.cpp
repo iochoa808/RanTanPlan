@@ -1,6 +1,7 @@
 #include "exists_semantics.h"
 #include "interference_analysis_factory.h"
 #include "../../problem/action.h"
+#include "../../util/stats.h"
 #include <iostream>
 
 namespace planmt {
@@ -63,6 +64,10 @@ std::shared_ptr<z3::expr> ExistsSemantics::encode_parallelism(int timestep) {
     }
     
     std::cout << "ExistsSemantics: Generated " << mutex_constraints.size() << " mutex constraints for timestep " << timestep << std::endl;
+    
+    auto& stats = Stats::instance();
+    stats.add("encoder.mutex_constraints_per_step", mutex_constraints.size());
+    
     z3::expr mutex_formula = z3::mk_and(mutex_constraints);
     return std::make_shared<z3::expr>(mutex_formula);
 }

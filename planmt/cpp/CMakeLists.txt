@@ -68,6 +68,7 @@ add_executable(planmt
     src/config/config.cpp
     src/config/cli_parser.cpp
     src/util/memory_tracker.cpp
+    src/util/stats.cpp
     src/problem/real.cpp
     src/problem/atom.cpp
     src/problem/parameter.cpp
