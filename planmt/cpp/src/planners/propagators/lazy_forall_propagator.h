@@ -37,6 +37,9 @@ private:
 
     // Active actions tracking per timestep (using NodeIds for efficiency)
     std::unordered_map<int, std::unordered_set<Graph::NodeId>> active_actions_per_timestep_;
+
+    // Counter for conflicts thrown
+    int conflict_count_;
     
 public:
     /**

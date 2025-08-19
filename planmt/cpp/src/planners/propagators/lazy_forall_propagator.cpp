@@ -10,7 +10,7 @@ LazyForallPropagator::LazyForallPropagator(z3::solver& solver, const Problem& pr
     : z3::user_propagator_base(&solver), problem_(&problem), encoder_(&encoder),
      variable_factory_(&encoder.get_variable_factory()),
      parallelism_strategy_(encoder.get_parallelism_strategy()),
-     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()) {
+     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()), conflict_count_(0) {
     // Define callbacks for the user propagator
     register_fixed();
     register_final();
@@ -100,6 +100,9 @@ void LazyForallPropagator::check_and_generate_conflicts(const Action& action, in
             justification.push_back(conflicting_var);
         }
         
+        // Increment conflict counter
+        conflict_count_++;
+        
         // Generate conflict: these actions cannot all be true simultaneously
         conflict(justification);
     }
@@ -138,6 +141,9 @@ PropagatorType LazyForallPropagator::get_type() const {
 }
 
 void LazyForallPropagator::cleanup() {
+    // Print conflict count statistics when propagator is destroyed
+    std::cout << "LazyForallPropagator threw " << conflict_count_ << " conflicts" << std::endl;
+    
     // Clear all state
     active_actions_per_timestep_.clear();
     trail_.clear();

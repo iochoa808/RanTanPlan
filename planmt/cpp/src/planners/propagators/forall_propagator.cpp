@@ -12,7 +12,7 @@ ForallPropagator::ForallPropagator(z3::solver& solver, const Problem& problem, c
     : z3::user_propagator_base(&solver), problem_(&problem), encoder_(&encoder),
      variable_factory_(&encoder.get_variable_factory()),
      parallelism_strategy_(encoder.get_parallelism_strategy()),
-     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()) {
+     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()), propagation_count_(0) {
     // Define callbacks for the user propagator
     register_fixed();
     register_final();
@@ -59,6 +59,9 @@ void ForallPropagator::perform_forall_propagation(const Action& action, int time
     
     // Only propagate if we have negations to apply
     if (!negations_to_propagate.empty()) {
+        // Increment propagation counter
+        propagation_count_++;
+        
         // Create justification for the propagated negations
         z3::expr_vector justification(ctx());
         justification.push_back(action_var);

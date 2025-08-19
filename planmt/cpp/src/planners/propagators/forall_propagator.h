@@ -36,6 +36,9 @@ private:
     // Precomputed complete interference lookup: node_id -> set of node_ids that need to be negated
     // to be able to do the check in constant time
     std::unordered_map<Graph::NodeId, std::set<Graph::NodeId>> actions_interfering_with_;
+
+    // Counter for propagations made
+    int propagation_count_;
     
 public:
     /**
@@ -60,7 +63,10 @@ public:
     
     // PropagatorStrategy interface
     void register_timestep_variables(int timestep) override;
-    void cleanup() override { } // Empty implementation
+    void cleanup() override {
+        // Print propagation count statistics when propagator is destroyed
+        std::cout << "ForallPropagator made " << propagation_count_ << " propagations" << std::endl;
+    }
     std::string get_name() const override { return "ForallPropagator"; }
     PropagatorType get_type() const override;
 

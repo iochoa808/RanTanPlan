@@ -14,7 +14,7 @@ ExistsPropagator::ExistsPropagator(z3::solver& solver, const Problem& problem, c
     : z3::user_propagator_base(&solver), problem_(&problem), encoder_(&encoder),
      variable_factory_(&encoder.get_variable_factory()),
      parallelism_strategy_(encoder.get_parallelism_strategy()),
-     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()) {
+     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()), cycle_count_(0) {
     // Define callbacks for the user propagator
     register_fixed();
     register_final();
@@ -124,6 +124,9 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
     // Check if there's a cycle among the active actions
     std::vector<Graph::NodeId> cycle;
     if (find_cycle_in_active_actions(active_node_ids, cycle)) {
+        // Increment cycle counter
+        cycle_count_++;
+        
         // Report conflict with all actions in the cycle
         z3::expr_vector conflict_actions(action_var.ctx());
         for (Graph::NodeId cycle_node_id : cycle) {

@@ -42,6 +42,9 @@ private:
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
 
+    // Counter for detected cycles
+    int cycle_count_;
+
     
 public:
     /**
@@ -66,7 +69,10 @@ public:
     
     // PropagatorStrategy interface
     void register_timestep_variables(int timestep) override;
-    void cleanup() override { } // Empty implementation for now
+    void cleanup() override {
+        // Print cycle count statistics when propagator is destroyed
+        std::cout << "ExistsPropagator detected " << cycle_count_ << " cycles (conflicts)" << std::endl;
+    }
     std::string get_name() const override { return "ExistsPropagator"; }
     PropagatorType get_type() const override;
 
