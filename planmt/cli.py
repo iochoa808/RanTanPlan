@@ -104,8 +104,7 @@ def solve_problem(problem, args):
         'encoder': strategy_config.encoder,
     }
     
-    if strategy_config.lazy_interference:
-        planner_params['lazy_interference'] = True
+    planner_params['interference_analysis'] = strategy_config.interference_analysis
     
     if args.executable:
         planner_params['executable_path'] = args.executable
@@ -133,7 +132,7 @@ def solve_problem(problem, args):
     if not args.silent and args.verbose >= 1:
         print(f"Strategy: {args.strategy} ({strategy_config.description})")
         print(f"Configuration: {strategy_config.encoder}/{strategy_config.parallelism}/{strategy_config.propagator}"
-              f"{'/lazy' if strategy_config.lazy_interference else ''}")
+              f"/{strategy_config.interference_analysis}")
     
     try:
         # Cast to Any to avoid static typing issues with UP engines

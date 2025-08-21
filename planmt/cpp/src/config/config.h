@@ -37,7 +37,7 @@ public:
     } propagators;
     
     struct InterferenceAnalyzer {
-        bool lazy_computation = false;  // false = eager (default), true = lazy
+        std::string type = "eager";  // "eager", "lazy", or "semantic"
     } interference_analyzer;
     
     struct Symmetry {

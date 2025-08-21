@@ -3,26 +3,32 @@
 #include "interference_analysis.h"
 #include "../../problem/problem.h"
 #include <memory>
+#include <string>
 
 namespace planmt {
 
 /**
  * @brief Factory for creating interference analysis instances
  * 
- * Creates either eager or lazy interference analysis implementations:
+ * Creates interference analysis implementations based on type:
  * 
- * EAGER ANALYSIS:
+ * EAGER ANALYSIS ("eager"):
  * - Pre-computes full interference graph (O(n²) time and space)
  * - Fast O(1) lookups for any interference query
- * - Supports both direct methods (has_interference) and graph methods (get_interference_graph, get_neighbours) 
- * - Required for: forall/exists semantics, forall propagator
+ * - Supports both direct methods (has_interference) and graph methods (get_interference_graph, get_neighbours)
+ * - Uses syntactic interference checking
  * 
- * LAZY ANALYSIS:
+ * LAZY ANALYSIS ("lazy"):
  * - Computes interferences on-demand with caching
  * - Memory efficient, only stores what's actually queried
  * - Only supports direct methods (has_interference, topological_sort_actions)
- * - Graph methods (get_interference_graph, get_neighbours) will throw exceptions
- * - Suitable for: exists propagator, lazy forall propagator
+ * - Uses syntactic interference checking
+ * 
+ * SEMANTIC ANALYSIS ("semantic"):
+ * - Computes interferences on-demand using SMT solver
+ * - Uses semantic interference checking via Z3
+ * - Only supports direct methods (has_interference, topological_sort_actions)
+ * - More precise than syntactic but computationally expensive
  */
 class InterferenceAnalysisFactory {
 public:
@@ -30,15 +36,15 @@ public:
      * @brief Create an interference analysis instance
      * 
      * @param problem The planning problem to analyze
-     * @param use_lazy If true, creates LazyInterferenceAnalysis; if false, creates EagerInterferenceAnalysis
+     * @param analysis_type Type of analysis: "eager", "lazy", or "semantic"
      * @return Unique pointer to the created interference analysis instance
      */
-    static std::unique_ptr<InterferenceAnalysis> create(const Problem& problem, bool use_lazy = false);
+    static std::unique_ptr<InterferenceAnalysis> create(const Problem& problem, const std::string& analysis_type = "eager");
     
     /**
      * @brief Create an interference analysis instance using global config
      * 
-     * Uses Config::instance().interference_analyzer.lazy_computation to decide between eager/lazy.
+     * Uses Config::instance().interference_analyzer.type to determine the analysis strategy.
      * 
      * @param problem The planning problem to analyze
      * @return Unique pointer to the created interference analysis instance

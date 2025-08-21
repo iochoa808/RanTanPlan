@@ -1,25 +1,31 @@
 #include "interference_analysis_factory.h"
 #include "eager_interference_analysis.h"
 #include "lazy_interference_analysis.h"
+#include "semantic_interference_analysis.h"
 #include "../../config/config.h"
 #include <iostream>
+#include <stdexcept>
 
 namespace planmt {
 
-std::unique_ptr<InterferenceAnalysis> InterferenceAnalysisFactory::create(const Problem& problem, bool use_lazy) {
-    if (use_lazy) {
-        std::cout << "Creating LazyInterferenceAnalysis" << std::endl;
+std::unique_ptr<InterferenceAnalysis> InterferenceAnalysisFactory::create(const Problem& problem, const std::string& analysis_type) {
+    if (analysis_type == "semantic") {
+        std::cout << "Creating SemanticInterferenceAnalysis (inherently lazy)" << std::endl;
+        return std::make_unique<SemanticInterferenceAnalysis>(problem);
+    } else if (analysis_type == "lazy") {
+        std::cout << "Creating LazyInterferenceAnalysis (syntactic)" << std::endl;
         return std::make_unique<LazyInterferenceAnalysis>(problem);
-    } else {
-        std::cout << "Creating EagerInterferenceAnalysis" << std::endl;
+    } else if (analysis_type == "eager") {
+        std::cout << "Creating EagerInterferenceAnalysis (syntactic)" << std::endl;
         return std::make_unique<EagerInterferenceAnalysis>(problem);
+    } else {
+        throw std::invalid_argument("Invalid analysis_type '" + analysis_type + "'. Valid options: 'eager', 'lazy', 'semantic'");
     }
 }
 
 std::unique_ptr<InterferenceAnalysis> InterferenceAnalysisFactory::create_from_config(const Problem& problem) {
     const Config& config = Config::instance();
-    bool use_lazy = config.interference_analyzer.lazy_computation;
-    return create(problem, use_lazy);
+    return create(problem, config.interference_analyzer.type);
 }
 
 } // namespace planmt

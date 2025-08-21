@@ -126,8 +126,7 @@ def run_test(problem_name, domain_file, problem_file, strategy_name, verbose=Fal
         else:
             planner_params['verbosity'] = 'silent'  # Suppress output
         
-        if strategy_config.lazy_interference:
-            planner_params['lazy_interference'] = True
+        planner_params['interference_analysis'] = strategy_config.interference_analysis
         
         with OneshotPlanner(name='planMT', params=planner_params) as planner:
             result = planner.solve(problem, timeout=60)

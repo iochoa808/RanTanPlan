@@ -36,7 +36,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._encoder = options.get('encoder', 'grounded')
         self._max_steps = options.get('max_steps')  # None if not specified
         self._no_persist_clauses = options.get('no_persist_clauses', False)
-        self._lazy_interference = options.get('lazy_interference', False)
+        self._interference_analysis = options.get('interference_analysis', 'eager')
         self._detect_symmetries = options.get('detect_symmetries', False)
         self._stats_file = options.get('stats_file')  # None if not specified
         # allow disabling CNF normalization via planner params (default: enabled)
@@ -244,8 +244,10 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             if self._no_persist_clauses:
                 command.append("--no-persist-clauses")
             
-            if self._lazy_interference:
+            if self._interference_analysis == "lazy":
                 command.append("--lazy-interference")
+            elif self._interference_analysis == "semantic":
+                command.append("--semantic-interference")
             
             if self._detect_symmetries:
                 command.append("--detect-symmetries")

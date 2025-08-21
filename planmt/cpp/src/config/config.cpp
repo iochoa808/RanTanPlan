@@ -70,6 +70,19 @@ void Config::validate() const {
     if (!valid_propagator) {
         throw std::invalid_argument("Invalid propagator type: " + propagators.type);
     }
+    
+    // Validate interference analyzer settings
+    const std::vector<std::string> valid_analyzers = {"eager", "lazy", "semantic"};
+    bool valid_analyzer = false;
+    for (const auto& analyzer : valid_analyzers) {
+        if (interference_analyzer.type == analyzer) {
+            valid_analyzer = true;
+            break;
+        }
+    }
+    if (!valid_analyzer) {
+        throw std::invalid_argument("Invalid interference analyzer type: " + interference_analyzer.type);
+    }
 }
 
 } // namespace planmt
