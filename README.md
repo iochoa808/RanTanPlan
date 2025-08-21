@@ -58,7 +58,8 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
   - `exists`: Actions execute if non-interfering order exists
 - Eager and lazy interference analysis
 - Unified Planning library integration
-- Test suite with 30+ PDDL domains
+
+**Note:** planMT does not support PDDL delete-then-set effect semantics. Actions that both delete and add the same fluent will be treated as contradictory and may cause planning failures.
 
 ## Installation
 
