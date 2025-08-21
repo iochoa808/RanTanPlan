@@ -9,7 +9,6 @@ from unified_planning.engines.compilers import Grounder, QuantifiersRemover
 from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.exceptions import UPException
-from .delete_then_set_compiler import DeleteThenSetRemover
 from .cnf_condition_compiler import CNFConditionCompiler
 from unified_planning.model import ProblemKind, Problem
 from unified_planning.plans import SequentialPlan, ActionInstance
@@ -394,19 +393,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         
         print("Starting problem compilation pipeline...")
         
-        # Step 1: Remove delete-then-set effects
-        delete_then_set_remover = DeleteThenSetRemover()
-        
-        if delete_then_set_remover.supports(current_problem.kind):
-            print("  Applying delete-then-set removal...")
-            dts_result = delete_then_set_remover.compile(current_problem, CompilationKind.GROUNDING)  # Using GROUNDING as compilation kind
-            current_problem = dts_result.problem
-            compilation_maps.append(dts_result)
-            print("  Delete-then-set removal completed.")
-        else:
-            print("  Delete-then-set removal not needed for this problem type.")
-        
-        # Step 2: Remove quantifiers if present
+        # Step 1: Remove quantifiers if present
         quantifier_remover = QuantifiersRemover()
         
         if quantifier_remover.supports(current_problem.kind):
@@ -418,7 +405,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         else:
             print("  Quantifier removal not needed for this problem type.")
 
-        # Step 2b: CNF normalization of goals and preconditions (NNF + distribute)
+        # Step 2: CNF normalization of goals and preconditions (NNF + distribute)
         try:
             if not self._no_cnf_normalization:
                 cnf_compiler = CNFConditionCompiler()

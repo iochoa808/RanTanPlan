@@ -11,7 +11,7 @@ from typing import Optional, Dict, Callable, List
 from functools import partial
 
 # CNF compiler for goals and action preconditions.
-# Structure modeled after planmt/delete_then_set_compiler.py
+# CNF condition compiler implementation
 #
 # Pipeline:
 #   - Input UP problem

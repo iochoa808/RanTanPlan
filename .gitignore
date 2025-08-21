@@ -186,6 +186,7 @@ plan_model.txt
 CLAUDE.md
 TODO.md
 out.txt
+stats.txt
 benchmark_results*
 
 # source examples that are not part of the project but can be useful for reference
