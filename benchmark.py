@@ -29,10 +29,12 @@ from planmt.strategies import STRATEGIES, get_strategy_config
 # Benchmark strategies (excluding sequential for performance focus)
 BENCHMARK_STRATEGIES = [
     "forall-basic",
-    "exists-basic", 
     "forall-optimized",
     "forall-lazy",
-    "exists-optimized"
+    "forall-lazy-semantic",
+    "exists-basic",
+    "exists-optimized",
+    "exists-optimized-semantic",
 ]
 
 # Default timeout per solver run (seconds)

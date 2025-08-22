@@ -32,11 +32,6 @@ void SemanticInterferenceAnalysis::initialize(const Problem& problem) {
     z3_variable_factory_ = std::make_unique<Z3VariableFactory>(*z3_context_);
     grounded_visitor_ = std::make_unique<GroundedEncodingVisitor>(*z3_context_, problem_, z3_variable_factory_.get());
 
-    // Report memory usage after initialization
-    double current_memory = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "SemanticInterferenceAnalysis initialized with " << problem.actions().size() 
-              << " actions and Z3 context. "
-              << "Memory: " << current_memory << " MB" << std::endl;
 }
 
 bool SemanticInterferenceAnalysis::has_interference(const Action& a1, const Action& a2) const {
@@ -67,11 +62,15 @@ bool SemanticInterferenceAnalysis::action_affects_semantically(const Action& a1,
     // 2. a's effects don't commute properly with b's effects
     
     // Check condition 1: prevention of execution
-    if (check1(a1, a2)) {
+    bool check1_result = check1(a1, a2);
+    if (check1_result) {
         affects = true;
     } else {
         // Check condition 2: effect commutativity
-        affects = check2(a1, a2);
+        bool check2_result = check2(a1, a2);
+        if (check2_result) {
+            affects = true;
+        }
     }
     
     // Cache the directional "affects" result
@@ -101,9 +100,17 @@ z3::expr SemanticInterferenceAnalysis::apply_action_effects_substitution(const A
         // Create the new value expression based on effect type
         z3::expr new_value_z3 = convert_effect_to_z3(eff_expr, fluent_z3);
         
-        // Add substitution: fluent -> new_value
+        // Handle conditional effects properly
+        z3::expr substitution_value = new_value_z3;
+        if (effect.is_conditional()) {
+            // For conditional effects: fluent -> (condition ? new_value : fluent)
+            z3::expr condition_z3 = convert_expression_to_z3(effect.condition());
+            substitution_value = z3::ite(condition_z3, new_value_z3, fluent_z3);
+        }
+        
+        // Add substitution: fluent -> substitution_value
         from_exprs.push_back(fluent_z3);
-        to_exprs.push_back(new_value_z3);
+        to_exprs.push_back(substitution_value);
     }
 
     // I think this is not needed as if we have an effect, we will have substitutions to apply

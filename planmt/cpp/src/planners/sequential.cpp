@@ -178,9 +178,9 @@ Plan SequentialPlanner::search() {
             try {
                 // Extract plan from model
                 Plan plan = extract_plan(model, timestep);
-                if (config.is_debug()) {
-                    std::cout << plan.to_string() << std::endl;
-                }
+                //if (config.is_debug()) {
+                //    std::cout << plan.to_string() << std::endl;
+                //}
                 
                 // Record successful solve
                 stats.set("planner.plan_length", plan.length());
@@ -228,6 +228,7 @@ Plan SequentialPlanner::search() {
 
 Plan SequentialPlanner::extract_plan(const z3::model& model, int max_timestep) {
     Plan plan;
+    auto& config = Config::instance();
     
     std::cout << "Extracting plan from Z3 model with " << model.size() << " variable assignments" << std::endl;
     
@@ -243,11 +244,11 @@ Plan SequentialPlanner::extract_plan(const z3::model& model, int max_timestep) {
             if (!parallel_actions.empty()) {
                 std::vector<const Action*> ordered_actions = topologically_sort_actions(parallel_actions);
                 
-                //std::cout << "Timestep " << t << ": " << ordered_actions.size() << " actions in topological order" << std::endl;
+                if (config.is_debug()) std::cout << "Timestep " << t << ": " << ordered_actions.size() << " actions in topological order" << std::endl;
                 
                 // Add ordered actions to plan
                 for (const Action* action : ordered_actions) {
-                    //std::cout << "action: " << action->name() << std::endl;
+                    if (config.is_debug()) std::cout << "  action: " << action->name() << std::endl;
                     plan.add_action(action);
                 }
             }
