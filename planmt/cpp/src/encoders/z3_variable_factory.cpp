@@ -129,16 +129,15 @@ void Z3VariableFactory::ensure_timestep_capacity(int timestep) {
 z3::expr Z3VariableFactory::create_new_fluent_variable(const Fluent& fluent, const std::string& var_name) {
     if (fluent.is_bool_fluent()) {
         return create_bool_variable(var_name);
-    } else if (fluent.is_int_fluent()) {
-        return create_int_variable(var_name);
-    } else if (fluent.is_real_fluent()) {
+    } else if (fluent.is_int_fluent() || fluent.is_real_fluent()) {
+        // Force all numeric fluents to be real to avoid mixed int/real type issues
         return create_real_variable(var_name);
     } else if (fluent.is_object_fluent()) {
         return create_object_variable(var_name);
     } else {
-        // For unknown types, default to integer
-        std::cerr << "Warning: Unknown fluent type for " << var_name << ", defaulting to integer" << std::endl;
-        return create_int_variable(var_name);
+        // For unknown types, default to real (safer than integer for mixed arithmetic)
+        std::cerr << "Warning: Unknown fluent type for " << var_name << ", defaulting to real" << std::endl;
+        return create_real_variable(var_name);
     }
 }
 

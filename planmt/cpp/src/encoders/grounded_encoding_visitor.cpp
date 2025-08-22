@@ -20,7 +20,8 @@ void GroundedEncodingVisitor::visit_symbol(const std::string& symbol, Expression
 }
 
 void GroundedEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) {
-    result_ = ctx_.int_val(static_cast<int>(value));
+    // Force integer literals to be real to maintain type consistency
+    result_ = ctx_.real_val(static_cast<int>(value));
 }
 
 void GroundedEncodingVisitor::visit_real(const Real& value, Expression::Kind kind) {

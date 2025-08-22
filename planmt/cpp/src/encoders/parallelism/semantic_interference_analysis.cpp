@@ -84,7 +84,9 @@ bool SemanticInterferenceAnalysis::action_affects_semantically(const Action& a1,
 z3::expr SemanticInterferenceAnalysis::apply_action_effects_substitution(const Action& action, const z3::expr& target_expr) const {
     // Apply action's effects as substitution to the a2 expression
     // This implements the σ(action, expr) operation from the paper
-    if (action.effects().empty()) return target_expr; // No effects to apply
+    if (action.effects().empty()) {
+        return target_expr; // No effects to apply
+    }
     
     std::vector<z3::expr> from_exprs;
     std::vector<z3::expr> to_exprs;
@@ -146,6 +148,12 @@ bool SemanticInterferenceAnalysis::check1(const Action& a1, const Action& a2) co
     // Apply a1's effects to negated a2 precondition using substitution
     z3::expr substituted_expr = apply_action_effects_substitution(a1, a2_pre);
 
+    // Check if substitution actually changed anything
+    if (z3::eq(a2_pre, substituted_expr)) {
+        // If no substitution occurred, then a1 doesn't affect a2's precondition
+        return false;
+    }
+    
     // Check condition 1: pre(a1) ∧ pre(a2) ∧ ¬(pre(a2)σ(eff(a1)) is satisfiable
     z3::expr check1 = a1_pre && a2_pre && !substituted_expr;
 
@@ -162,11 +170,12 @@ bool SemanticInterferenceAnalysis::check2(const Action& a1, const Action& a2) co
     // Condition 2: either actions are not simply commuting, or effects don't commute properly
     
     // First check: are they simply commuting?
-    if (!are_simply_commuting(a1, a2)) return true; // Not simply commuting, so a1 affects a2
+    if (!are_simply_commuting(a1, a2)) {
+        return true; // Not simply commuting, so a1 affects a2
+    }
     
     // Second check: do effects commute properly?
     // We need to check if pre(a1) ∧ pre(a2) ∧ ¬(x^{σ_h({a1,a2})} = x^{σ_a2 ∘ σ_a1}) is satisfiable
-    
     // Get preconditions
     z3::expr a1_pre = convert_precondition_to_z3(a1);
     z3::expr a2_pre = convert_precondition_to_z3(a2);
@@ -191,6 +200,11 @@ bool SemanticInterferenceAnalysis::check2(const Action& a1, const Action& a2) co
         z3::expr var_after_sequential = var_z3;
         var_after_sequential = apply_action_effects_substitution(a1, var_after_sequential);
         var_after_sequential = apply_action_effects_substitution(a2, var_after_sequential);
+        
+        // Check if the substitutions actually changed anything
+        if (z3::eq(var_after_happening, var_after_sequential)) {
+            continue; // No difference, so this variable commutes properly
+        }
         
         // Check if pre(a1) ∧ pre(a2) ∧ ¬(happening = sequential) is satisfiable
         z3::expr non_commutativity = a1_pre && a2_pre && (var_after_happening != var_after_sequential);
