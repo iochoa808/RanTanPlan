@@ -56,7 +56,14 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
   - `sequential`: One action per timestep
   - `forall`: Parallel actions if none interfere
   - `exists`: Actions execute if non-interfering order exists
-- Eager and lazy interference analysis
+- Three interference analysis modes:
+  - `eager`: Pre-computed syntactic interferences
+  - `lazy`: On-demand interference computation
+  - `semantic`: Advanced semantic interference analysis
+- Multiple encoding options:
+  - `grounded`: Standard SMT encoding
+  - `chained`: Chained encoding for cumulative effects
+  - `r2e`: R2∃-step semantics with built-in parallelism
 - Unified Planning library integration
 
 **Note:** planMT does not support PDDL delete-then-set effect semantics. Actions that both delete and add the same fluent will be treated as contradictory and may cause planning failures.
@@ -106,11 +113,14 @@ planmt -d pddl/test/zenotravel/domain.pddl -p pddl/test/zenotravel/problem.pddl 
 # Use optimized forall strategy with timeout
 planmt -d domain.pddl -p problem.pddl --strategy forall-optimized --timeout 120
 
-# Verbose output with exists strategy
-planmt -v -d domain.pddl -p problem.pddl --strategy exists-basic
+# Semantic interference analysis with chained encoding
+planmt -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chained
+
+# R2E semantics for built-in parallelism
+planmt -d domain.pddl -p problem.pddl --strategy r2e
 
 # Save plan to file
-planmt -d domain.pddl -p problem.pddl --strategy forall-lazy --output-plan solution.txt
+planmt -d domain.pddl -p problem.pddl --strategy exists-optimized-semantic --output-plan solution.txt
 
 # Show help
 planmt --help
@@ -127,6 +137,15 @@ planmt --help
 - `forall-optimized`: Forall with propagation
 - `forall-lazy`: Forall with lazy interference analysis
 - `exists-optimized`: Exists with lazy interference and cycle detection
+
+**Advanced (Semantic Interference):**
+- `forall-lazy-semantic`: Forall with semantic interference analysis
+- `exists-optimized-semantic`: Exists with semantic interference analysis
+- `forall-lazy-semantic-chained`: Forall with semantic analysis and chained encoding
+- `exists-optimized-semantic-chained`: Exists with semantic analysis and chained encoding
+
+**Novel Encodings:**
+- `r2e`: R2∃-step semantics with declaration-order parallelism
 
 ### Library Usage (Unified Planning)
 
