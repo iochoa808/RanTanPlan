@@ -3,6 +3,7 @@
 #include "base_encoder.h"
 #include "grounded_encoder.h"
 #include "chained_grounded_encoder.h"
+#include "r2e_grounded_encoder.h"
 #include "reified_grounded_encoder.h"
 #include "../problem/problem.h"
 #include <z3++.h>
@@ -16,6 +17,7 @@ public:
     enum class EncoderType {
         GROUNDED,
         CHAINED,
+        R2E,
         REIFIED
     };
     

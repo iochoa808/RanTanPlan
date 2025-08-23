@@ -75,6 +75,13 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         encoder="chained",
         description="Forall-step semantics with semantic interference analysis, only propagating neighbours as false and using a chained encoding"
     ),
+    "r2e": StrategyConfig(
+        parallelism="sequential",
+        propagator="null",
+        interference_analysis="eager",
+        encoder="r2e",
+        description="R2∃-step semantics with built-in parallelism using declaration order"
+    ),
     "exists-optimized-semantic-chained": StrategyConfig(
         parallelism="exists",
         propagator="exists", 

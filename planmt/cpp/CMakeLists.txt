@@ -88,6 +88,7 @@ add_executable(planmt
     src/encoders/grounded_encoding_visitor.cpp
     src/encoders/grounded_encoder.cpp
     src/encoders/chained_grounded_encoder.cpp
+    src/encoders/r2e_grounded_encoder.cpp
     src/encoders/reified_grounded_encoder.cpp
     src/encoders/encoder_factory.cpp
     src/encoders/parallelism/interference_analyzer.cpp
