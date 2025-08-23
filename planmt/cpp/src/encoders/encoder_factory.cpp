@@ -7,6 +7,8 @@ std::unique_ptr<BaseEncoder> EncoderFactory::create_encoder(EncoderType type, co
     switch (type) {
         case EncoderType::GROUNDED:
             return std::make_unique<GroundedEncoder>(problem, ctx);
+        case EncoderType::CHAINED:
+            return std::make_unique<ChainedGroundedEncoder>(problem, ctx);
         case EncoderType::REIFIED:
             return std::make_unique<ReifiedGroundedEncoder>(problem, ctx);
         default:
@@ -21,6 +23,8 @@ std::unique_ptr<BaseEncoder> EncoderFactory::create_encoder(const std::string& t
 EncoderFactory::EncoderType EncoderFactory::string_to_type(const std::string& type_name) {
     if (type_name == "grounded") {
         return EncoderType::GROUNDED;
+    } else if (type_name == "chained") {
+        return EncoderType::CHAINED;
     } else if (type_name == "reified") {
         return EncoderType::REIFIED;
     } else {

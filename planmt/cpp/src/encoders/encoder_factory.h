@@ -2,6 +2,7 @@
 
 #include "base_encoder.h"
 #include "grounded_encoder.h"
+#include "chained_grounded_encoder.h"
 #include "reified_grounded_encoder.h"
 #include "../problem/problem.h"
 #include <z3++.h>
@@ -14,6 +15,7 @@ class EncoderFactory {
 public:
     enum class EncoderType {
         GROUNDED,
+        CHAINED,
         REIFIED
     };
     

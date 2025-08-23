@@ -46,7 +46,7 @@ void Config::validate() const {
     }
     
     // Validate encoder settings
-    const std::vector<std::string> valid_encoders = {"grounded", "reified"};
+    const std::vector<std::string> valid_encoders = {"grounded", "chained", "reified"};
     bool valid_encoder = false;
     for (const auto& encoder : valid_encoders) {
         if (planner.encoder == encoder) {
