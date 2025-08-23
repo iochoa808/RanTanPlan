@@ -78,6 +78,9 @@ private:
     // Action index management
     int get_global_action_index(const Action* action) const;
     
+    // Plan extraction for R2E semantics
+    Plan extract_plan(const z3::model& model, int max_timestep) const override;
+    
     // Debug method
     void debug_print_structures() const;
 };

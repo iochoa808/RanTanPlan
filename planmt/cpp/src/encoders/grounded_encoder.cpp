@@ -355,14 +355,13 @@ Plan GroundedEncoder::extract_plan(const z3::model& model, int max_timestep) con
     bool is_parallel = (strategy_name == "ForallSemantics" || strategy_name == "ExistsSemantics");
     
     // Iterate through each timestep
-    for (int t = 0; t <= max_timestep; ++t) {
+    for (int t = 0; t < max_timestep; ++t) {
         if (is_parallel) {
             // Extract and order parallel actions for this timestep
             std::vector<const Action*> parallel_actions = extract_parallel_actions_at_timestep(model, t);
             
             if (!parallel_actions.empty()) {
                 std::vector<const Action*> ordered_actions = topologically_sort_actions(parallel_actions);
-                
                 // Add ordered actions to plan
                 for (const Action* action : ordered_actions) {
                     plan.add_action(action);
@@ -371,16 +370,12 @@ Plan GroundedEncoder::extract_plan(const z3::model& model, int max_timestep) con
         } else {
             // Original sequential extraction logic  
             for (const Action& grounded_action : problem_.actions()) {
-                try {
-                    z3::expr action_var = variable_factory_.get_action_variable(grounded_action, t);
-                    z3::expr action_value = model.eval(action_var, true); // Use model completion
-                    
-                    if (action_value.is_true()) {
-                        plan.add_action(&grounded_action);
-                        break; // Only one action in sequential mode
-                    }
-                } catch (const std::exception&) {
-                    // Skip actions whose variables don't exist
+                z3::expr action_var = variable_factory_.get_action_variable(grounded_action, t);
+                z3::expr action_value = model.eval(action_var, true); // Use model completion
+                
+                if (action_value.is_true()) {
+                    plan.add_action(&grounded_action);
+                    break; // Only one action in sequential mode
                 }
             }
         }

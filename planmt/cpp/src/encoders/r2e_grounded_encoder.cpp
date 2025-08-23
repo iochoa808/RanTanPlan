@@ -16,7 +16,7 @@ R2EGroundedEncoder::R2EGroundedEncoder(const Problem& problem, z3::context& ctx,
     build_prev_mappings();
     
     // Uncomment the line below to enable debug output during construction
-    debug_print_structures();
+    //debug_print_structures();
 }
 
 void R2EGroundedEncoder::build_action_ordering() {
@@ -60,7 +60,6 @@ void R2EGroundedEncoder::build_variable_modifiers() {
         std::sort(actions.begin(), actions.end());
         actions.erase(std::unique(actions.begin(), actions.end()), actions.end());
     }
-    
     
     Stats::instance().set("encoder.r2e.modified_variables", variable_modifiers_.size());
 }
@@ -168,16 +167,6 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_precondition_constraints(in
         // Apply substitution σ^t_prev(i)
         z3::expr substituted_precond = apply_substitution(*precond_z3, prev_substitution);
         
-        // Debug print: before substitution
-        //std::cout << "\n--- PRECONDITION SUBSTITUTION for action " << action_index << " (" << action->name() << ") at timestep " << t << " ---\n";
-        //std::cout << "PRE BEFORE substitution: " << precond_z3->to_string() << "\n";
-        // Debug print: substitution mapping
-        //std::cout << "SUBSTITUTION MAPPING:\n";
-        //for (const auto& [var, expr] : prev_substitution) { std::cout << "  " << var.to_string() << " → " << expr.to_string() << "\n"; }
-        // Debug print: after substitution
-        //std::cout << "PRE AFTER substitution: " << substituted_precond.to_string() << "\n";
-        //std::cout << "--- END PRECONDITION SUBSTITUTION ---\n";
-        
         // a^t_i → Pre^t_ai σ^t_prev(i)
         z3::expr constraint = z3::implies(action_var, substituted_precond);
         constraints.push_back(constraint);
@@ -251,7 +240,6 @@ z3::expr R2EGroundedEncoder::encode_single_effect_with_carry_forward(const Effec
     }
     // Combined constraint: chain_var = (action_executed ? executed_value : prev_value)
     // This handles both effect execution (Equation 2) and carry-forward (Equation 3)
-    std::cout << (chain_var == z3::ite(action_var, executed_value, prev_value)) << std::endl;
     return (chain_var == z3::ite(action_var, executed_value, prev_value));
 }
 
@@ -300,16 +288,6 @@ std::unordered_map<Expression, z3::expr> R2EGroundedEncoder::create_prev_substit
         z3::expr prev_var = get_prev_variable_or_chain(variable, timestep, action_index);
         substitution.emplace(variable, std::move(prev_var));
     }
-    
-    /*
-    // Debug print substitution
-    std::cout << "\n--- PREV SUBSTITUTION for action " << action_index << " at timestep " << timestep << " ---\n";
-    for (const auto& [var, expr] : substitution) {
-        std::cout << "  " << var.to_string() << " → " << expr.to_string() << "\n";
-    }
-    std::cout << "--- END PREV SUBSTITUTION ---\n";
-    */
-    
     return substitution;
 }
 
@@ -321,16 +299,6 @@ std::unordered_map<Expression, z3::expr> R2EGroundedEncoder::create_modi_substit
         z3::expr chain_var = get_chain_variable(variable, timestep, action_index);
         substitution.emplace(variable, std::move(chain_var));
     }
-    
-    /*
-    // Debug print substitution
-    std::cout << "\n--- MODI SUBSTITUTION for action " << action_index << " at timestep " << timestep << " ---\n";
-    for (const auto& [var, expr] : substitution) {
-        std::cout << "  " << var.to_string() << " → " << expr.to_string() << "\n";
-    }
-    std::cout << "--- END MODI SUBSTITUTION ---\n";
-    */
-    
     return substitution;
 }
 
@@ -351,7 +319,6 @@ z3::expr R2EGroundedEncoder::apply_substitution(const z3::expr& expr,
     
     // Apply Z3 substitution - need to cast away const
     z3::expr mutable_expr = expr;
-    //std::cout << "Applying substitution to " << mutable_expr << ": " << from << " -> " << to << std::endl;
     return mutable_expr.substitute(from, to);
 }
 
@@ -431,6 +398,29 @@ int R2EGroundedEncoder::get_global_action_index(const Action* action) const {
     auto it = std::find(global_action_order_.begin(), global_action_order_.end(), action);
     assert(it != global_action_order_.end() && "Action not found in global ordering");
     return std::distance(global_action_order_.begin(), it) + 1;  // +1 for 1-based indexing
+}
+
+Plan R2EGroundedEncoder::extract_plan(const z3::model& model, int max_timestep) const {
+    Plan plan;
+    std::cout << "Extracting R2E plan from Z3 model with " << model.size() << " variable assignments" << std::endl;
+    
+    // Double loop: first timesteps, then global action order
+    // Note: action variables are not asserted for the last timestep, so stop at max_timestep - 1
+    for (int t = 0; t < max_timestep; ++t) {
+        // Go through actions in their global ordering
+        for (const Action* action : global_action_order_) {
+            z3::expr action_var = variable_factory_.get_action_variable(*action, t);
+            z3::expr action_value = model.eval(action_var, true); // Use model completion
+            
+            if (action_value.is_true()) {
+                plan.add_action(action);
+                std::cout << "  Timestep " << t << ": " << action->name() << " and global action index " 
+                << get_global_action_index(action) << "/" << global_action_order_.size() << std::endl;
+            }
+        }
+    }
+    std::cout << "Extracted R2E plan with " << plan.length() << " actions" << std::endl;
+    return plan;
 }
 
 
