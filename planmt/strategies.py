@@ -58,15 +58,29 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         parallelism="forall",
         propagator="lazy_forall",
         interference_analysis="semantic",
-        encoder="chained",
-        description="Forall-step semantics with semantic interference analysis (SMT-based), only propagating neighbours as false"
+        encoder="grounded",
+        description="Forall-step semantics with semantic interference analysis, only propagating neighbours as false"
     ),
     "exists-optimized-semantic": StrategyConfig(
         parallelism="exists",
         propagator="exists", 
         interference_analysis="semantic",
+        encoder="grounded",
+        description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected"
+    ),
+    "forall-lazy-semantic-chained": StrategyConfig(
+        parallelism="forall",
+        propagator="lazy_forall",
+        interference_analysis="semantic",
         encoder="chained",
-        description="Exists-step semantics with semantic interference analysis (SMT-based), throwing a conflict when a cycle is detected"
+        description="Forall-step semantics with semantic interference analysis, only propagating neighbours as false and using a chained encoding"
+    ),
+    "exists-optimized-semantic-chained": StrategyConfig(
+        parallelism="exists",
+        propagator="exists", 
+        interference_analysis="semantic",
+        encoder="chained",
+        description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding"
     ),
 #    "sequential-heuristic": StrategyConfig(
 #        parallelism="sequential",
