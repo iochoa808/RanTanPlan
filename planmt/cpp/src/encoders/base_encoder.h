@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../problem/problem.h"
+#include "../problem/plan.h"
 #include "z3_variable_factory.h"
 #include "parallelism/parallelism_strategy.h"
 #include "parallelism/parallelism_factory.h"
@@ -32,6 +33,9 @@ public:
     // Access to variable factory for plan extraction
     virtual Z3VariableFactory& get_variable_factory() = 0;
     virtual const Z3VariableFactory& get_variable_factory() const = 0;
+    
+    // Plan extraction from Z3 model
+    virtual Plan extract_plan(const z3::model& model, int max_timestep) const = 0;
     
 };
 

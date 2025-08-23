@@ -39,6 +39,9 @@ public:
     
     // Get access to parallelism strategy for plan extraction
     const ParallelismStrategy* get_parallelism_strategy() const override { return parallelism_strategy_.get(); }
+    
+    // Plan extraction from Z3 model
+    Plan extract_plan(const z3::model& model, int max_timestep) const override;
 
 protected:
     // Helper function to convert expression to Z3 using visitor
@@ -70,6 +73,11 @@ protected:
     void build_epc_index();
 
     int layers_encoded_ = -1; // Tracks the highest layer for which transitions are encoded
+
+private:
+    // Helper methods for plan extraction (moved from SequentialPlanner)
+    std::vector<const Action*> extract_parallel_actions_at_timestep(const z3::model& model, int timestep) const;
+    std::vector<const Action*> topologically_sort_actions(const std::vector<const Action*>& actions) const;
 };
 
 } // namespace planmt

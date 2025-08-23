@@ -1,5 +1,6 @@
 #include "grounded_encoder.h"
 #include "parallelism/parallelism_factory.h"
+#include "parallelism/interference_analysis.h"
 #include "../util/stats.h"
 #include <iostream>
 #include "problem/visitors/print_visitor.h"
@@ -343,6 +344,83 @@ void GroundedEncoder::build_epc_index() {
     
     // Print the index for debugging
     //print_epc_index("After building EPC index");
+}
+
+Plan GroundedEncoder::extract_plan(const z3::model& model, int max_timestep) const {
+    Plan plan;
+    
+    std::cout << "Extracting plan from Z3 model with " << model.size() << " variable assignments" << std::endl;
+    
+    std::string strategy_name = get_parallelism_strategy_name();
+    bool is_parallel = (strategy_name == "ForallSemantics" || strategy_name == "ExistsSemantics");
+    
+    // Iterate through each timestep
+    for (int t = 0; t <= max_timestep; ++t) {
+        if (is_parallel) {
+            // Extract and order parallel actions for this timestep
+            std::vector<const Action*> parallel_actions = extract_parallel_actions_at_timestep(model, t);
+            
+            if (!parallel_actions.empty()) {
+                std::vector<const Action*> ordered_actions = topologically_sort_actions(parallel_actions);
+                
+                // Add ordered actions to plan
+                for (const Action* action : ordered_actions) {
+                    plan.add_action(action);
+                }
+            }
+        } else {
+            // Original sequential extraction logic  
+            for (const Action& grounded_action : problem_.actions()) {
+                try {
+                    z3::expr action_var = variable_factory_.get_action_variable(grounded_action, t);
+                    z3::expr action_value = model.eval(action_var, true); // Use model completion
+                    
+                    if (action_value.is_true()) {
+                        plan.add_action(&grounded_action);
+                        break; // Only one action in sequential mode
+                    }
+                } catch (const std::exception&) {
+                    // Skip actions whose variables don't exist
+                }
+            }
+        }
+    }
+    return plan;
+}
+
+std::vector<const Action*> GroundedEncoder::extract_parallel_actions_at_timestep(
+    const z3::model& model, int timestep) const {
+    
+    std::vector<const Action*> parallel_actions;
+    
+    for (const Action& grounded_action : problem_.actions()) {
+        try {
+            z3::expr action_var = variable_factory_.get_action_variable(grounded_action, timestep);
+            z3::expr action_value = model.eval(action_var, true);
+            
+            if (action_value.is_true()) {
+                parallel_actions.push_back(&grounded_action);
+            }
+        } catch (const std::exception&) {
+            // Skip actions whose variables don't exist
+        }
+    }
+    
+    return parallel_actions;
+}
+
+std::vector<const Action*> GroundedEncoder::topologically_sort_actions(
+    const std::vector<const Action*>& actions) const {
+    
+    if (actions.size() <= 1) {
+        return actions; // No sorting needed
+    }
+    
+    // We always have a strategy and analyzer available
+    const ParallelismStrategy* strategy = get_parallelism_strategy();
+    const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
+    
+    return analyzer->topological_sort_actions(actions);
 }
 
 } // namespace planmt

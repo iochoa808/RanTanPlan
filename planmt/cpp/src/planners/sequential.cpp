@@ -176,8 +176,8 @@ Plan SequentialPlanner::search() {
             }*/
             
             try {
-                // Extract plan from model
-                Plan plan = extract_plan(model, timestep);
+                // Extract plan from model using encoder
+                Plan plan = encoder_.extract_plan(model, timestep);
                 //if (config.is_debug()) {
                 //    std::cout << plan.to_string() << std::endl;
                 //}
@@ -226,103 +226,6 @@ Plan SequentialPlanner::search() {
     return Plan(); // Return empty plan
 }
 
-Plan SequentialPlanner::extract_plan(const z3::model& model, int max_timestep) {
-    Plan plan;
-    auto& config = Config::instance();
-    
-    std::cout << "Extracting plan from Z3 model with " << model.size() << " variable assignments" << std::endl;
-    
-    std::string strategy_name = encoder_.get_parallelism_strategy_name();
-    bool is_parallel = (strategy_name == "ForallSemantics" || strategy_name == "ExistsSemantics");
-    
-    // Iterate through each timestep
-    for (int t = 0; t <= max_timestep; ++t) {
-        if (is_parallel) {
-            // Extract and order parallel actions for this timestep
-            std::vector<const Action*> parallel_actions = extract_parallel_actions_at_timestep(model, t);
-            
-            if (!parallel_actions.empty()) {
-                std::vector<const Action*> ordered_actions = topologically_sort_actions(parallel_actions);
-                
-                if (config.is_debug()) std::cout << "Timestep " << t << ": " << ordered_actions.size() << " actions in topological order" << std::endl;
-                
-                // Add ordered actions to plan
-                for (const Action* action : ordered_actions) {
-                    if (config.is_debug()) std::cout << "  action: " << action->name() << std::endl;
-                    plan.add_action(action);
-                }
-            }
-        } else {
-            // Original sequential extraction logic
-            for (const Action& grounded_action : problem_.actions()) {
-                try {
-                    // Get the Z3 variable for this grounded action at this timestep
-                    z3::expr action_var = encoder_.get_variable_factory().get_action_variable(grounded_action, t);
-                    
-                    // Evaluate the action variable in the model
-                    z3::expr action_value = model.eval(action_var, true); // Use model completion
-                    
-                    // If this action is true in the model, add it to the plan
-                    if (action_value.is_true()) {
-                        plan.add_action(&grounded_action);
-                        break; // Only one action in sequential mode
-                    }
-                } catch (const std::exception& e) {
-                    std::cout << "  Error evaluating action " << grounded_action.name() << " at timestep " << t 
-                              << ": " << e.what() << std::endl;
-                }
-            }
-        }
-    }
-    return plan;
-}
-
-std::vector<const Action*> SequentialPlanner::extract_parallel_actions_at_timestep(
-    const z3::model& model, int timestep) {
-    
-    std::vector<const Action*> parallel_actions;
-    
-    for (const Action& grounded_action : problem_.actions()) {
-        try {
-            z3::expr action_var = encoder_.get_variable_factory().get_action_variable(grounded_action, timestep);
-            z3::expr action_value = model.eval(action_var, true);
-            
-            if (action_value.is_true()) {
-                parallel_actions.push_back(&grounded_action);
-            }
-        } catch (const std::exception& e) {
-            std::cout << "  Error evaluating action " << grounded_action.name() << " at timestep " << timestep 
-                      << ": " << e.what() << std::endl;
-        }
-    }
-    
-    return parallel_actions;
-}
-
-std::vector<const Action*> SequentialPlanner::topologically_sort_actions(
-    const std::vector<const Action*>& actions) {
-    
-    std::vector<const Action*> result;
-    
-    if (actions.size() <= 1) {
-        result = actions; // No sorting needed
-    } else {
-        const ParallelismStrategy* strategy = encoder_.get_parallelism_strategy();
-        if (!strategy) {
-            result = actions; // No parallelism strategy available
-        } else {
-            const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
-            if (!analyzer) {
-                result = actions; // No interference analyzer available
-            } else {
-                // Let the InterferenceAnalysis handle the topological sorting
-                result = analyzer->topological_sort_actions(actions);
-            }
-        }
-    }
-    
-    return result;
-}
 
 void SequentialPlanner::set_propagator_strategy(PropagatorType type) {
     propagator_strategy_ = PropagatorFactory::create_strategy(type, solver_, problem_, encoder_);
