@@ -61,7 +61,7 @@ private:
     // Helper methods
     std::unordered_map<Expression, z3::expr> create_prev_substitution(int action_index, int timestep);
     std::unordered_map<Expression, z3::expr> create_modi_substitution(int action_index, int timestep);
-    z3::expr apply_substitution(const z3::expr& expr, const std::unordered_map<Expression, z3::expr>& substitution);
+    z3::expr apply_substitution(const z3::expr& expr, const std::unordered_map<Expression, z3::expr>& substitution, int timestep);
     std::optional<z3::expr> convert_expression_to_z3_template(const Expression& expr);
     z3::expr create_effect_value_z3(const EffectExpression& eff_expr, const z3::expr& fluent_z3,
                                    const std::unordered_map<Expression, z3::expr>& prev_substitution, int timestep);

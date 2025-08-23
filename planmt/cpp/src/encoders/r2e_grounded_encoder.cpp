@@ -1,5 +1,6 @@
 #include "r2e_grounded_encoder.h"
 #include "../util/stats.h"
+#include "../config/config.h"
 #include <algorithm>
 #include <cassert>
 
@@ -165,7 +166,16 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_precondition_constraints(in
         auto prev_substitution = create_prev_substitution(action_index, t);
         
         // Apply substitution σ^t_prev(i)
-        z3::expr substituted_precond = apply_substitution(*precond_z3, prev_substitution);
+        z3::expr substituted_precond = apply_substitution(*precond_z3, prev_substitution, t);
+        
+        // DEBUG: Print precondition constraints for actions 286-289 at timestep 1
+        //if (t == 1 && action_index >= 286 && action_index <= 289) {
+        //    std::cout << "\n=== PRECONDITION DEBUG for action " << action_index << " (" << action->name() << ") ===\n";
+        //    std::cout << "Original precondition: " << precond_z3->to_string() << "\n";
+        //    std::cout << "Substituted precondition: " << substituted_precond.to_string() << "\n";
+        //    std::cout << "Action variable: " << action_var.to_string() << "\n";
+        //    std::cout << "Constraint: " << action_var.to_string() << " → " << substituted_precond.to_string() << "\n";
+        //}
         
         // a^t_i → Pre^t_ai σ^t_prev(i)
         z3::expr constraint = z3::implies(action_var, substituted_precond);
@@ -233,11 +243,25 @@ z3::expr R2EGroundedEncoder::encode_single_effect_with_carry_forward(const Effec
     z3::expr executed_value = prev_value;  // Initialize with default
     if (effect.is_conditional()) {
         auto condition_z3 = convert_expression_to_z3(effect.condition(), timestep);
-        z3::expr substituted_condition = apply_substitution(*condition_z3, prev_substitution);
+        z3::expr substituted_condition = apply_substitution(*condition_z3, prev_substitution, timestep);
         executed_value = z3::ite(substituted_condition, new_value, prev_value);
     } else {
         executed_value = new_value; // For unconditional effects: executed_value = new_value
     }
+    
+    // DEBUG: Print effect constraints for actions 286-289 at timestep 1
+    //if (timestep == 1 && action_index >= 286 && action_index <= 289 && 
+    //    fluent.to_string().find("located plane2 city4") != std::string::npos) {
+    //    std::cout << "\n=== EFFECT DEBUG for action " << action_index << " fluent " << fluent.to_string() << " ===\n";
+    //    std::cout << "Chain variable: " << chain_var.to_string() << "\n";
+    //    std::cout << "Previous value: " << prev_value.to_string() << "\n";
+    //    std::cout << "New value: " << new_value.to_string() << "\n";
+    //    std::cout << "Executed value: " << executed_value.to_string() << "\n";
+    //    std::cout << "Final constraint: " << chain_var.to_string() << " == " 
+    //              << "ite(" << action_var.to_string() << ", " << executed_value.to_string() 
+    //              << ", " << prev_value.to_string() << ")\n";
+    //}
+    
     // Combined constraint: chain_var = (action_executed ? executed_value : prev_value)
     // This handles both effect execution (Equation 2) and carry-forward (Equation 3)
     return (chain_var == z3::ite(action_var, executed_value, prev_value));
@@ -288,6 +312,7 @@ std::unordered_map<Expression, z3::expr> R2EGroundedEncoder::create_prev_substit
         z3::expr prev_var = get_prev_variable_or_chain(variable, timestep, action_index);
         substitution.emplace(variable, std::move(prev_var));
     }
+    
     return substitution;
 }
 
@@ -303,23 +328,28 @@ std::unordered_map<Expression, z3::expr> R2EGroundedEncoder::create_modi_substit
 }
 
 z3::expr R2EGroundedEncoder::apply_substitution(const z3::expr& expr, 
-                                               const std::unordered_map<Expression, z3::expr>& substitution) {
+                                               const std::unordered_map<Expression, z3::expr>& substitution, int timestep) {
     if (substitution.empty()) return expr;
+    
     // Build Z3 substitution vectors
     z3::expr_vector from(ctx_);
     z3::expr_vector to(ctx_);
     
     for (const auto& [expression, replacement] : substitution) {
-        // Convert expression to Z3 template (without timestep)
-        auto expr_z3 = convert_expression_to_z3_template(expression);
-        from.push_back(*expr_z3);
-        to.push_back(replacement);
+        // Convert expression to Z3 with the detected timestep
+        auto expr_z3 = convert_expression_to_z3(expression, timestep);
+        if (expr_z3) {
+            from.push_back(*expr_z3);
+            to.push_back(replacement);
+        }
     }
     if (from.empty()) return expr;
     
     // Apply Z3 substitution - need to cast away const
     z3::expr mutable_expr = expr;
-    return mutable_expr.substitute(from, to);
+    z3::expr result = mutable_expr.substitute(from, to);
+    
+    return result;
 }
 
 std::optional<z3::expr> R2EGroundedEncoder::convert_expression_to_z3_template(const Expression& expr) {
@@ -335,7 +365,7 @@ z3::expr R2EGroundedEncoder::create_effect_value_z3(const EffectExpression& eff_
     // Convert effect value with proper substitution
     auto value_z3 = convert_expression_to_z3(eff_expr.value(), timestep);
     assert(value_z3 && "Failed to convert effect value to Z3");
-    z3::expr substituted_value = apply_substitution(*value_z3, prev_substitution);
+    z3::expr substituted_value = apply_substitution(*value_z3, prev_substitution, timestep);
     
     // Create the new value expression based on effect type
     switch (eff_expr.kind()) {
@@ -402,7 +432,11 @@ int R2EGroundedEncoder::get_global_action_index(const Action* action) const {
 
 Plan R2EGroundedEncoder::extract_plan(const z3::model& model, int max_timestep) const {
     Plan plan;
-    std::cout << "Extracting R2E plan from Z3 model with " << model.size() << " variable assignments" << std::endl;
+    const auto& config = Config::instance();
+
+    if (config.is_debug()) {
+        std::cout << "Extracting R2E plan from Z3 model with " << model.size() << " variable assignments" << std::endl;
+    }
     
     // Double loop: first timesteps, then global action order
     // Note: action variables are not asserted for the last timestep, so stop at max_timestep - 1
@@ -414,12 +448,17 @@ Plan R2EGroundedEncoder::extract_plan(const z3::model& model, int max_timestep) 
             
             if (action_value.is_true()) {
                 plan.add_action(action);
-                std::cout << "  Timestep " << t << ": " << action->name() << " and global action index " 
-                << get_global_action_index(action) << "/" << global_action_order_.size() << std::endl;
+                if (config.is_debug()) {
+                    std::cout << "  Timestep " << t << ": " << action->name() << std::endl;
+                }
             }
         }
     }
-    std::cout << "Extracted R2E plan with " << plan.length() << " actions" << std::endl;
+
+    if (config.is_debug()) {
+        std::cout << "Extracted R2E plan with " << plan.length() << " actions" << std::endl;
+    }
+    
     return plan;
 }
 
@@ -446,29 +485,43 @@ void R2EGroundedEncoder::debug_print_structures() const {
         std::cout << "\n";
     }
     
-    // Print rho mappings (first few examples)
-    std::cout << "\n3. RHO MAPPINGS (ρx):\n";
+    // Print rho mappings - focus on plane2 city4 issue
+    std::cout << "\n3. RHO MAPPINGS (ρx) - DEBUG FOR PLANE2 ISSUE:\n";
     for (const auto& [variable, rho_values] : rho_x_) {
-        std::cout << "   " << variable.to_string() << " → [";
-        for (size_t i = 0; i < rho_values.size(); ++i) {
-            std::cout << rho_values[i];
-            if (i < rho_values.size() - 1) std::cout << ", ";
+        if (variable.to_string().find("located plane2 city4") != std::string::npos) {
+            std::cout << "   " << variable.to_string() << " → [";
+            for (size_t i = 0; i < rho_values.size(); ++i) {
+                std::cout << rho_values[i];
+                if (i < rho_values.size() - 1) std::cout << ", ";
+            }
+            std::cout << "]\n";
+            
+            // Show which actions these correspond to
+            for (size_t i = 1; i < rho_values.size(); ++i) {
+                int global_idx = rho_values[i];
+                if (global_idx > 0 && global_idx <= global_action_order_.size()) {
+                    std::cout << "     rho[" << i << "] = " << global_idx << " (" 
+                             << global_action_order_[global_idx-1]->name() << ")\n";
+                }
+            }
         }
-        std::cout << "]\n";
     }
     
-    // Print prev mappings (first few examples)
-    std::cout << "\n4. PREV MAPPINGS (prevx):\n";
+    // Print prev mappings - focus on plane2 city4 issue
+    std::cout << "\n4. PREV MAPPINGS (prevx) - DEBUG FOR PLANE2 ISSUE:\n";
     for (const auto& [variable, prev_values] : prev_x_) {
-        std::cout << "   " << variable.to_string() << " prev indices: [";
-        // Show first few indices only
-        size_t max_show = std::min(prev_values.size(), size_t(10));
-        for (size_t i = 0; i < max_show; ++i) {
-            std::cout << prev_values[i];
-            if (i < max_show - 1) std::cout << ", ";
+        if (variable.to_string().find("located plane2 city4") != std::string::npos) {
+            std::cout << "   " << variable.to_string() << " prev indices: [";
+            for (size_t i = 0; i < prev_values.size(); ++i) {
+                std::cout << prev_values[i];
+                if (i < prev_values.size() - 1) std::cout << ", ";
+            }
+            std::cout << "]\n";
+            
+            // Show details for actions 287 and 289
+            std::cout << "     Action 287 (fly-slow_plane2_city4_city1) prev: " << prev_values[287] << "\n";
+            std::cout << "     Action 289 (fly-slow_plane2_city4_city3) prev: " << prev_values[289] << "\n";
         }
-        if (prev_values.size() > max_show) std::cout << ", ...";
-        std::cout << "]\n";
     }
     
     std::cout << "\n==========================================\n\n";
