@@ -16,6 +16,7 @@
 #include "util/memory_tracker.h"
 #include "util/stats.h"
 #include "symmetries/smt_symmetry_checker.h"
+#include "arpg/arpg.h"
 
 #include "z3++.h"
 
@@ -128,6 +129,26 @@ int main(int argc, char* argv[]) {
         
         planmt::SMTSymmetryChecker checker(&planning_problem, ctx);
         checker.detect_all_object_swaps();
+    }
+
+    // Demonstrate ARPG implementation
+    if (config.is_info()) {
+        std::cout << "\n=== ARPG Demonstration ===" << std::endl;
+        planmt::ARPG arpg(planning_problem);
+        
+        std::cout << "Constructing ARPG..." << std::endl;
+        bool goal_reachable = arpg.construct_graph();
+        
+        std::cout << "\nARPG Summary: " << arpg.to_string() << std::endl;
+        
+        if (config.is_debug()) {
+            arpg.print_construction_steps();
+        }
+        
+        // Export ARPG as DOT file for visualisation
+        arpg.export_dot_file("arpg_graph.dot");
+        
+        std::cout << "=== End ARPG Demonstration ===\n" << std::endl;
     }
 
     // Solve the planning problem using configuration

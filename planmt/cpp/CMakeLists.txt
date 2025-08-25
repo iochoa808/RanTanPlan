@@ -110,6 +110,8 @@ add_executable(planmt
     src/planners/propagators/decision_heuristic_propagator.cpp
     src/planners/propagators/propagator_factory.cpp
     src/symmetries/smt_symmetry_checker.cpp
+    src/arpg/supporter.cpp
+    src/arpg/arpg.cpp
 )
 
 # Define proto files and generate C++ sources
