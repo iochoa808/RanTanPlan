@@ -9,7 +9,6 @@
 #include <unordered_map>
 
 namespace planmt {
-
 /**
  * @brief Represents a detected object symmetry (two objects that can be swapped)
  */
@@ -23,6 +22,16 @@ struct ObjectSwap {
     }
 };
 
+/**
+ * @brief Represents a detected action symmetry (two actions that can be swapped)
+ */
+struct ActionSwap {
+    const Action* action1;
+    const Action* action2;
+    
+    std::string to_string() const;
+};
+
 
 /**
  * @brief Stores symmetry information for a pair of symmetric objects
@@ -30,10 +39,12 @@ struct ObjectSwap {
 struct SymmetryInfo {
     ObjectSwap object_swap;
     std::vector<std::pair<const Expression*, const Expression*>> variable_pairs;
+    std::vector<ActionSwap> action_pairs;
     
     SymmetryInfo(const ObjectSwap& swap, 
-                 const std::vector<std::pair<const Expression*, const Expression*>>& pairs)
-        : object_swap(swap), variable_pairs(pairs) {}
+                 const std::vector<std::pair<const Expression*, const Expression*>>& pairs,
+                 const std::vector<ActionSwap>& actions = {})
+        : object_swap(swap), variable_pairs(pairs), action_pairs(actions) {}
 };
 
 /**
@@ -111,6 +122,14 @@ public:
      */
     bool are_objects_known_symmetric(const std::string& obj1, const std::string& obj2) const;
     
+    /**
+     * @brief Get action pairs for a specific object swap
+     * @param obj1 Name of first object
+     * @param obj2 Name of second object
+     * @return Vector of ActionSwap structs, or empty if no symmetry exists
+     */
+    std::vector<ActionSwap> get_action_pairs_for_swap(const std::string& obj1, const std::string& obj2) const;
+    
 private:
     /**
      * @brief Get all objects of the same type (candidates for symmetry)
@@ -149,6 +168,24 @@ private:
      * @return Vector of pairs of pointers to fluents (v, v') where v' is obtained from v by swapping obj1 and obj2
      */
     std::vector<std::pair<const Expression*, const Expression*>> get_symmetric_variable_pairs(const std::string& obj1, const std::string& obj2) const;
+    
+    /**
+     * @brief Get pairs of actions related by the object swap symmetry (internal use)
+     * @param obj1 Name of first object
+     * @param obj2 Name of second object
+     * @return Vector of ActionSwap structs representing symmetric action pairs
+     */
+    std::vector<ActionSwap> get_symmetric_action_pairs(const std::string& obj1, const std::string& obj2) const;
+    
+    /**
+     * @brief Check if two actions are symmetric by signature with respect to object swap
+     * @param action1 First action
+     * @param action2 Second action
+     * @param obj1 First object in the swap
+     * @param obj2 Second object in the swap
+     * @return True if action2 has the same name and parameters as action1 with obj1 and obj2 swapped
+     */
+    bool are_actions_symmetric_by_signature(const Action& action1, const Action& action2, const std::string& obj1, const std::string& obj2) const;
     
     
 };
