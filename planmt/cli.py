@@ -102,6 +102,7 @@ def solve_problem(problem, args):
         'parallelism': strategy_config.parallelism,
         'propagator': strategy_config.propagator,
         'encoder': strategy_config.encoder,
+        'detect_symmetries' : strategy_config.detect_symmetries
     }
     
     planner_params['interference_analysis'] = strategy_config.interference_analysis
@@ -116,8 +117,7 @@ def solve_problem(problem, args):
         planner_params['no_persist_clauses'] = True
     if args.detect_symmetries:
         planner_params['detect_symmetries'] = True
-    # Pass CNF normalization toggle to planner (default is enabled when flag not set)
-    if getattr(args, 'no_cnf_normalization', False):
+    if args.no_cnf_normalization:
         planner_params['no_cnf_normalization'] = True
         
     # Handle verbosity
