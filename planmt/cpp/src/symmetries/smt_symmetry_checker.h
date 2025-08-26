@@ -56,10 +56,16 @@ struct SymmetryInfo {
  * Core principle: Two objects are symmetric if swapping them everywhere in the 
  * problem leaves both the initial state and goals logically equivalent.
  * 
- * To break the symmetry we then have to state:
- * First we check if  we're in a state where it is equivalent to have both objects swapped.
- * That is, if we swap the objects, in every fluent their value is the same.
- * If that is the case, then we can safely assert the lex order between the actions that involve them.
+ * To break the symmetry we then have to state: First we check if  we're in a
+ * state where it is equivalent to have both objects swapped.  That is, if we
+ * swap the objects, in every fluent their value is the same.  If that is the
+ * case, then we can safely assert the lex order between the actions that
+ * involve them.
+ * 
+ * The symmetries are then broken in the encoder by only ordering pairs of
+ * operators that differ in one parameter.  Equivalent of Table 1 in the paper.
+ * Table 2 (all pairs of actions) could also be done, but in the paper states
+ * it's too much for the solver. TODO might want to test that?
  */
 class SMTSymmetryChecker {
 private:
