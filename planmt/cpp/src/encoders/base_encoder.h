@@ -23,6 +23,7 @@ public:
     virtual std::shared_ptr<z3::expr> encode_frames(int t) = 0;
     virtual std::shared_ptr<z3::expr> encode_goal(int t) = 0;
     virtual std::shared_ptr<z3::expr> encode_parallelism(int t) = 0;
+    virtual std::shared_ptr<z3::expr> encode_symmetries(int t) = 0;
     
     // Parallelism management
     virtual void set_parallelism_strategy(ParallelismFactory::ParallelismType type) = 0;
@@ -36,7 +37,6 @@ public:
     
     // Plan extraction from Z3 model
     virtual Plan extract_plan(const z3::model& model, int max_timestep) const = 0;
-    
 };
 
 } // namespace planmt

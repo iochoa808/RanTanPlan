@@ -101,6 +101,11 @@ Plan SequentialPlanner::search() {
             solver_.add(*encoder_.encode_actions(timestep-1));
             solver_.add(*encoder_.encode_frames(timestep-1));
             
+            // Add symmetry breaking constraints if enabled
+            if (config.symmetry.detect_symmetries) {
+                solver_.add(*encoder_.encode_symmetries(timestep-1));
+            }
+            
             // Only add parallelism constraints if not using ForallPropagator or LazyForallPropagator
             // (ForallPropagator and LazyForallPropagator handle interference dynamically via propagation)
             if (get_propagator_type() != PropagatorType::FORALL

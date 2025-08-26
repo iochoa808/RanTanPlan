@@ -27,6 +27,7 @@ public:
     std::shared_ptr<z3::expr> encode_frames(int t) override; // Encodes frame axioms for layer_idx to layer_idx+1
     std::shared_ptr<z3::expr> encode_goal(int t) override;    // Encodes goal conditions at layer_idx
     std::shared_ptr<z3::expr> encode_parallelism(int t) override; // Encodes parallelism semantics
+    std::shared_ptr<z3::expr> encode_symmetries(int t) override;
     
     // Strategy management
     void set_parallelism_strategy(ParallelismFactory::ParallelismType type) override;
@@ -42,7 +43,7 @@ public:
     
     // Plan extraction from Z3 model
     Plan extract_plan(const z3::model& model, int max_timestep) const override;
-
+    
 protected:
     // Helper function to convert expression to Z3 using visitor
     std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1);

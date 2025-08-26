@@ -269,6 +269,10 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
     return parallelism_strategy_->encode_parallelism(t);
 }
 
+std::shared_ptr<z3::expr> GroundedEncoder::encode_symmetries(int t) {
+    return std::make_shared<z3::expr>(ctx_.bool_val(true));
+}
+
 void GroundedEncoder::set_parallelism_strategy(ParallelismFactory::ParallelismType type) {
     parallelism_strategy_ = ParallelismFactory::create_strategy(type);
     // Initialize the strategy with problem context
@@ -422,5 +426,6 @@ std::vector<const Action*> GroundedEncoder::topologically_sort_actions(
     
     return analyzer->topological_sort_actions(actions);
 }
+
 
 } // namespace planmt
