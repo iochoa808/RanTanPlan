@@ -37,6 +37,11 @@ using ObjectMapping = std::map<std::string, std::string>;
  * 
  * Core principle: Two objects are symmetric if swapping them everywhere in the 
  * problem leaves both the initial state and goals logically equivalent.
+ * 
+ * To break the symmetry we then have to state:
+ * First we check if  we're in a state where it is equivalent to have both objects swapped.
+ * That is, if we swap the objects, in every fluent their value is the same.
+ * If that is the case, then we can safely assert the lex order between the actions that involve them.
  */
 class SMTSymmetryChecker {
 private:

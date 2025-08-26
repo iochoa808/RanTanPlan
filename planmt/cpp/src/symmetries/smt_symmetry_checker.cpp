@@ -41,6 +41,9 @@ std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
                 if (are_objects_symmetric(obj1_name, obj2_name)) {
                     ObjectSwap swap{obj1_name, obj2_name, type_name};
                     detected_swaps.push_back(swap);
+                    if (Config::instance().is_debug()) {
+                        std::cout << "Detected symmetry: " << swap.to_string() << std::endl;
+                    }
                 } 
             }
         }
