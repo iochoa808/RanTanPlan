@@ -119,6 +119,7 @@ int main(int argc, char* argv[]) {
 
     // Check if symmetry detection is requested
     auto& config = planmt::Config::instance();  
+    /*
     if (config.symmetry.detect_symmetries) {
         if (config.is_info()) {
             std::cout << "SMT-based symmetry detection enabled..." << std::endl;
@@ -149,7 +150,7 @@ int main(int argc, char* argv[]) {
         arpg.export_dot_file("arpg_graph.dot");
         
         std::cout << "=== End ARPG Demonstration ===\n" << std::endl;
-    }
+    }*/
 
     // Solve the planning problem using configuration
     PlanGenerationResult result = solve_planning_problem(planning_problem);

@@ -408,7 +408,12 @@ std::vector<const Action*> GroundedEncoder::topologically_sort_actions(
     const std::vector<const Action*>& actions) const {
     
     if (actions.size() <= 1) {
-        return actions; // No sorting needed
+        std::vector<const Action*> result;
+        result.reserve(actions.size());
+        for (const Action* action : actions) {
+            result.push_back(action);
+        }
+        return result; // No sorting needed
     }
     
     // We always have a strategy and analyzer available
