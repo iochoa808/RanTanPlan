@@ -64,6 +64,7 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
   - `grounded`: Standard SMT encoding
   - `chained`: Chained encoding for cumulative effects
   - `r2e`: R2∃-step semantics with built-in parallelism
+- Object symmetry detection and breaking
 - Unified Planning library integration
 
 **Note:** planMT does not support PDDL delete-then-set effect semantics. Actions that both delete and add the same fluent will be treated as contradictory and may cause planning failures.
@@ -118,6 +119,9 @@ planmt -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chained
 
 # R2E semantics for built-in parallelism
 planmt -d domain.pddl -p problem.pddl --strategy r2e
+
+# Enable symmetry detection
+planmt -d domain.pddl -p problem.pddl --strategy forall-optimized --detect-symmetries
 
 # Save plan to file
 planmt -d domain.pddl -p problem.pddl --strategy exists-optimized-semantic --output-plan solution.txt
