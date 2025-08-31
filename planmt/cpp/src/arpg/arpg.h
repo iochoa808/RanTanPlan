@@ -47,6 +47,10 @@ public:
     // Get the final relaxed state
     const RelaxedState& get_final_state() const;
     
+    // Get bounds for all state variables from the final relaxed state
+    // Returns map from Expression (state variable) to its computed bounds
+    std::unordered_map<Expression, Interval> get_state_variable_bounds() const;
+    
     // Get construction statistics
     size_t get_num_layers() const { return interval_layers_.size(); }
     size_t get_num_supporters() const { return supporters_.size(); }
@@ -67,6 +71,7 @@ private:
     std::vector<SupporterLayer> supporter_layers_;
     
     bool goal_reached_;
+    
     
     // Create supporters from actions (Definition 9 from paper)
     void create_supporters_from_actions();

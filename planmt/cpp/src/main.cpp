@@ -17,6 +17,7 @@
 #include "util/stats.h"
 #include "symmetries/smt_symmetry_checker.h"
 #include "arpg/arpg.h"
+#include "abstraction/achievers_analysis.h"
 
 #include "z3++.h"
 
@@ -118,39 +119,7 @@ int main(int argc, char* argv[]) {
     //std::cout << planning_problem.to_string() << std::endl;
 
     // Check if symmetry detection is requested
-    auto& config = planmt::Config::instance();  
-    /*
-    if (config.symmetry.detect_symmetries) {
-        if (config.is_info()) {
-            std::cout << "SMT-based symmetry detection enabled..." << std::endl;
-        }
-        
-        // Create Z3 context for SMT-based symmetry checking
-        z3::context ctx;
-        
-        planmt::SMTSymmetryChecker checker(&planning_problem, ctx);
-        checker.detect_all_object_swaps();
-    }
-
-    // Demonstrate ARPG implementation
-    if (config.is_info()) {
-        std::cout << "\n=== ARPG Demonstration ===" << std::endl;
-        planmt::ARPG arpg(planning_problem);
-        
-        std::cout << "Constructing ARPG..." << std::endl;
-        bool goal_reachable = arpg.construct_graph();
-        
-        std::cout << "\nARPG Summary: " << arpg.to_string() << std::endl;
-        
-        if (config.is_debug()) {
-            arpg.print_construction_steps();
-        }
-        
-        // Export ARPG as DOT file for visualisation
-        arpg.export_dot_file("arpg_graph.dot");
-        
-        std::cout << "=== End ARPG Demonstration ===\n" << std::endl;
-    }*/
+    auto& config = planmt::Config::instance();
 
     // Solve the planning problem using configuration
     PlanGenerationResult result = solve_planning_problem(planning_problem);

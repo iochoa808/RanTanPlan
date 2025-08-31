@@ -69,7 +69,7 @@ Plan SequentialPlanner::search() {
     
     // Reset solution found flag and statistics
     solution_found_ = false;
-    stats.clear();
+    //stats.clear();
 
     // Add initial state constraints (these are invariant)
     solver_.add(*encoder_.encode_initial_state());
@@ -110,6 +110,7 @@ Plan SequentialPlanner::search() {
             // (ForallPropagator and LazyForallPropagator handle interference dynamically via propagation)
             if (get_propagator_type() != PropagatorType::FORALL
                 && get_propagator_type() != PropagatorType::LAZY_FORALL
+                && get_propagator_type() != PropagatorType::HEURISTIC
                 && get_propagator_type() != PropagatorType::EXISTS) {
                 solver_.add(*encoder_.encode_parallelism(timestep-1));
             }

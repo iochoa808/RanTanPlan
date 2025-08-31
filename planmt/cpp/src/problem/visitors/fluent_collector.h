@@ -63,14 +63,18 @@ public:
      * This handles the full expression context that individual visit methods lack.
      */
     void collect_from_expression(const Expression& expr) {
-        // Check if this expression itself is a fluent
-        if (expr.kind() == Expression::Kind::FLUENT_SYMBOL || 
-            expr.kind() == Expression::Kind::STATE_VARIABLE) {
+        // Check if this expression itself is a fluent (only STATE_VARIABLE, not FLUENT_SYMBOL)
+        // FLUENT_SYMBOL is typically just the name, STATE_VARIABLE is the full application
+        if (expr.kind() == Expression::Kind::STATE_VARIABLE) {
             collect_fluent(expr);
         }
         
-        // Traverse the expression tree to find nested fluents
-        accept_visitor(expr, *this);
+        // For function applications and lists, recursively check all sub-expressions
+        if (expr.is_function_application() || expr.is_list()) {
+            for (size_t i = 0; i < expr.list_size(); ++i) {
+                collect_from_expression(expr.list_element(i));
+            }
+        }
     } 
     
     // Accessors

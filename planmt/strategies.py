@@ -125,6 +125,14 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         description="R2∃-step semantics with built-in parallelism using declaration order"
     ),
 
+    "dec": StrategyConfig(
+        parallelism="exists",
+        propagator="heuristic", 
+        interference_analysis="semantic",
+        encoder="chained",
+        detect_symmetries=True,
+        description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding with decision heuristics"
+    ),
 }
 
 def get_strategy_config(strategy_name: str) -> StrategyConfig:

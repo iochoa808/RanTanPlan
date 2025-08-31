@@ -27,8 +27,8 @@ bool ARPG::construct_graph() {
         // Check if goal is satisfied
         if (check_goal_satisfaction(current_state)) {
             goal_reached_ = true;
-            std::cout << "Goal reached at layer " << layer_num << std::endl;
-            std::cout << "Final state: " << current_state.to_string() << std::endl;
+            std::cout << "ARPG reached goal at layer " << layer_num << std::endl;
+            //std::cout << "Final state: " << current_state.to_string() << std::endl;
             return true;
         }
         
@@ -83,8 +83,7 @@ void ARPG::create_supporters_from_actions() {
         }
     }
     
-    std::cout << "Created " << supporters_.size() << " supporters from " 
-              << problem_.actions().size() << " actions" << std::endl;
+    //std::cout << "Created " << supporters_.size() << " supporters from " << problem_.actions().size() << " actions" << std::endl;
 }
 
 std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
@@ -97,6 +96,7 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
     if (var_name.empty()) {
         return result;
     }
+    
     
     // Handle ALL effects to ensure ARPG is at least as informative as RPG
     
@@ -269,6 +269,42 @@ const RelaxedState& ARPG::get_final_state() const {
     }
     static RelaxedState empty_state;
     return empty_state;
+}
+
+std::unordered_map<Expression, Interval> ARPG::get_state_variable_bounds() const {
+    std::unordered_map<Expression, Interval> bounds_map;
+    
+    if (interval_layers_.empty()) {
+        return bounds_map;
+    }
+    
+    const RelaxedState& final_state = interval_layers_.back().state;
+    
+    // Collect all state variable expressions from the problem and match them to final state
+    std::unordered_set<Expression> all_state_vars;
+    
+    // Add from initial state
+    for (const auto& assignment : problem_.initial_state()) {
+        all_state_vars.insert(assignment.fluent());
+    }
+    
+    // Add from action effects  
+    for (const auto& action : problem_.actions()) {
+        for (const auto& effect : action.effects()) {
+            all_state_vars.insert(effect.fluent());
+        }
+    }
+    
+    // For each state variable expression, check if we have bounds for it in final state
+    for (const Expression& state_var : all_state_vars) {
+        std::string var_name = state_var.to_string();
+        auto interval_opt = final_state.get_variable(var_name);
+        if (interval_opt.has_value()) {
+            bounds_map[state_var] = interval_opt.value();
+        }
+    }
+    
+    return bounds_map;
 }
 
 void ARPG::print_construction_steps() const {
