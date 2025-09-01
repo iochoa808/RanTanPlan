@@ -360,7 +360,7 @@ void DecisionHeuristicPropagator::print_action_condition_status(const Action& ac
 */
 void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
     // Print the variable and phase that Z3 is about to decide on
-    //std::cout << "DecisionHeuristic decide callback: var=" << term << ", value=" << phase << std::endl;
+    std::cout << "DecisionHeuristic decide callback: var=" << term << ", value=" << phase << std::endl;
 
     // Get candidates for decision making
     auto candidates = get_decision_candidates();
