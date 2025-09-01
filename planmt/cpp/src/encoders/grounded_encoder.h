@@ -45,12 +45,11 @@ public:
     // Plan extraction from Z3 model
     Plan extract_plan(const z3::model& model, int max_timestep) const override;
     
-protected:
-    // Helper function to convert expression to Z3 using visitor
-    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1);
+    // Helper functions to convert expressions/effects to Z3 using visitor (implementing base interface)
+    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1) override;
+    std::optional<z3::expr> convert_effect_to_z3(const EffectExpression& effect, int timestep) override;
     
-    // Helper function to convert effect to Z3 constraint using visitor
-    std::optional<z3::expr> convert_effect_to_z3(const EffectExpression& effect, int timestep);
+protected:
     
     // Helper function to print EPC index for debugging
     void print_epc_index(const std::string& context) const;

@@ -5,12 +5,15 @@
 #include "../../problem/fluent.h"
 #include "../../problem/action.h"
 #include "../../encoders/parallelism/graph.h"
+#include "../../abstraction/achievers_analysis.h"
 #include <z3++.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <stack>
 #include <vector>
 #include <set>
+#include <functional>
+#include <variant>
 
 namespace planmt {
 
@@ -27,14 +30,19 @@ namespace planmt {
  */
 class DecisionHeuristicPropagator : public z3::user_propagator_base, public PropagatorStrategy {
 private:
+    z3::solver* solver_;  // Reference to the main solver for adding constraints
     const BaseEncoder* encoder_;  // Access to variable factory and problem
     const Problem* problem_;    // Direct access to problem structure
     const Z3VariableFactory* variable_factory_;  // Cached reference to variable factory
     const ParallelismStrategy* parallelism_strategy_;  // Cached reference to parallelism strategy
     const InterferenceAnalysis* interference_analyzer_;  // Cached reference to interference analyzer
+    
+    // Achievers analysis for condition tracking
+    AchieversAnalysis achievers_analysis_;
 
-    // Trail-based state management for push/pop behavior (using NodeIds for efficiency)
-    std::vector<std::pair<Graph::NodeId, int>> trail_;  // (action_node_id, timestep)
+    // Trail-based state management for push/pop behavior
+    // Store z3::expr directly - determine type (action/reification) during pop using existing logic
+    std::vector<z3::expr> trail_;
     std::vector<size_t> decision_levels_;  // Indices into trail_ marking decision boundaries
 
     // Active actions tracking per timestep (using NodeIds for efficiency)
@@ -45,6 +53,21 @@ private:
 
     // Counter for detected cycles
     int cycle_count_;
+
+    // Track reification variables for achievers analysis conditions
+    // Vector of maps indexed by timestep: reification_vars_per_timestep_[timestep][condition] = reif_var
+    std::vector<std::unordered_map<Expression, std::shared_ptr<z3::expr>>> reification_vars_per_timestep_;
+    
+    // O(1) lookup maps for reification variables (similar to Z3VariableFactory pattern)
+    // Maps from variable name to (condition, timestep) for fast reverse lookup
+    std::unordered_map<std::string, std::pair<Expression, int>> reification_var_name_to_condition_;
+    
+    // Counter for generating unique reification variable IDs
+    int reification_counter_;
+    
+    // Efficient condition value tracking per timestep using existing trail system
+    // condition_values_per_timestep_[timestep][condition] = current_value
+    std::vector<std::unordered_map<Expression, bool>> condition_values_per_timestep_;
 
 
     
@@ -66,7 +89,7 @@ public:
     void push() override;
     void pop(unsigned num_scopes) override;
     void fixed(z3::expr const &ast, z3::expr const &value) override;
-    void decide(z3::expr const& val, unsigned bit, bool is_pos) override;
+    void decide(z3::expr const& term, unsigned idx, bool phase) override;
     void final() override;
     z3::user_propagator_base* fresh(z3::context& ctx) override;
     
@@ -88,7 +111,23 @@ private:
     // Decision helper methods
     std::vector<z3::expr> get_decision_candidates() const;
     z3::expr select_next_split(const std::vector<z3::expr>& candidates) const;
-
+    
+    // Condition reification methods
+    void create_condition_reification_variables(int timestep);
+    void reification_variable_assigned(const z3::expr& ast, const z3::expr& value);
+    
+    // O(1) lookup methods for variable type checking
+    bool is_reification_variable(const z3::expr& var) const;
+    bool is_action_variable(const z3::expr& var) const;
+    std::optional<std::pair<Expression, int>> get_condition_from_reification_variable(const z3::expr& var) const;
+    
+    // Condition value query methods
+    bool has_condition_value(const Expression& condition, int timestep) const;
+    bool get_condition_value(const Expression& condition, int timestep) const;
+    
+    // Debug/utility methods
+    void print_condition_values() const;
+    void print_action_condition_status(const Action& action, int timestep) const;
 };
 
 } // namespace planmt

@@ -73,6 +73,10 @@ void AchieversAnalysis::clear() {
     condition_to_achievers_.clear();
     action_to_achieved_conditions_.clear();
     goal_conditions_.clear();
+    
+    // Invalidate cache
+    all_conditions_cached_ = false;
+    all_conditions_cache_.clear();
 }
 
 void AchieversAnalysis::analyze(const Problem& problem) {
@@ -108,10 +112,10 @@ void AchieversAnalysis::process_action_preconditions(const Action& action) {
     
     // Map each literal to this action
     for (const auto& literal : literals) {
-        precondition_to_actions_[literal].insert(&action);
+        precondition_to_actions_[literal].insert(action);
         
         // Also map this action to the required precondition
-        action_to_preconditions_[&action].insert(literal);
+        action_to_preconditions_[action].insert(literal);
     }
 }
 
@@ -128,7 +132,7 @@ void AchieversAnalysis::process_goal_conditions(const Goal& goal) {
         // Ensure it's in our condition_to_achievers_ map for analysis
         // If no actions achieve this condition yet, create an empty entry
         if (!condition_to_achievers_.contains(goal_condition)) {
-            condition_to_achievers_[goal_condition] = std::unordered_set<const Action*>();
+            condition_to_achievers_[goal_condition] = std::unordered_set<Action>();
         }
     }
 }
@@ -153,7 +157,7 @@ void AchieversAnalysis::extract_cnf_literals(const Expression& expr, std::vector
     }
 }
 
-std::unordered_set<const Action*> AchieversAnalysis::get_actions_requiring_precondition(const Expression& precondition) const {
+std::unordered_set<Action> AchieversAnalysis::get_actions_requiring_precondition(const Expression& precondition) const {
     auto it = precondition_to_actions_.find(precondition);
     if (it != precondition_to_actions_.end()) {
         return it->second;
@@ -225,8 +229,8 @@ void AchieversAnalysis::analyze_semantic_achievers() {
             // Use SMT to check if this action can achieve the condition
             if (check_action_achieves_condition_with_pushpop(action, condition)) {
 
-                condition_to_achievers_[condition].insert(&action);
-                action_to_achieved_conditions_[&action].insert(condition);
+                condition_to_achievers_[condition].insert(action);
+                action_to_achieved_conditions_[action].insert(condition);
                 // Only show achievers for conditions that have fluents or are interesting
                 //if (!condition_fluents.empty() || condition.is_function_application()) {
                 //    std::cout << "   " << action.name() << " could achieve " << condition.to_string() << std::endl;
@@ -245,14 +249,14 @@ void AchieversAnalysis::analyze_semantic_achievers() {
 }
 
 std::unordered_set<Expression> AchieversAnalysis::get_achieved_conditions(const Action& action) const {
-    auto it = action_to_achieved_conditions_.find(&action);
+    auto it = action_to_achieved_conditions_.find(action);
     if (it != action_to_achieved_conditions_.end()) {
         return it->second;
     }
     return {};
 }
 
-std::unordered_set<const Action*> AchieversAnalysis::get_achievers(const Expression& condition) const {
+std::unordered_set<Action> AchieversAnalysis::get_achievers(const Expression& condition) const {
     auto it = condition_to_achievers_.find(condition);
     if (it != condition_to_achievers_.end()) {
         return it->second;
@@ -261,11 +265,34 @@ std::unordered_set<const Action*> AchieversAnalysis::get_achievers(const Express
 }
 
 std::unordered_set<Expression> AchieversAnalysis::get_preconditions(const Action& action) const {
-    auto it = action_to_preconditions_.find(&action);
+    auto it = action_to_preconditions_.find(action);
     if (it != action_to_preconditions_.end()) {
         return it->second;
     }
     return {};
+}
+
+std::unordered_set<Expression> AchieversAnalysis::get_all_conditions() const {
+    // Return cached result if available
+    if (all_conditions_cached_) {
+        return all_conditions_cache_;
+    }
+    
+    // Build the cache
+    all_conditions_cache_.clear();
+    
+    // Add conditions in all actions
+    for (const auto& [precondition, actions] : precondition_to_actions_) {
+        all_conditions_cache_.insert(precondition);
+    }
+    
+    // Add all goal conditions
+    for (const auto& goal_condition : goal_conditions_) {
+        all_conditions_cache_.insert(goal_condition);
+    }
+    
+    all_conditions_cached_ = true;
+    return all_conditions_cache_;
 }
 
 std::unordered_set<Expression> AchieversAnalysis::collect_fluents_in_expression(const Expression& expr) {
@@ -431,8 +458,8 @@ void AchieversAnalysis::print_analysis() const {
             std::cout << "Precondition: " << precondition.to_string() << std::endl;
             std::cout << "  Appears in actions:" << std::endl;
             
-            for (const Action* action : actions) {
-                std::cout << "    - " << action->name() << std::endl;
+            for (const Action& action : actions) {
+                std::cout << "    - " << action.name() << std::endl;
             }
             std::cout << std::endl;
         }
@@ -449,7 +476,7 @@ void AchieversAnalysis::print_analysis() const {
         std::cout << "No semantically achieved conditions found." << std::endl;
     } else {
         for (const auto& [action, achieved_conditions] : action_to_achieved_conditions_) {
-            std::cout << "Action: " << action->name() << std::endl;
+            std::cout << "Action: " << action.name() << std::endl;
             std::cout << "  Can achieve conditions:" << std::endl;
             
             for (const Expression& achieved_condition : achieved_conditions) {
@@ -470,7 +497,7 @@ void AchieversAnalysis::print_analysis() const {
         std::cout << "No conditions found." << std::endl;
     } else {
         // Separate conditions into achievable and unachievable
-        std::vector<std::pair<Expression, std::unordered_set<const Action*>>> achievable_conditions;
+        std::vector<std::pair<Expression, std::unordered_set<Action>>> achievable_conditions;
         std::vector<Expression> unachievable_conditions;
         
         for (const auto& [condition, achievers] : condition_to_achievers_) {
@@ -488,8 +515,8 @@ void AchieversAnalysis::print_analysis() const {
                 std::cout << "Condition: " << condition.to_string() << std::endl;
                 std::cout << "  Can be achieved by actions:" << std::endl;
                 
-                for (const Action* action : achievers) {
-                    std::cout << "    - " << action->name() << std::endl;
+                for (const Action& action : achievers) {
+                    std::cout << "    - " << action.name() << std::endl;
                 }
                 std::cout << std::endl;
             }
@@ -519,7 +546,7 @@ void AchieversAnalysis::print_analysis() const {
         std::cout << "No action preconditions found." << std::endl;
     } else {
         for (const auto& [action, preconditions] : action_to_preconditions_) {
-            std::cout << "Action: " << action->name() << std::endl;
+            std::cout << "Action: " << action.name() << std::endl;
             std::cout << "  Requires preconditions:" << std::endl;
             
             for (const Expression& precondition : preconditions) {
@@ -545,8 +572,8 @@ void AchieversAnalysis::print_analysis() const {
             auto achievers_it = condition_to_achievers_.find(goal_condition);
             if (achievers_it != condition_to_achievers_.end() && !achievers_it->second.empty()) {
                 std::cout << "  Can be achieved by actions:" << std::endl;
-                for (const Action* achiever : achievers_it->second) {
-                    std::cout << "    - " << achiever->name() << std::endl;
+                for (const Action& achiever : achievers_it->second) {
+                    std::cout << "    - " << achiever.name() << std::endl;
                 }
             } else {
                 std::cout << "️ No actions found that can achieve this goal condition!" << std::endl;

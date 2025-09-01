@@ -60,12 +60,15 @@ public:
     void analyze(const Problem& problem);
     
     // Access methods for preconditions
-    std::unordered_set<const Action*> get_actions_requiring_precondition(const Expression& precondition) const;
+    std::unordered_set<Action> get_actions_requiring_precondition(const Expression& precondition) const;
     std::unordered_set<Expression> get_preconditions(const Action& action) const;
     
     // Access methods for achievers  
-    std::unordered_set<const Action*> get_achievers(const Expression& condition) const;
+    std::unordered_set<Action> get_achievers(const Expression& condition) const;
     std::unordered_set<Expression> get_achieved_conditions(const Action& action) const;
+    
+    // Get all conditions considered
+    std::unordered_set<Expression> get_all_conditions() const;
     
     // Output method
     void print_analysis() const;
@@ -75,19 +78,23 @@ public:
 
 private:
     // Map from precondition to set of actions that require it
-    std::unordered_map<Expression, std::unordered_set<const Action*>> precondition_to_actions_;
+    std::unordered_map<Expression, std::unordered_set<Action>> precondition_to_actions_;
     
     // Map from action to set of preconditions it requires
-    std::unordered_map<const Action*, std::unordered_set<Expression>> action_to_preconditions_;
+    std::unordered_map<Action, std::unordered_set<Expression>> action_to_preconditions_;
     
     // Map from condition to set of actions that can achieve it (using semantic analysis)
-    std::unordered_map<Expression, std::unordered_set<const Action*>> condition_to_achievers_;
+    std::unordered_map<Expression, std::unordered_set<Action>> condition_to_achievers_;
     
     // Map from action to set of conditions it achieves (using semantic analysis)
-    std::unordered_map<const Action*, std::unordered_set<Expression>> action_to_achieved_conditions_;
+    std::unordered_map<Action, std::unordered_set<Expression>> action_to_achieved_conditions_;
     
     // Set of goal conditions (extracted from goal expressions)
     std::unordered_set<Expression> goal_conditions_;
+    
+    // Cached set of all conditions (computed once for performance)
+    mutable std::unordered_set<Expression> all_conditions_cache_;
+    mutable bool all_conditions_cached_ = false;
     
     // SMT solving infrastructure
     std::unique_ptr<z3::context> ctx_;
