@@ -4,6 +4,7 @@
 #include <vector>
 #include "../problem/expression.h"
 #include "../problem/effect.h"
+#include "../problem/action.h"
 #include "interval.h"
 
 namespace planmt {
@@ -27,13 +28,18 @@ public:
     
     // Constructor
     Supporter(const std::string& name, const std::string& affected_variable)
-        : name_(name), affected_variable_(affected_variable) {}
+        : name_(name), affected_variable_(affected_variable), source_action_(nullptr) {}
+    
+    // Constructor with source action
+    Supporter(const std::string& name, const std::string& affected_variable, const class Action* source_action)
+        : name_(name), affected_variable_(affected_variable), source_action_(source_action) {}
     
     // Accessors
     const std::string& name() const { return name_; }
     const std::string& affected_variable() const { return affected_variable_; }
     EffectType effect_type() const { return effect_type_; }
     double constant_value() const { return constant_value_; }
+    const class Action* source_action() const { return source_action_; }
     
     // Preconditions
     void add_precondition(const Expression& precondition) {
@@ -131,6 +137,7 @@ private:
     EffectType effect_type_ = EffectType::CONSTANT_ASSIGNMENT;
     double constant_value_ = 0.0;
     std::vector<Expression> preconditions_;
+    const class Action* source_action_;
 };
 
 } // namespace planmt

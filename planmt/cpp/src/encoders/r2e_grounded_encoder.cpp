@@ -24,7 +24,6 @@ void R2EGroundedEncoder::build_action_ordering() {
     global_action_order_.clear();
     global_action_order_.reserve(problem_.actions().size());
     
-    // For now, only DEC (declaration order) is supported
     switch (action_ordering_) {
         case ActionOrdering::DEC:
             // Add actions in the order they appear in the problem
@@ -32,10 +31,71 @@ void R2EGroundedEncoder::build_action_ordering() {
                 global_action_order_.push_back(&action);
             }
             break;
+        case ActionOrdering::ARPG:
+            // Extract ordering from ARPG layers
+            global_action_order_ = extract_arpg_ordering();
+            break;
     }
     
     Stats::instance().set("encoder.r2e.total_actions", global_action_order_.size());
 }
+
+std::vector<const Action*> R2EGroundedEncoder::extract_arpg_ordering() {
+    // Create ARPG and construct the graph
+    ARPG arpg(problem_);
+    bool goal_reachable = arpg.construct_graph();
+    
+    if (!goal_reachable) {
+        std::cout << "Warning: ARPG could not reach the goal. Using declaration order as fallback." << std::endl;
+        std::vector<const Action*> fallback_order;
+        for (const Action& action : problem_.actions()) {
+            fallback_order.push_back(&action);
+        }
+        return fallback_order;
+    }
+    
+    // Simple approach: Put actions from each ARPG layer in order
+    std::vector<const Action*> arpg_ordered_actions;
+    std::unordered_set<const Action*> added_actions;
+    
+    // Go through each supporter layer and extract the unique actions
+    const auto& supporter_layers = arpg.get_supporter_layers();
+    for (const auto& supporter_layer : supporter_layers) {
+        // Collect unique actions from this layer
+        std::unordered_set<const Action*> layer_actions;
+        
+        for (const auto& supporter : supporter_layer.applicable_supporters) {
+            const Action* source_action = supporter->source_action();
+            if (source_action != nullptr) {
+                layer_actions.insert(source_action);
+            }
+        }
+        
+        // Add actions from this layer to the ordering (if not already added)
+        for (const Action* action : layer_actions) {
+            if (added_actions.find(action) == added_actions.end()) {
+                arpg_ordered_actions.push_back(action);
+                added_actions.insert(action);
+            }
+        }
+    }
+    
+    // Ensure all actions are included (add any missing ones at the end)
+    for (const Action& action : problem_.actions()) {
+        if (added_actions.find(&action) == added_actions.end()) {
+            //std::cout << "Warning: Action '" << action.name() 
+            //          << "' not included in ARPG ordering, adding at the end." << std::endl;
+            arpg_ordered_actions.push_back(&action);
+            added_actions.insert(&action);
+        }
+    }
+    
+    std::cout << "ARPG ordering: processed " << supporter_layers.size() 
+              << " layers, ordered " << arpg_ordered_actions.size() << " actions" << std::endl;
+    
+    return arpg_ordered_actions;
+}
+
 
 void R2EGroundedEncoder::collect_all_state_variables() {
     all_state_variables_.clear();
@@ -48,17 +108,17 @@ void R2EGroundedEncoder::collect_all_state_variables() {
 void R2EGroundedEncoder::build_variable_modifiers() {
     variable_modifiers_.clear();
     
-    // Collect all variables and their modifying actions
-    for (const Action& action : problem_.actions()) {
-        for (const Effect& effect : action.effects()) {
+    // Collect all variables and their modifying actions IN GLOBAL ORDER
+    for (const Action* action : global_action_order_) {
+        for (const Effect& effect : action->effects()) {
             const Expression& variable = effect.effect_expression().fluent();
-            variable_modifiers_[variable].push_back(&action);
+            variable_modifiers_[variable].push_back(action);
         }
     }
     
-    // Remove duplicates and sort for consistent ordering
+    // No need to sort - already in global order!
+    // Just remove duplicates while preserving order
     for (auto& [variable, actions] : variable_modifiers_) {
-        std::sort(actions.begin(), actions.end());
         actions.erase(std::unique(actions.begin(), actions.end()), actions.end());
     }
     

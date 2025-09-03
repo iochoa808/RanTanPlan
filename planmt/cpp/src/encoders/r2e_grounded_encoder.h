@@ -1,6 +1,7 @@
 #pragma once
 
 #include "grounded_encoder.h"
+#include "../arpg/arpg.h"
 #include <unordered_map>
 #include <vector>
 
@@ -15,11 +16,12 @@ namespace planmt {
 class R2EGroundedEncoder : public GroundedEncoder {
 public:
     enum class ActionOrdering {
-        DEC  // Declaration order (as actions appear in input)
+        DEC,  // Declaration order (as actions appear in input)
+        ARPG  // ARPG-derived layer-based ordering
     };
     
     R2EGroundedEncoder(const Problem& problem, z3::context& ctx, 
-                       ActionOrdering ordering = ActionOrdering::DEC);
+                       ActionOrdering ordering = ActionOrdering::ARPG);
     
     // Override encoding methods to implement R2E semantics
     std::shared_ptr<z3::expr> encode_actions(int t) override;
@@ -52,6 +54,9 @@ private:
     void build_rho_mappings();
     void build_prev_mappings();
     void collect_all_state_variables();
+    
+    // ARPG-based ordering
+    std::vector<const Action*> extract_arpg_ordering();
     
     // Constraint generation methods
     std::shared_ptr<z3::expr> encode_precondition_constraints(int t);

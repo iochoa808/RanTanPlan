@@ -110,7 +110,7 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
         // This is fundamental to RPG construction - every positive effect creates a supporter
         
         auto add_supporter = std::make_shared<Supporter>(
-            action.name() + "_add_" + var_name, var_name);
+            action.name() + "_add_" + var_name, var_name, &action);
         add_supporter->add_precondition(action.precondition());
         add_supporter->set_boolean_add_effect();
         result.push_back(add_supporter);
@@ -122,7 +122,7 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
     if (effect.effect_expression().is_increase()) {
         // Increase effect: create single supporter with positive infinity effect
         auto supporter = std::make_shared<Supporter>(
-            action.name() + "_" + var_name + "_increase", var_name);
+            action.name() + "_" + var_name + "_increase", var_name, &action);
         supporter->add_precondition(action.precondition());
         supporter->set_positive_infinity_effect();
         result.push_back(supporter);
@@ -130,7 +130,7 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
     } else if (effect.effect_expression().is_decrease()) {
         // Decrease effect: create single supporter with negative infinity effect  
         auto supporter = std::make_shared<Supporter>(
-            action.name() + "_" + var_name + "_decrease", var_name);
+            action.name() + "_" + var_name + "_decrease", var_name, &action);
         supporter->add_precondition(action.precondition());
         supporter->set_negative_infinity_effect();
         result.push_back(supporter);
@@ -141,14 +141,14 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
             if (effect.value().value().is_boolean()) {
                 // Boolean assignment - treat as add effect in relaxed planning
                 auto boolean_supporter = std::make_shared<Supporter>(
-                    action.name() + "_assign_" + var_name, var_name);
+                    action.name() + "_assign_" + var_name, var_name, &action);
                 boolean_supporter->add_precondition(action.precondition());
                 boolean_supporter->set_boolean_add_effect();
                 result.push_back(boolean_supporter);
             } else {
                 // Numeric constant assignment
                 auto constant_supporter = std::make_shared<Supporter>(
-                    action.name() + "_" + var_name + "_const", var_name);
+                    action.name() + "_" + var_name + "_const", var_name, &action);
                 constant_supporter->add_precondition(action.precondition());
                 
                 if (effect.value().value().is_real()) {
@@ -163,7 +163,7 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
         } else {
             // Non-constant assignment - create a general supporter
             auto assignment_supporter = std::make_shared<Supporter>(
-                action.name() + "_assign_" + var_name, var_name);
+                action.name() + "_assign_" + var_name, var_name, &action);
             assignment_supporter->add_precondition(action.precondition());
             assignment_supporter->set_constant_effect(0.0); // Fallback
             result.push_back(assignment_supporter);
@@ -172,7 +172,7 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
         // Fallback: create a general supporter for any unhandled effect types
         // This ensures we don't miss any effects that should contribute to the RPG baseline
         auto general_supporter = std::make_shared<Supporter>(
-            action.name() + "_effect_" + var_name, var_name);
+            action.name() + "_effect_" + var_name, var_name, &action);
         general_supporter->add_precondition(action.precondition());
         general_supporter->set_boolean_add_effect(); // Default to boolean add
         result.push_back(general_supporter);

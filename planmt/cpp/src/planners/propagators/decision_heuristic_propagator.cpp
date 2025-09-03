@@ -305,6 +305,45 @@ bool DecisionHeuristicPropagator::get_condition_value(const Expression& conditio
     return false;
 }
 
+/*
+ term	A bit-vector or Boolean used for branching
+ idx	If the term is a bit-vector, then an index into the bit-vector being branched on
+ phase	The tentative truth-value
+*/
+void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
+    // Print the variable and phase that Z3 is about to decide on
+    std::cout << "DecisionHeuristic decide callback: var=" << term << ", value=" << phase << std::endl;
+
+    // Get candidates for decision making
+    auto candidates = get_decision_candidates();
+    if (candidates.empty()) return;
+    
+    z3::expr selected = select_next_split(candidates);
+    //std::cout << "DecisionHeuristic overriding with: " << selected.to_string() << std::endl;
+    // Use Z3's next_split to influence the decision
+    //next_split(selected, 0, Z3_L_TRUE); // Phase Z3_L_TRUE = try setting to true first
+}
+
+std::vector<z3::expr> DecisionHeuristicPropagator::get_decision_candidates() const {
+    std::vector<z3::expr> candidates;
+    
+    // Collect all registered action variables as candidates
+    for (const auto& [timestep, vars] : registered_action_vars_) {
+        for (const auto& var : vars) {
+            candidates.push_back(var);
+        }
+    }
+    
+    return candidates;
+}
+
+z3::expr DecisionHeuristicPropagator::select_next_split(const std::vector<z3::expr>& candidates) const {
+    // For now, just return the first candidate
+    // TODO: Add actual heuristics here based on goal distance, action priorities, etc.
+    // The caller already checks if candidates is empty
+    return candidates[0];
+}
+
 void DecisionHeuristicPropagator::print_condition_values() const {
     std::cout << "=== Condition Values Summary ===" << std::endl;
     
@@ -351,45 +390,6 @@ void DecisionHeuristicPropagator::print_action_condition_status(const Action& ac
     //}
 
     std::cout << std::endl << std::endl;
-}
-
-/*
- term	A bit-vector or Boolean used for branching
- idx	If the term is a bit-vector, then an index into the bit-vector being branched on
- phase	The tentative truth-value
-*/
-void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
-    // Print the variable and phase that Z3 is about to decide on
-    std::cout << "DecisionHeuristic decide callback: var=" << term << ", value=" << phase << std::endl;
-
-    // Get candidates for decision making
-    auto candidates = get_decision_candidates();
-    if (candidates.empty()) return;
-    
-    z3::expr selected = select_next_split(candidates);
-    //std::cout << "DecisionHeuristic overriding with: " << selected.to_string() << std::endl;
-    // Use Z3's next_split to influence the decision
-    //next_split(selected, 0, Z3_L_TRUE); // Phase Z3_L_TRUE = try setting to true first
-}
-
-std::vector<z3::expr> DecisionHeuristicPropagator::get_decision_candidates() const {
-    std::vector<z3::expr> candidates;
-    
-    // Collect all registered action variables as candidates
-    for (const auto& [timestep, vars] : registered_action_vars_) {
-        for (const auto& var : vars) {
-            candidates.push_back(var);
-        }
-    }
-    
-    return candidates;
-}
-
-z3::expr DecisionHeuristicPropagator::select_next_split(const std::vector<z3::expr>& candidates) const {
-    // For now, just return the first candidate
-    // TODO: Add actual heuristics here based on goal distance, action priorities, etc.
-    // The caller already checks if candidates is empty
-    return candidates[0];
 }
 
 } // namespace planmt

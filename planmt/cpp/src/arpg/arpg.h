@@ -55,6 +55,10 @@ public:
     size_t get_num_layers() const { return interval_layers_.size(); }
     size_t get_num_supporters() const { return supporters_.size(); }
     
+    // Access to layer structures for action ordering
+    const std::vector<SupporterLayer>& get_supporter_layers() const { return supporter_layers_; }
+    const std::vector<IntervalLayer>& get_interval_layers() const { return interval_layers_; }
+    
     // Print the graph construction step by step
     void print_construction_steps() const;
     
