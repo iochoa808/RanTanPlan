@@ -1,17 +1,27 @@
 #include "arpg.h"
+#include "../config/config.h"
+#include "../util/memory_tracker.h"
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <chrono>
 
 namespace planmt {
 
 ARPG::ARPG(const Problem& problem) 
     : problem_(problem), goal_reached_(false) {
+    auto& config = Config::instance();
+    if (config.is_info()) {
+        double current_memory = MemoryTracker::instance().get_current_memory_mb();
+        std::cout << "[ARPG] Starting, memory=" << current_memory << "MB" << std::endl;
+    }
     create_supporters_from_actions();
 }
 
 bool ARPG::construct_graph() {
     // Algorithm 1: Asymptotic Relaxed Planning Graph (ARPG)
+    auto& config = Config::instance();
+    auto start_time = std::chrono::high_resolution_clock::now();
     
     // Initialize with the initial relaxed state (s+ = s0+)
     RelaxedState initial_state = create_initial_relaxed_state();
@@ -27,9 +37,9 @@ bool ARPG::construct_graph() {
         // Check if goal is satisfied
         if (check_goal_satisfaction(current_state)) {
             goal_reached_ = true;
-            std::cout << "ARPG reached goal at layer " << layer_num << std::endl;
+            std::cout << "[ARPG] reached goal at layer " << layer_num << std::endl;
             //std::cout << "Final state: " << current_state.to_string() << std::endl;
-            return true;
+            break;
         }
         
         // Find applicable supporters that haven't been used
@@ -37,7 +47,7 @@ bool ARPG::construct_graph() {
         
         // If no new supporters, terminate
         if (applicable.empty()) {
-            std::cout << "No more applicable supporters at layer " << layer_num << std::endl;
+            std::cout << "[ARPG] No more applicable supporters at layer " << layer_num << std::endl;
             break;
         }
         
@@ -65,9 +75,18 @@ bool ARPG::construct_graph() {
         
         // Safety check to prevent infinite loops
         if (layer_num > 100) {
-            std::cout << "Maximum layer limit reached" << std::endl;
+            std::cout << "[ARPG] Maximum layer limit reached" << std::endl;
             break;
         }
+    }
+    
+    // Print timing and memory info for completion
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto total_time = std::chrono::duration<double>(end_time - start_time).count();
+    if (config.is_info()) {
+        double current_memory = MemoryTracker::instance().get_current_memory_mb();
+        std::cout << "[ARPG] construction took: time=" << total_time << "s, memory=" << current_memory << "MB";
+        std::cout << std::endl;
     }
     
     return goal_reached_;

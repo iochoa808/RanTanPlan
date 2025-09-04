@@ -78,8 +78,7 @@ private:
     std::vector<SymmetryInfo> detected_symmetries_;
     
 public:
-    SMTSymmetryChecker(const Problem* problem, z3::context& ctx)
-        : problem_(problem), context_(ctx), symbol_table_(), visitor_(ctx, symbol_table_, problem) {}
+    SMTSymmetryChecker(const Problem* problem, z3::context& ctx);
     
     /**
      * @brief Detect all symmetric object pairs in the problem

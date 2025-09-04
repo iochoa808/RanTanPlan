@@ -1,12 +1,23 @@
 #include "smt_symmetry_checker.h"
 #include "../problem/visitors/expression_visitor.h"
 #include "../util/memory_tracker.h"
+#include "../config/config.h"
 #include <iostream>
 #include <algorithm>
 #include <set>
 #include <unordered_set>
+#include <chrono>
 
 namespace planmt {
+
+SMTSymmetryChecker::SMTSymmetryChecker(const Problem* problem, z3::context& ctx)
+    : problem_(problem), context_(ctx), symbol_table_(), visitor_(ctx, symbol_table_, problem) {
+    auto& config = Config::instance();
+    if (config.is_info()) {
+        double current_memory = MemoryTracker::instance().get_current_memory_mb();
+        std::cout << "[Symmetry] Starting symmetry detection, memory=" << current_memory << "MB" << std::endl;
+    }
+}
 
 std::string ActionSwap::to_string() const {
     return action1->name() + "(" + action1->to_string() + ") ↔ " + 
@@ -14,13 +25,13 @@ std::string ActionSwap::to_string() const {
 }
 
 std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
+    auto& config = Config::instance();
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
     std::vector<ObjectSwap> detected_swaps;
     
     // Clear previous results
     detected_symmetries_.clear();
-    
-    // Track memory usage before starting
-    double initial_memory = MemoryTracker::instance().get_current_memory_mb();
     
     // Group objects by type - only objects of same type can be symmetric
     auto objects_by_type = get_objects_by_type();
@@ -53,9 +64,14 @@ std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
         }
     }
     
-    // Track memory usage after completion
-    double final_memory = MemoryTracker::instance().get_current_memory_mb();
-    
+    // Print timing and memory info for completion
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto total_time = std::chrono::duration<double>(end_time - start_time).count();
+    if (config.is_info()) {
+        double current_memory = MemoryTracker::instance().get_current_memory_mb();
+        std::cout << "[Symmetry] detection took: time=" << total_time << "s, memory=" << current_memory << "MB";
+        std::cout << std::endl;
+    }
     
     return detected_swaps;
 }
