@@ -499,31 +499,15 @@ void GroundedEncoder::analyze_symmetries() {
     auto& config = Config::instance();
     
     // Only analyze symmetries if symmetry detection is enabled
-    if (!config.symmetry.detect_symmetries) {
-        if (config.is_debug()) {
-            std::cout << "Symmetry detection disabled - skipping analysis" << std::endl;
-        }
+    if (!config.symmetry.detect_symmetries && config.is_debug()) {
+        std::cout << "Symmetry detection disabled - skipping analysis" << std::endl;
         return;
-    }
-    
-    if (config.is_info()) {
-        std::cout << "\n=== Analyzing Problem Symmetries ===" << std::endl;
     }
     
     // Create symmetry checker and perform analysis once
     symmetry_checker_ = std::make_unique<SMTSymmetryChecker>(&problem_, ctx_);
     detected_symmetries_ = symmetry_checker_->detect_all_object_swaps();
-    
-    if (config.is_info()) {
-        std::cout << "Detected " << detected_symmetries_.size() << " symmetric object pairs:" << std::endl;
-        for (const auto& swap : detected_symmetries_) {
-            auto variable_pairs = symmetry_checker_->get_variable_pairs_for_swap(swap.obj1_name, swap.obj2_name);
-            auto action_pairs = symmetry_checker_->get_action_pairs_for_swap(swap.obj1_name, swap.obj2_name);
-            std::cout << "  " << swap.to_string() << " -> " << variable_pairs.size() 
-                      << " variable pairs, " << action_pairs.size() << " action pairs" << std::endl;
-        }
-        std::cout << "=== End Symmetry Analysis ===" << std::endl;
-    }
+
 }
 
 

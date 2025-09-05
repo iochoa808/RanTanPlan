@@ -64,6 +64,14 @@ std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
         }
     }
     
+    if (config.is_debug()) {
+        std::cout << "Detected " << detected_symmetries_.size() << " symmetric object pairs:" << std::endl;
+        for (const auto& symmetry : detected_symmetries_) {
+            std::cout << "  " << symmetry.object_swap.to_string() << " -> " << symmetry.variable_pairs.size() 
+                      << " variable pairs, " << symmetry.action_pairs.size() << " action pairs" << std::endl;
+        }
+    }
+    
     // Print timing and memory info for completion
     auto end_time = std::chrono::high_resolution_clock::now();
     auto total_time = std::chrono::duration<double>(end_time - start_time).count();
