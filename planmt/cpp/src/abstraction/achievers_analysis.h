@@ -70,6 +70,9 @@ public:
     // Get all conditions considered
     std::unordered_set<Expression> get_all_conditions() const;
     
+    // Get goal conditions
+    const std::unordered_set<Expression>& get_goal_conditions() const;
+    
     // Output method
     void print_analysis() const;
     

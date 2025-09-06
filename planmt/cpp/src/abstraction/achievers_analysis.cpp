@@ -295,6 +295,10 @@ std::unordered_set<Expression> AchieversAnalysis::get_all_conditions() const {
     return all_conditions_cache_;
 }
 
+const std::unordered_set<Expression>& AchieversAnalysis::get_goal_conditions() const {
+    return goal_conditions_;
+}
+
 std::unordered_set<Expression> AchieversAnalysis::collect_fluents_in_expression(const Expression& expr) {
     FluentCollector collector;
     collector.collect_from_expression(expr);
