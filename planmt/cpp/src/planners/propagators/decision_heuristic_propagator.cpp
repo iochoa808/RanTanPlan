@@ -9,6 +9,8 @@
 #include <set>
 #include <algorithm>
 #include <functional>
+#include <queue>
+#include <cassert>
 
 namespace planmt {
 
@@ -19,6 +21,7 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
      interference_analyzer_(parallelism_strategy_->get_interference_analyzer()), 
      achievers_analysis_(problem),
      cycle_count_(0),
+     current_goal_step_(1),
      reification_counter_(0) {
 
     // Define callbacks for the user propagator
@@ -30,6 +33,7 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
     // and pre-reserve capacity in each timestep map based on number of conditions
     reification_vars_per_timestep_.resize(Config::instance().planner.max_steps);
     condition_values_per_timestep_.resize(Config::instance().planner.max_steps);
+
     auto all_conditions = achievers_analysis_.get_all_conditions();
     for (auto& timestep_map : reification_vars_per_timestep_) {
         timestep_map.reserve(all_conditions.size());
@@ -67,9 +71,9 @@ void DecisionHeuristicPropagator::pop(unsigned num_scopes) {
                     // Remove action from active set using NodeId
                     active_actions_per_timestep_[timestep].erase(action_node_id);
                 } else {
-                    // For reification variables, remove from condition values tracking
+                    // For reification variables, assign it as UNDEF (no decision has been taken on it)
                     auto [condition, timestep] = *get_condition_from_reification_variable(var);
-                    condition_values_per_timestep_[timestep].erase(condition);
+                    condition_values_per_timestep_[timestep][condition] = Z3_L_UNDEF;
                 }
                 trail_.pop_back();
             }
@@ -77,19 +81,19 @@ void DecisionHeuristicPropagator::pop(unsigned num_scopes) {
     }
 }
 
-void DecisionHeuristicPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
+void DecisionHeuristicPropagator::fixed(z3::expr const &var, z3::expr const &value) {
     // Check if this is a reification variable for a condition
-    if (is_reification_variable(ast)) {
-        trail_.push_back(ast);
-        reification_variable_assigned(ast, value);
+    if (is_reification_variable(var)) {
+        trail_.push_back(var);
+        reification_variable_assigned(var, value);
         return; // It was a reification variable, we handled it
 
-    } else if(is_action_variable(ast)) {
-        trail_.push_back(ast);
+    } else if(is_action_variable(var)) {
+        trail_.push_back(var);
         // From now on we only care about action variables being set to true
         if (!value.is_true()) return;
         // Extract action and timestep from the variable
-        auto [action, timestep] = *variable_factory_->get_action_from_variable(ast);
+        auto [action, timestep] = *variable_factory_->get_action_from_variable(var);
         // Get NodeId for the action
         Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
         
@@ -100,7 +104,7 @@ void DecisionHeuristicPropagator::fixed(z3::expr const &ast, z3::expr const &val
         active_actions_per_timestep_[timestep].insert(action_node_id);
         
         // Perform exists propagation logic
-        perform_exists_propagation(action, timestep, ast);
+        perform_exists_propagation(action, timestep, var);
 
     } else {
         return; // dunno what this is?
@@ -125,7 +129,11 @@ void DecisionHeuristicPropagator::register_timestep_variables(int timestep) {
 
     // For timestep 0: register nothing as there are no actions
     if (timestep == 0) return;
-    
+ 
+    // where shall we look for the goal conditions?
+    // it is initialized as 1, and therefore timestep 0 is covered :)
+    current_goal_step_ = timestep + 1;
+
     // For timestep t > 0: register action variables for t-1 
     if (!registered_action_vars_.contains(timestep - 1)) {
         auto prev_action_vars = var_factory.get_all_action_variables(timestep - 1);
@@ -237,41 +245,62 @@ bool DecisionHeuristicPropagator::find_cycle_in_active_actions(const std::unorde
 
 void DecisionHeuristicPropagator::create_condition_reification_variables(int timestep) {
     // Create reification variables and constraints for each condition at this timestep
-    auto all_conditions = achievers_analysis_.get_all_conditions();
-    for (const Expression& condition : all_conditions) {
-        // convert condition to Z3 expression at this timestep using the encoder
-        auto condition_z3_opt = const_cast<BaseEncoder*>(encoder_)->convert_expression_to_z3(condition, timestep);
-        z3::expr condition_z3 = condition_z3_opt.value();
-        
-        // create reification variable name with counter
-        reification_counter_++;
-        std::string reif_var_name = "reif_" + std::to_string(reification_counter_) + "_t" + std::to_string(timestep);
-        z3::expr reif_var = ctx().bool_const(reif_var_name.c_str());
-        
-        // store the reification variable as shared_ptr
-        // and a reverse lookup mapping
-        auto reif_var_ptr = std::make_shared<z3::expr>(reif_var);
-        reification_vars_per_timestep_[timestep][condition] = reif_var_ptr;
-        reification_var_name_to_condition_[reif_var_name] = {condition, timestep};
-        
-        // Create reification constraint: reif_var <-> condition_z3
-        z3::expr reification_constraint = (reif_var == condition_z3);
+    auto pre_conditions = achievers_analysis_.get_pre_conditions();
+    auto goal_conditions = achievers_analysis_.get_goal_conditions();
 
-        // Print the constraint and reification variable
-        std::cout << "New reification variable: " << reif_var.to_string() << " for condition: " << condition.to_string() << " at timestep " << timestep << std::endl;
-        solver_->add(reification_constraint); // Add the constraint to the main solver
-        add(reif_var); // Register the reification variable to be watched by the propagator
-    }
+    // Lambda to create reification variables for a set of conditions
+    auto create_reification_vars = [this](const std::unordered_set<Expression>& conditions, int target_timestep, const std::string& type_label) {
+        for (const Expression& condition : conditions) {
+            // is this condition shared with the goal (and therefore created in the previous step)?
+            if (type_label == "pre" && reification_vars_per_timestep_[target_timestep].contains(condition)) {
+                //auto var = reification_vars_per_timestep_[target_timestep].at(condition);
+                //std::cout << "[EXISTING] " << type_label << " reification variable: " << var->to_string() << " for condition: " << condition.to_string() << " at timestep " << target_timestep << std::endl;
+                continue;
+            }
+            // convert condition to Z3 expression at this timestep using the encoder
+            auto condition_z3_opt = const_cast<BaseEncoder*>(encoder_)->convert_expression_to_z3(condition, target_timestep);
+            z3::expr condition_z3 = condition_z3_opt.value();
+            
+            // create reification variable name with counter
+            reification_counter_++;
+            std::string reif_var_name = "reif_" + std::to_string(reification_counter_) + "_t" + std::to_string(target_timestep);
+            z3::expr reif_var = ctx().bool_const(reif_var_name.c_str());
+            
+            // store the reification variable as shared_ptr and a reverse lookup mapping
+            auto reif_var_ptr = std::make_shared<z3::expr>(reif_var);
+            reification_vars_per_timestep_[target_timestep][condition] = reif_var_ptr;
+            reification_var_name_to_condition_[reif_var_name] = {condition, target_timestep};
+            // for now is undefined
+            condition_values_per_timestep_[target_timestep][condition] = Z3_L_UNDEF;
+
+            // Create reification constraint: reif_var <-> condition_z3
+            z3::expr reification_constraint = (reif_var == condition_z3);
+
+            // Print the constraint and reification variable
+            //std::cout << "New " << type_label << " reification variable: " << reif_var.to_string() << " for condition: " << condition.to_string() << " at timestep " << target_timestep << std::endl;
+            solver_->add(reification_constraint); // Add the constraint to the main solver
+            add(reif_var); // Register the reification variable to be watched by the propagator
+        }
+    };
+
+    // Process preconditions at current timestep
+    create_reification_vars(pre_conditions, timestep, "pre");
+
+    // Process goal conditions at next timestep
+    create_reification_vars(goal_conditions, timestep + 1, "goal");
 }
 
 void DecisionHeuristicPropagator::reification_variable_assigned(const z3::expr& ast, const z3::expr& value) {
     // This is a reification variable
     std::string var_name = ast.decl().name().str();
     auto [condition, timestep] = reification_var_name_to_condition_.at(var_name);
-    bool is_true = value.is_true();
     
     // Update condition value tracking
-    condition_values_per_timestep_[timestep][condition] = is_true;
+    if(value.is_true()){
+        condition_values_per_timestep_[timestep][condition] = Z3_L_TRUE;
+    } else {
+        condition_values_per_timestep_[timestep][condition] = Z3_L_FALSE;
+    }
     
     // Print the condition truth value change
     //std::cout << "T" << timestep << ": " << condition.to_string() << "=" << (is_true ? "T" : "F") << std::endl;
@@ -295,14 +324,11 @@ std::optional<std::pair<Expression, int>> DecisionHeuristicPropagator::get_condi
 }
 
 bool DecisionHeuristicPropagator::has_condition_value(const Expression& condition, int timestep) const {
-    const auto& timestep_map = condition_values_per_timestep_[timestep];
-    return timestep_map.contains(condition);
+    return condition_values_per_timestep_[timestep].at(condition) != Z3_L_UNDEF;
 }
 
-bool DecisionHeuristicPropagator::get_condition_value(const Expression& condition, int timestep) const {
-    const auto& timestep_map = condition_values_per_timestep_[timestep];
-    if (timestep_map.contains(condition)) return timestep_map.at(condition);
-    return false;
+Z3_lbool DecisionHeuristicPropagator::get_condition_value(const Expression& condition, int timestep) const {
+    return condition_values_per_timestep_[timestep].at(condition);
 }
 
 /*
@@ -311,37 +337,144 @@ bool DecisionHeuristicPropagator::get_condition_value(const Expression& conditio
  phase	The tentative truth-value
 */
 void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
-    // Print the variable and phase that Z3 is about to decide on
-    std::cout << "DecisionHeuristic decide callback: var=" << term << ", value=" << phase << std::endl;
-
-    // Get candidates for decision making
-    auto candidates = get_decision_candidates();
-    if (candidates.empty()) return;
+    std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
     
-    z3::expr selected = select_next_split(candidates);
-    //std::cout << "DecisionHeuristic overriding with: " << selected.to_string() << std::endl;
-    // Use Z3's next_split to influence the decision
-    //next_split(selected, 0, Z3_L_TRUE); // Phase Z3_L_TRUE = try setting to true first
+    // Find support for unsupported goals/subgoals (Figure 3 from paper)
+    auto support_result = find_support();
+    
+    if (support_result.has_value()) {
+        // Found an action to support a goal/subgoal
+        auto [action, timestep] = *support_result;
+        assert(timestep >= 0 && "Timestep should be non-negative");
+        
+        z3::expr action_var = variable_factory_->get_action_variable(action, timestep);
+        
+        std::cout << "DECISION HEURISTIC: Suggesting action " << action.name() << "@" << timestep << " (variable: " << action_var.to_string() << ")" << std::endl;
+        
+        // Use Z3's next_split to suggest this action (set to true)
+        next_split(action_var, 0, Z3_L_TRUE);
+        std::cout << "*** after next_split() ***\n" << std::endl;
+    } else {
+        std::cout << "DECISION HEURISTIC: No support needed, using default Z3 decision" << std::endl;
+    }
+    std::cout << "*** End of decide() ***\n" << std::endl;
+    // If no support needed, let Z3 make the decision normally (no action needed)
 }
 
-std::vector<z3::expr> DecisionHeuristicPropagator::get_decision_candidates() const {
-    std::vector<z3::expr> candidates;
+std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support() const {
+    // Implementation of Figure 2 from the paper: support(Stack, v)
+    std::cout << "\n=== Starting find_support() ===" << std::endl;
     
-    // Collect all registered action variables as candidates
-    for (const auto& [timestep, vars] : registered_action_vars_) {
-        for (const auto& var : vars) {
-            candidates.push_back(var);
+    // Clear and initialize stack with goal conditions (Figure 2, line 1-2)
+    subgoal_stack_.clear();
+    
+    const auto& goal_conditions = achievers_analysis_.get_goal_conditions();
+    // Push all unsatisfied goals at the last timestep into the stack (Figure 2, line 1)
+    for (const Expression& goal_condition : goal_conditions) {
+        // Check if v(l@t) = 1 - if goal is already satisfied, don't add to stack
+        bool is_satisfied = false;
+        if (has_condition_value(goal_condition, current_goal_step_)) {
+            is_satisfied = get_condition_value(goal_condition, current_goal_step_) == Z3_L_TRUE;
+        }
+        
+        if (!is_satisfied) {
+            std::pair<Expression, int> goal_pair = {goal_condition, current_goal_step_};
+            subgoal_stack_.push_back(goal_pair);
+            std::cout << "  Added unsatisfied goal to stack: " << goal_condition.to_string() << "@" << current_goal_step_ << std::endl;
+        } else {
+            std::cout << "  Skipping already satisfied goal: " << goal_condition.to_string() << "@" << current_goal_step_ << std::endl;
         }
     }
     
-    return candidates;
-}
-
-z3::expr DecisionHeuristicPropagator::select_next_split(const std::vector<z3::expr>& candidates) const {
-    // For now, just return the first candidate
-    // TODO: Add actual heuristics here based on goal distance, action priorities, etc.
-    // The caller already checks if candidates is empty
-    return candidates[0];
+    // Main loop (Figure 2, line 2)
+    std::cout << "\nStarting main loop with stack size: " << subgoal_stack_.size() << std::endl;
+    while (!subgoal_stack_.empty()) {
+        // Pop l@t from stack (Figure 2, line 3)
+        auto [l, t] = subgoal_stack_.back();
+        subgoal_stack_.pop_back();
+        std::cout << "\nProcessing subgoal: " << l.to_string() << "@" << t << std::endl;
+        
+        int t_prime = t - 1; // Figure 2, line 4
+        bool found = false;   // Figure 2, line 5
+        std::cout << "  Starting backward search from timestep " << t_prime << std::endl;
+        
+        // Repeat loop (Figure 2, line 6)
+        do {
+            std::cout << "    Checking timestep " << t_prime << std::endl;
+            
+            // Check if v(o@t') = 1 for some o with l in eff(o) (Figure 2, line 7-8)
+            auto achiever_actions = achievers_analysis_.get_achievers(l);
+            std::cout << "    Found " << achiever_actions.size() << " potential achiever actions" << std::endl;
+            
+            for (const Action& o : achiever_actions) {
+                // Check if this action is already assigned true at t_prime
+                Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
+                if (active_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
+                    std::cout << "      action: " << o.name() << " active at timestep " << t_prime << std::endl;
+                    for (const Expression& condition : achievers_analysis_.get_preconditions(o)){
+                        subgoal_stack_.push_back({condition, t_prime}); // we want this condition at this timestep
+                    }
+                    // If action supports this goal, add its preconditions (Figure 2, lines 9-10)
+                    // For simplicity, assume action is not yet assigned and continue search
+                } else {
+                    std::cout << "      action: " << o.name() << " not active at timestep " << t_prime << std::endl;
+                }
+            }
+            
+            if (!found) {
+                // Check if v(l@t') = 0 - condition is false/unassigned at this timestep (Figure 2, line 11)
+                // Find any action o that can achieve l and is not assigned false (Figure 2, line 12)
+                if (!achiever_actions.empty() && t_prime >= 0) {
+                    // Return the first achiever action (Figure 2, line 13)
+                    const Action& first_achiever = *achiever_actions.begin();
+                    assert(first_achiever.name().length() > 0 && "Action should have a valid name");
+                    
+                    std::cout << "    FOUND SUPPORT: " << first_achiever.name() << "@" << t_prime 
+                              << " can achieve " << l.to_string() << std::endl;
+                    
+                    // Add unsatisfied preconditions to the stack (Figure 2, lines 9-10)
+                    const auto& preconditions = achievers_analysis_.get_preconditions(first_achiever);
+                    std::cout << "    Adding preconditions of " << first_achiever.name() << " to stack:" << std::endl;
+                    
+                    for (const Expression& precond : preconditions) {
+                        // Check if precondition is already satisfied at t_prime
+                        bool is_satisfied = false;
+                        if (has_condition_value(precond, t_prime)) {
+                            is_satisfied = get_condition_value(precond, t_prime);
+                        }
+                        
+                        if (!is_satisfied) {
+                            // Check if already in stack to avoid duplicates
+                            std::pair<Expression, int> precond_pair = {precond, t_prime};
+                            if (std::find(subgoal_stack_.begin(), subgoal_stack_.end(), precond_pair) == subgoal_stack_.end()) {
+                                subgoal_stack_.push_back(precond_pair);
+                                std::cout << "      Added unsatisfied precondition: " << precond.to_string() << "@" << t_prime << std::endl;
+                            } else {
+                                std::cout << "      Precondition already in stack: " << precond.to_string() << "@" << t_prime << std::endl;
+                            }
+                        } else {
+                            std::cout << "      Skipping satisfied precondition: " << precond.to_string() << "@" << t_prime << std::endl;
+                        }
+                    }
+                    
+                    std::cout << "=== Returning from find_support() ===" << std::endl;
+                    
+                    return std::make_pair(first_achiever, t_prime);
+                }
+                
+                t_prime = t_prime - 1; // Figure 2, line 14
+                std::cout << "    No support found, going back to timestep " << t_prime << std::endl;
+            }
+        } while (!found && t_prime >= 0); // Figure 2, line 15
+        
+        std::cout << "  No support found for " << l.to_string() << " (reached timestep " << t_prime << ")" << std::endl;
+    }
+    
+    std::cout << "No support needed - all goals are satisfied or no achievable support found" << std::endl;
+    std::cout << "=== Returning from find_support() ===" << std::endl;
+    
+    // Return empty set (Figure 2, line 17)
+    return std::nullopt;
 }
 
 void DecisionHeuristicPropagator::print_condition_values() const {
@@ -355,9 +488,10 @@ void DecisionHeuristicPropagator::print_condition_values() const {
             std::cout << "T" << timestep << ": ";
             
             for (const auto& [condition, value] : timestep_map) {
-                std::cout << condition.to_string() << "=" << (value ? "T" : "F") << ", ";
+                if(value == Z3_L_TRUE) std::cout << condition.to_string() << "=T, " << std::endl;
+                if(value == Z3_L_FALSE) std::cout << condition.to_string() << "=F, " << std::endl;
+                if(value == Z3_L_UNDEF) std::cout << condition.to_string() << "=U, " << std::endl;
             }
-            std::cout << std::endl;
         }
     }
     
@@ -371,7 +505,7 @@ void DecisionHeuristicPropagator::print_action_condition_status(const Action& ac
     // Now that achievers analysis uses value-based maps, we can call get_preconditions directly
     auto preconditions = achievers_analysis_.get_preconditions(action);
     bool has_relevant_conditions = false;
-    std::cout << "Action " << action.name() << " at T" << timestep << " - Conditions("<< preconditions.size() <<"): ";
+    std::cout << "Fixed action " << action.name() << " at T" << timestep << " - Conditions("<< preconditions.size() <<"): ";
 
     for (const Expression& condition : preconditions) {
         std::string condition_str = condition.to_string();
@@ -383,11 +517,6 @@ void DecisionHeuristicPropagator::print_action_condition_status(const Action& ac
         }
         std::cout << condition.to_string() << "=" << value << ", ";
     }
-    
-    //if (!has_relevant_conditions) {
-    //    std::cout << std::endl << std::endl;
-    //    print_condition_values();
-    //}
 
     std::cout << std::endl << std::endl;
 }

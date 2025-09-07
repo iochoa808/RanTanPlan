@@ -72,6 +72,7 @@ void AchieversAnalysis::clear() {
     action_to_preconditions_.clear();
     condition_to_achievers_.clear();
     action_to_achieved_conditions_.clear();
+    pre_conditions_.clear();
     goal_conditions_.clear();
     
     // Invalidate cache
@@ -102,9 +103,7 @@ void AchieversAnalysis::analyze(const Problem& problem) {
 }
 
 void AchieversAnalysis::process_action_preconditions(const Action& action) {
-    if (!action.has_precondition()) {
-        return;
-    }
+    if (!action.has_precondition()) return;
     
     // Extract CNF literals from the precondition
     std::vector<Expression> literals;
@@ -116,6 +115,9 @@ void AchieversAnalysis::process_action_preconditions(const Action& action) {
         
         // Also map this action to the required precondition
         action_to_preconditions_[action].insert(literal);
+
+        // keep track of the split between goal conditions and precondition conditions
+        pre_conditions_.insert(literal);
     }
 }
 
@@ -293,6 +295,10 @@ std::unordered_set<Expression> AchieversAnalysis::get_all_conditions() const {
     
     all_conditions_cached_ = true;
     return all_conditions_cache_;
+}
+
+const std::unordered_set<Expression>& AchieversAnalysis::get_pre_conditions() const {
+    return pre_conditions_;
 }
 
 const std::unordered_set<Expression>& AchieversAnalysis::get_goal_conditions() const {

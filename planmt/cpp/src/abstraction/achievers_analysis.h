@@ -67,10 +67,9 @@ public:
     std::unordered_set<Action> get_achievers(const Expression& condition) const;
     std::unordered_set<Expression> get_achieved_conditions(const Action& action) const;
     
-    // Get all conditions considered
+    // Get conditions in various shapes/forms
     std::unordered_set<Expression> get_all_conditions() const;
-    
-    // Get goal conditions
+    const std::unordered_set<Expression>& get_pre_conditions() const;
     const std::unordered_set<Expression>& get_goal_conditions() const;
     
     // Output method
@@ -93,6 +92,7 @@ private:
     std::unordered_map<Action, std::unordered_set<Expression>> action_to_achieved_conditions_;
     
     // Set of goal conditions (extracted from goal expressions)
+    std::unordered_set<Expression> pre_conditions_;
     std::unordered_set<Expression> goal_conditions_;
     
     // Cached set of all conditions (computed once for performance)

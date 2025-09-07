@@ -60,6 +60,7 @@ private:
     
     // O(1) lookup maps for reification variables (similar to Z3VariableFactory pattern)
     // Maps from variable name to (condition, timestep) for fast reverse lookup
+    // Used when the solver reports a variable being assigned, we can easily know which condition and timestep is.
     std::unordered_map<std::string, std::pair<Expression, int>> reification_var_name_to_condition_;
     
     // Counter for generating unique reification variable IDs
@@ -67,8 +68,11 @@ private:
     
     // Efficient condition value tracking per timestep using existing trail system
     // condition_values_per_timestep_[timestep][condition] = current_value
-    std::vector<std::unordered_map<Expression, bool>> condition_values_per_timestep_;
-
+    std::vector<std::unordered_map<Expression, Z3_lbool>> condition_values_per_timestep_;
+    
+    // Stack for tracking subgoals
+    int current_goal_step_;
+    mutable std::vector<std::pair<Expression, int>> subgoal_stack_;
 
     
 public:
@@ -108,9 +112,8 @@ private:
     bool find_cycle_in_active_actions(const std::unordered_set<Graph::NodeId>& active_node_ids, 
                                       std::vector<Graph::NodeId>& cycle);
     
-    // Decision helper methods
-    std::vector<z3::expr> get_decision_candidates() const;
-    z3::expr select_next_split(const std::vector<z3::expr>& candidates) const;
+    // Support finding methods (Figure 2 from paper)
+    std::optional<std::pair<Action, int>> find_support() const;
     
     // Condition reification methods
     void create_condition_reification_variables(int timestep);
@@ -123,7 +126,7 @@ private:
     
     // Condition value query methods
     bool has_condition_value(const Expression& condition, int timestep) const;
-    bool get_condition_value(const Expression& condition, int timestep) const;
+    Z3_lbool get_condition_value(const Expression& condition, int timestep) const;
     
     // Debug/utility methods
     void print_condition_values() const;
