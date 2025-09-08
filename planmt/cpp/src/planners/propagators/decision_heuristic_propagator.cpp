@@ -362,118 +362,81 @@ void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, boo
 }
 
 std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support() const {
-    // Implementation of Figure 2 from the paper: support(Stack, v)
-    std::cout << "\n=== Starting find_support() ===" << std::endl;
-    
-    // Clear and initialize stack with goal conditions (Figure 2, line 1-2)
+    /*
+    procedure support(Stack, v)
+    while Stack is non-empty do
+        pop l@t from the Stack;
+        t' := t - 1;
+        found := 0;
+        do
+        if v(o@t') = 1 for some o in O with l in eff(o) then
+            for all l' in prec(o) do push l'@t' into the Stack;
+            found := 1;
+        else if v(l@t') = 0 then
+            o := any o in O such that l in eff(o) and v(o@t') != 0
+            return {o@t'};
+        t' := t' - 1;
+        while !(found = 1 or t' < 0);
+    end while
+    return 0;
+    */
+
+    // Clear and initialize stack with goal conditions
     subgoal_stack_.clear();
     
     const auto& goal_conditions = achievers_analysis_.get_goal_conditions();
-    // Push all unsatisfied goals at the last timestep into the stack (Figure 2, line 1)
     for (const Expression& goal_condition : goal_conditions) {
-        // Check if v(l@t) = 1 - if goal is already satisfied, don't add to stack
-        bool is_satisfied = false;
-        if (has_condition_value(goal_condition, current_goal_step_)) {
-            is_satisfied = get_condition_value(goal_condition, current_goal_step_) == Z3_L_TRUE;
-        }
-        
-        if (!is_satisfied) {
-            std::pair<Expression, int> goal_pair = {goal_condition, current_goal_step_};
-            subgoal_stack_.push_back(goal_pair);
-            std::cout << "  Added unsatisfied goal to stack: " << goal_condition.to_string() << "@" << current_goal_step_ << std::endl;
-        } else {
-            std::cout << "  Skipping already satisfied goal: " << goal_condition.to_string() << "@" << current_goal_step_ << std::endl;
+        // Only add unsatisfied goals to the stack
+        if (!has_condition_value(goal_condition, current_goal_step_) || 
+            get_condition_value(goal_condition, current_goal_step_) != Z3_L_TRUE) {
+            subgoal_stack_.push_back({goal_condition, current_goal_step_});
         }
     }
     
-    // Main loop (Figure 2, line 2)
-    std::cout << "\nStarting main loop with stack size: " << subgoal_stack_.size() << std::endl;
+    // Main algorithm loop
     while (!subgoal_stack_.empty()) {
-        // Pop l@t from stack (Figure 2, line 3)
+        // Pop l@t from the Stack
         auto [l, t] = subgoal_stack_.back();
         subgoal_stack_.pop_back();
-        std::cout << "\nProcessing subgoal: " << l.to_string() << "@" << t << std::endl;
         
-        int t_prime = t - 1; // Figure 2, line 4
-        bool found = false;   // Figure 2, line 5
-        std::cout << "  Starting backward search from timestep " << t_prime << std::endl;
+        int t_prime = t - 1;
+        bool found = false;
         
-        // Repeat loop (Figure 2, line 6)
         do {
-            std::cout << "    Checking timestep " << t_prime << std::endl;
+            if (t_prime < 0) break;
             
-            // Check if v(o@t') = 1 for some o with l in eff(o) (Figure 2, line 7-8)
+            // Check if v(o@t') = 1 for some o in O with l in eff(o)
             auto achiever_actions = achievers_analysis_.get_achievers(l);
-            std::cout << "    Found " << achiever_actions.size() << " potential achiever actions" << std::endl;
-            
             for (const Action& o : achiever_actions) {
-                // Check if this action is already assigned true at t_prime
                 Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
                 if (active_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
-                    std::cout << "      action: " << o.name() << " active at timestep " << t_prime << std::endl;
-                    for (const Expression& condition : achievers_analysis_.get_preconditions(o)){
-                        subgoal_stack_.push_back({condition, t_prime}); // we want this condition at this timestep
+                    // For all l' in prec(o) do push l'@t' into the Stack
+                    for (const Expression& precond : achievers_analysis_.get_preconditions(o)) {
+                        subgoal_stack_.push_back({precond, t_prime});
                     }
-                    // If action supports this goal, add its preconditions (Figure 2, lines 9-10)
-                    // For simplicity, assume action is not yet assigned and continue search
-                } else {
-                    std::cout << "      action: " << o.name() << " not active at timestep " << t_prime << std::endl;
+                    found = true;
+                    break;
                 }
             }
             
             if (!found) {
-                // Check if v(l@t') = 0 - condition is false/unassigned at this timestep (Figure 2, line 11)
-                // Find any action o that can achieve l and is not assigned false (Figure 2, line 12)
-                if (!achiever_actions.empty() && t_prime >= 0) {
-                    // Return the first achiever action (Figure 2, line 13)
-                    const Action& first_achiever = *achiever_actions.begin();
-                    assert(first_achiever.name().length() > 0 && "Action should have a valid name");
-                    
-                    std::cout << "    FOUND SUPPORT: " << first_achiever.name() << "@" << t_prime 
-                              << " can achieve " << l.to_string() << std::endl;
-                    
-                    // Add unsatisfied preconditions to the stack (Figure 2, lines 9-10)
-                    const auto& preconditions = achievers_analysis_.get_preconditions(first_achiever);
-                    std::cout << "    Adding preconditions of " << first_achiever.name() << " to stack:" << std::endl;
-                    
-                    for (const Expression& precond : preconditions) {
-                        // Check if precondition is already satisfied at t_prime
-                        bool is_satisfied = false;
-                        if (has_condition_value(precond, t_prime)) {
-                            is_satisfied = get_condition_value(precond, t_prime);
-                        }
-                        
-                        if (!is_satisfied) {
-                            // Check if already in stack to avoid duplicates
-                            std::pair<Expression, int> precond_pair = {precond, t_prime};
-                            if (std::find(subgoal_stack_.begin(), subgoal_stack_.end(), precond_pair) == subgoal_stack_.end()) {
-                                subgoal_stack_.push_back(precond_pair);
-                                std::cout << "      Added unsatisfied precondition: " << precond.to_string() << "@" << t_prime << std::endl;
-                            } else {
-                                std::cout << "      Precondition already in stack: " << precond.to_string() << "@" << t_prime << std::endl;
-                            }
-                        } else {
-                            std::cout << "      Skipping satisfied precondition: " << precond.to_string() << "@" << t_prime << std::endl;
+                // Check if v(l@t') = 0 (literal is false at this timestep)
+                if (has_condition_value(l, t_prime) && get_condition_value(l, t_prime) == Z3_L_FALSE) {
+                    // Return any o in O such that l in eff(o) and v(o@t') != 0
+                    for (const Action& o : achiever_actions) {
+                        Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
+                        // Check if action is not assigned false (i.e., unassigned or true)
+                        if (!active_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
+                            // Action is not active, so we can suggest it
+                            return std::make_pair(o, t_prime);
                         }
                     }
-                    
-                    std::cout << "=== Returning from find_support() ===" << std::endl;
-                    
-                    return std::make_pair(first_achiever, t_prime);
                 }
-                
-                t_prime = t_prime - 1; // Figure 2, line 14
-                std::cout << "    No support found, going back to timestep " << t_prime << std::endl;
+                t_prime = t_prime - 1;
             }
-        } while (!found && t_prime >= 0); // Figure 2, line 15
-        
-        std::cout << "  No support found for " << l.to_string() << " (reached timestep " << t_prime << ")" << std::endl;
+        } while (!found && t_prime >= 0);
     }
     
-    std::cout << "No support needed - all goals are satisfied or no achievable support found" << std::endl;
-    std::cout << "=== Returning from find_support() ===" << std::endl;
-    
-    // Return empty set (Figure 2, line 17)
     return std::nullopt;
 }
 
