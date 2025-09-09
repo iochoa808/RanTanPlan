@@ -47,6 +47,9 @@ private:
 
     // Active actions tracking per timestep (using NodeIds for efficiency)
     std::unordered_map<int, std::unordered_set<Graph::NodeId>> active_actions_per_timestep_;
+    
+    // Inactive actions tracking per timestep (actions assigned to false)
+    std::unordered_map<int, std::unordered_set<Graph::NodeId>> inactive_actions_per_timestep_;
 
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;

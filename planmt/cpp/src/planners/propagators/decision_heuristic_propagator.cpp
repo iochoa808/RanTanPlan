@@ -42,6 +42,12 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
         timestep_map.reserve(all_conditions.size());
     }
 
+    // Initialize active/inactive action tracking maps for all timesteps
+    for (int timestep = 0; timestep < Config::instance().planner.max_steps; ++timestep) {
+        active_actions_per_timestep_[timestep] = std::unordered_set<Graph::NodeId>();
+        inactive_actions_per_timestep_[timestep] = std::unordered_set<Graph::NodeId>();
+    }
+
     // Set Z3 option to persist clauses for user propagator based on config
     solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
 }
@@ -63,13 +69,14 @@ void DecisionHeuristicPropagator::pop(unsigned num_scopes) {
             while (trail_.size() > level_start) {
                 const z3::expr& var = trail_.back();
                 
-                // Check if this is an action variable and remove from active set
+                // Check if this is an action variable and remove from active/inactive sets
                 if( is_action_variable(var) ) {
                     auto [action, timestep] = *variable_factory_->get_action_from_variable(var);
                     Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
                     
-                    // Remove action from active set using NodeId
+                    // Remove action from both active and inactive sets using NodeId
                     active_actions_per_timestep_[timestep].erase(action_node_id);
+                    inactive_actions_per_timestep_[timestep].erase(action_node_id);
                 } else {
                     // For reification variables, assign it as UNDEF (no decision has been taken on it)
                     auto [condition, timestep] = *get_condition_from_reification_variable(var);
@@ -90,21 +97,25 @@ void DecisionHeuristicPropagator::fixed(z3::expr const &var, z3::expr const &val
 
     } else if(is_action_variable(var)) {
         trail_.push_back(var);
-        // From now on we only care about action variables being set to true
-        if (!value.is_true()) return;
         // Extract action and timestep from the variable
         auto [action, timestep] = *variable_factory_->get_action_from_variable(var);
         // Get NodeId for the action
         Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
         
-        // Print action and its condition status
-        print_action_condition_status(action, timestep);
-        
-        // Update active actions for this timestep using NodeId
-        active_actions_per_timestep_[timestep].insert(action_node_id);
-        
-        // Perform exists propagation logic
-        perform_exists_propagation(action, timestep, var);
+        if (value.is_true()) {
+            // Print action and its condition status
+            //print_action_condition_status(action, timestep);
+            
+            // Update active actions for this timestep using NodeId
+            active_actions_per_timestep_[timestep].insert(action_node_id);
+            
+            // Perform exists propagation logic
+            perform_exists_propagation(action, timestep, var);
+        } else {
+            // Track actions assigned to false
+            inactive_actions_per_timestep_[timestep].insert(action_node_id);
+            return;
+        }
 
     } else {
         return; // dunno what this is?
@@ -337,11 +348,10 @@ Z3_lbool DecisionHeuristicPropagator::get_condition_value(const Expression& cond
  phase	The tentative truth-value
 */
 void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
-    std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
-    
-    // Find support for unsupported goals/subgoals (Figure 3 from paper)
-    auto support_result = find_support();
-    
+    //std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
+    auto support_result = find_support(); // Find support for unsupported goals/subgoals
+    //std::cout << "\n*** DecisionHeuristicPropagator returned from find_support() ***\n" << std::endl;
+
     if (support_result.has_value()) {
         // Found an action to support a goal/subgoal
         auto [action, timestep] = *support_result;
@@ -349,15 +359,15 @@ void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, boo
         
         z3::expr action_var = variable_factory_->get_action_variable(action, timestep);
         
-        std::cout << "DECISION HEURISTIC: Suggesting action " << action.name() << "@" << timestep << " (variable: " << action_var.to_string() << ")" << std::endl;
+        //std::cout << "DECISION HEURISTIC: Suggesting action " << action.name() << "@" << timestep << " (variable: " << action_var.to_string() << ")" << std::endl;
         
         // Use Z3's next_split to suggest this action (set to true)
         next_split(action_var, 0, Z3_L_TRUE);
-        std::cout << "*** after next_split() ***\n" << std::endl;
+        //std::cout << "*** after next_split() ***\n" << std::endl;
     } else {
-        std::cout << "DECISION HEURISTIC: No support needed, using default Z3 decision" << std::endl;
+        //std::cout << "DECISION HEURISTIC: No support needed, using default Z3 decision" << std::endl;
     }
-    std::cout << "*** End of decide() ***\n" << std::endl;
+    //std::cout << "*** End of decide() ***\n" << std::endl;
     // If no support needed, let Z3 make the decision normally (no action needed)
 }
 
@@ -383,60 +393,62 @@ std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support(
 
     // Clear and initialize stack with goal conditions
     subgoal_stack_.clear();
-    
     const auto& goal_conditions = achievers_analysis_.get_goal_conditions();
     for (const Expression& goal_condition : goal_conditions) {
-        // Only add unsatisfied goals to the stack
-        if (!has_condition_value(goal_condition, current_goal_step_) || 
-            get_condition_value(goal_condition, current_goal_step_) != Z3_L_TRUE) {
-            subgoal_stack_.push_back({goal_condition, current_goal_step_});
-        }
+        subgoal_stack_.push_back({goal_condition, current_goal_step_});
     }
+    //std::cout << "Finding support for goals at step " << current_goal_step_ << " with " << subgoal_stack_.size() << " initial goals." << std::endl;
     
-    // Main algorithm loop
+    // while Stack is non-empty do
     while (!subgoal_stack_.empty()) {
         // Pop l@t from the Stack
         auto [l, t] = subgoal_stack_.back();
         subgoal_stack_.pop_back();
+        //std::cout << "Processing subgoal: " << l.to_string() << " at timestep " << t << std::endl;
         
+        // t' := t - 1;
         int t_prime = t - 1;
+        // found := 0;
         bool found = false;
         
         do {
-            if (t_prime < 0) break;
+            if (t_prime < 0) break; // might be unnecesary as we should start at least at timestep 1
             
-            // Check if v(o@t') = 1 for some o in O with l in eff(o)
+            // if v(o@t') = 1 for some o in O with l in eff(o) then
+            // (that is, if the value of some action achieving l at t' is true)
             auto achiever_actions = achievers_analysis_.get_achievers(l);
             for (const Action& o : achiever_actions) {
                 Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
                 if (active_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
                     // For all l' in prec(o) do push l'@t' into the Stack
+                    //std::cout << "Found active achiever: action " << o.name() << " is active at T" << t_prime << ", adding its preconditions to the stack." << std::endl;
                     for (const Expression& precond : achievers_analysis_.get_preconditions(o)) {
                         subgoal_stack_.push_back({precond, t_prime});
+                        //std::cout << "  Added precondition as subgoal: " << precond.to_string() << " at timestep " << t_prime << std::endl;
                     }
                     found = true;
-                    break;
+                    break; // early exit from the loop
                 }
             }
             
-            if (!found) {
-                // Check if v(l@t') = 0 (literal is false at this timestep)
-                if (has_condition_value(l, t_prime) && get_condition_value(l, t_prime) == Z3_L_FALSE) {
-                    // Return any o in O such that l in eff(o) and v(o@t') != 0
-                    for (const Action& o : achiever_actions) {
-                        Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
-                        // Check if action is not assigned false (i.e., unassigned or true)
-                        if (!active_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
-                            // Action is not active, so we can suggest it
-                            return std::make_pair(o, t_prime);
-                        }
+            // Check if v(l@t') = 0 (literal is false at this timestep)
+            if (has_condition_value(l, t_prime) && get_condition_value(l, t_prime) == Z3_L_FALSE) {
+                // Return any o in O such that l in eff(o) and v(o@t') != 0
+                for (const Action& o : achiever_actions) {
+                    Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
+                    // Check if action is truly unassigned (neither active nor inactive)
+                    if (!active_actions_per_timestep_.at(t_prime).contains(action_node_id) &&
+                        !inactive_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
+                        // Action is truly unassigned, so we can suggest it
+                        //std::cout << "Found unassigned achiever action " << o.name() << " at T" << t_prime << " for condition " << l.to_string() << std::endl;
+                        return std::make_pair(o, t_prime);
                     }
                 }
-                t_prime = t_prime - 1;
             }
+            t_prime = t_prime - 1;
         } while (!found && t_prime >= 0);
     }
-    
+    //std::cout << "No support action found for any subgoal." << std::endl;
     return std::nullopt;
 }
 
