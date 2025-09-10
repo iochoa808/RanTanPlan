@@ -372,25 +372,6 @@ void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, boo
 }
 
 std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support() const {
-    /*
-    procedure support(Stack, v)
-    while Stack is non-empty do
-        pop l@t from the Stack;
-        t' := t - 1;
-        found := 0;
-        do
-        if v(o@t') = 1 for some o in O with l in eff(o) then
-            for all l' in prec(o) do push l'@t' into the Stack;
-            found := 1;
-        else if v(l@t') = 0 then
-            o := any o in O such that l in eff(o) and v(o@t') != 0
-            return {o@t'};
-        t' := t' - 1;
-        while !(found = 1 or t' < 0);
-    end while
-    return 0;
-    */
-
     // Clear and initialize stack with goal conditions
     subgoal_stack_.clear();
     const auto& goal_conditions = achievers_analysis_.get_goal_conditions();
@@ -436,9 +417,13 @@ std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support(
                 // Return any o in O such that l in eff(o) and v(o@t') != 0
                 for (const Action& o : achiever_actions) {
                     Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
-                    // Check if action is truly unassigned (neither active nor inactive)
-                    if (!active_actions_per_timestep_.at(t_prime).contains(action_node_id) &&
-                        !inactive_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
+                    // Check if action is unassigned or true
+                    if (
+                        (!active_actions_per_timestep_.at(t_prime).contains(action_node_id) &&
+                        !inactive_actions_per_timestep_.at(t_prime).contains(action_node_id))
+                        ||
+                        (active_actions_per_timestep_.at(t_prime).contains(action_node_id)) 
+                     ) {
                         // Action is truly unassigned, so we can suggest it
                         //std::cout << "Found unassigned achiever action " << o.name() << " at T" << t_prime << " for condition " << l.to_string() << std::endl;
                         return std::make_pair(o, t_prime);

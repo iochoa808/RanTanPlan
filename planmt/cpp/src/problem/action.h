@@ -80,7 +80,9 @@ namespace std {
     template<>
     struct hash<planmt::Action> {
         std::size_t operator()(const planmt::Action& action) const {
-            return std::hash<std::string>()(action.to_string());
+            std::size_t h1 = std::hash<std::string>()(action.name());
+            std::size_t h2 = action.parameter_count();
+            return h1 ^ (h2 << 1);
         }
     };
 }
