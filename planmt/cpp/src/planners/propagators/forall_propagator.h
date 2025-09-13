@@ -31,7 +31,7 @@ private:
     const InterferenceAnalysis* interference_analyzer_;  // Cached reference to interference analyzer
 
     // Track registered variables by timestep
-    std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
+    std::unordered_map<int, std::vector<std::shared_ptr<z3::expr>>> registered_action_vars_;
 
     // Precomputed complete interference lookup: node_id -> set of node_ids that need to be negated
     // to be able to do the check in constant time

@@ -60,15 +60,15 @@ public:
     void analyze(const Problem& problem);
     
     // Access methods for preconditions
-    std::unordered_set<Action> get_actions_requiring_precondition(const Expression& precondition) const;
-    std::unordered_set<Expression> get_preconditions(const Action& action) const;
-    
-    // Access methods for achievers  
-    std::unordered_set<Action> get_achievers(const Expression& condition) const;
-    std::unordered_set<Expression> get_achieved_conditions(const Action& action) const;
-    
+    const std::unordered_set<Action>& get_actions_requiring_precondition(const Expression& precondition) const;
+    const std::unordered_set<Expression>& get_preconditions(const Action& action) const;
+
+    // Access methods for achievers
+    const std::unordered_set<Action>& get_achievers(const Expression& condition) const;
+    const std::unordered_set<Expression>& get_achieved_conditions(const Action& action) const;
+
     // Get conditions in various shapes/forms
-    std::unordered_set<Expression> get_all_conditions() const;
+    const std::unordered_set<Expression>& get_all_conditions() const;
     const std::unordered_set<Expression>& get_pre_conditions() const;
     const std::unordered_set<Expression>& get_goal_conditions() const;
     

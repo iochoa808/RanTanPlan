@@ -99,8 +99,8 @@ void ForallPropagator::register_timestep_variables(int timestep) {
             registered_action_vars_[timestep - 1] = std::move(prev_action_vars);
             // Register each action variable with Z3's user propagator framework
             // so that we get notified when any of these variables are assigned
-            for (const auto& var : registered_action_vars_[timestep - 1]) {
-                add(var);
+            for (const auto& var_ptr : registered_action_vars_[timestep - 1]) {
+                add(*var_ptr);
             }
         }
     }

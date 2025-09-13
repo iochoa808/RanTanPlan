@@ -55,12 +55,12 @@ public:
     z3::expr create_symbol_variable(const std::string& name, const Type* type);
     
     // High-level variable management with caching
-    z3::expr get_fluent_variable(const Fluent& fluent, int timestep);
-    z3::expr get_action_variable(const Action& action, int timestep);
-    
+    const z3::expr& get_fluent_variable(const Fluent& fluent, int timestep);
+    const z3::expr& get_action_variable(const Action& action, int timestep);
+
     // Const versions for read-only access (will lookup existing variables)
-    z3::expr get_fluent_variable(const Fluent& fluent, int timestep) const;
-    z3::expr get_action_variable(const Action& action, int timestep) const;
+    const z3::expr& get_fluent_variable(const Fluent& fluent, int timestep) const;
+    const z3::expr& get_action_variable(const Action& action, int timestep) const;
     
     // Variable naming methods
     std::string get_fluent_var_name(const Fluent& fluent) const;
@@ -69,16 +69,16 @@ public:
     std::string get_action_var_name(const Action& action, int timestep) const;
     
     // Reverse lookup methods
-    std::optional<std::pair<Fluent, int>> get_fluent_from_variable(const z3::expr& var) const;
-    std::optional<std::pair<Action, int>> get_action_from_variable(const z3::expr& var) const;
+    std::optional<std::pair<const Fluent&, int>> get_fluent_from_variable(const z3::expr& var) const;
+    std::optional<std::pair<const Action&, int>> get_action_from_variable(const z3::expr& var) const;
     bool is_fluent_variable(const z3::expr& var) const;
     bool is_action_variable(const z3::expr& var) const;
     
     // Variable enumeration methods for propagators
-    std::vector<z3::expr> get_all_fluent_variables(int timestep) const;
-    std::vector<z3::expr> get_all_action_variables(int timestep) const;
-    std::vector<std::pair<z3::expr, int>> get_all_fluent_variables() const;
-    std::vector<std::pair<z3::expr, int>> get_all_action_variables() const;
+    std::vector<std::shared_ptr<z3::expr>> get_all_fluent_variables(int timestep) const;
+    std::vector<std::shared_ptr<z3::expr>> get_all_action_variables(int timestep) const;
+    std::vector<std::pair<std::shared_ptr<z3::expr>, int>> get_all_fluent_variables() const;
+    std::vector<std::pair<std::shared_ptr<z3::expr>, int>> get_all_action_variables() const;
     
     // Timestep management queries
     int get_max_timestep() const;

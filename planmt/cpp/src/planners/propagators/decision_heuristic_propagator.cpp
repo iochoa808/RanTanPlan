@@ -34,7 +34,7 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
     reification_vars_per_timestep_.resize(Config::instance().planner.max_steps);
     condition_values_per_timestep_.resize(Config::instance().planner.max_steps);
 
-    auto all_conditions = achievers_analysis_.get_all_conditions();
+    const auto& all_conditions = achievers_analysis_.get_all_conditions();
     for (auto& timestep_map : reification_vars_per_timestep_) {
         timestep_map.reserve(all_conditions.size());
     }
@@ -150,8 +150,8 @@ void DecisionHeuristicPropagator::register_timestep_variables(int timestep) {
         auto prev_action_vars = var_factory.get_all_action_variables(timestep - 1);
         if (!prev_action_vars.empty()) {
             registered_action_vars_[timestep - 1] = std::move(prev_action_vars);
-            for (const auto& var : registered_action_vars_[timestep - 1]) {
-                add(var);
+            for (const auto& var_ptr : registered_action_vars_[timestep - 1]) {
+                add(*var_ptr);
             }
         }
     }
@@ -256,8 +256,8 @@ bool DecisionHeuristicPropagator::find_cycle_in_active_actions(const std::unorde
 
 void DecisionHeuristicPropagator::create_condition_reification_variables(int timestep) {
     // Create reification variables and constraints for each condition at this timestep
-    auto pre_conditions = achievers_analysis_.get_pre_conditions();
-    auto goal_conditions = achievers_analysis_.get_goal_conditions();
+    const auto& pre_conditions = achievers_analysis_.get_pre_conditions();
+    const auto& goal_conditions = achievers_analysis_.get_goal_conditions();
 
     // Lambda to create reification variables for a set of conditions
     auto create_reification_vars = [this](const std::unordered_set<Expression>& conditions, int target_timestep, const std::string& type_label) {
@@ -397,7 +397,7 @@ std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support(
             
             // if v(o@t') = 1 for some o in O with l in eff(o) then
             // (that is, if the value of some action achieving l at t' is true)
-            auto achiever_actions = achievers_analysis_.get_achievers(l);
+            const auto& achiever_actions = achievers_analysis_.get_achievers(l);
             for (const Action& o : achiever_actions) {
                 int action_node_id = o.id();
                 if (active_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
@@ -463,7 +463,7 @@ void DecisionHeuristicPropagator::print_condition_values() const {
 
 void DecisionHeuristicPropagator::print_action_condition_status(const Action& action, int timestep) const {
     // Now that achievers analysis uses value-based maps, we can call get_preconditions directly
-    auto preconditions = achievers_analysis_.get_preconditions(action);
+    const auto& preconditions = achievers_analysis_.get_preconditions(action);
     bool has_relevant_conditions = false;
     std::cout << "Fixed action " << action.name() << " at T" << timestep << " - Conditions("<< preconditions.size() <<"): ";
 

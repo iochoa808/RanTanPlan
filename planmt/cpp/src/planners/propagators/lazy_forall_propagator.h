@@ -29,7 +29,7 @@ private:
     const InterferenceAnalysis* interference_analyzer_;  // Cached reference to interference analyzer
 
     // Track registered variables by timestep
-    std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
+    std::unordered_map<int, std::vector<std::shared_ptr<z3::expr>>> registered_action_vars_;
 
     // Trail-based state management for push/pop behavior (using ints for efficiency)
     std::vector<std::pair<int, int>> trail_;  // (action_node_id, timestep)

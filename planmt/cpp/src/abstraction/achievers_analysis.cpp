@@ -159,12 +159,13 @@ void AchieversAnalysis::extract_cnf_literals(const Expression& expr, std::vector
     }
 }
 
-std::unordered_set<Action> AchieversAnalysis::get_actions_requiring_precondition(const Expression& precondition) const {
+const std::unordered_set<Action>& AchieversAnalysis::get_actions_requiring_precondition(const Expression& precondition) const {
     auto it = precondition_to_actions_.find(precondition);
     if (it != precondition_to_actions_.end()) {
         return it->second;
     }
-    return {};
+    static const std::unordered_set<Action> empty_set;
+    return empty_set;
 }
 
 
@@ -250,49 +251,52 @@ void AchieversAnalysis::analyze_semantic_achievers() {
     stats.set("achievers_analysis.total_actions_with_achievers", action_to_achieved_conditions_.size());
 }
 
-std::unordered_set<Expression> AchieversAnalysis::get_achieved_conditions(const Action& action) const {
+const std::unordered_set<Expression>& AchieversAnalysis::get_achieved_conditions(const Action& action) const {
     auto it = action_to_achieved_conditions_.find(action);
     if (it != action_to_achieved_conditions_.end()) {
         return it->second;
     }
-    return {};
+    static const std::unordered_set<Expression> empty_set;
+    return empty_set;
 }
 
-std::unordered_set<Action> AchieversAnalysis::get_achievers(const Expression& condition) const {
+const std::unordered_set<Action>& AchieversAnalysis::get_achievers(const Expression& condition) const {
     auto it = condition_to_achievers_.find(condition);
     if (it != condition_to_achievers_.end()) {
         return it->second;
     }
-    return {};
+    static const std::unordered_set<Action> empty_set;
+    return empty_set;
 }
 
-std::unordered_set<Expression> AchieversAnalysis::get_preconditions(const Action& action) const {
+const std::unordered_set<Expression>& AchieversAnalysis::get_preconditions(const Action& action) const {
     auto it = action_to_preconditions_.find(action);
     if (it != action_to_preconditions_.end()) {
         return it->second;
     }
-    return {};
+    static const std::unordered_set<Expression> empty_set;
+    return empty_set;
 }
 
-std::unordered_set<Expression> AchieversAnalysis::get_all_conditions() const {
+const std::unordered_set<Expression>& AchieversAnalysis::get_all_conditions() const {
     // Return cached result if available
     if (all_conditions_cached_) {
         return all_conditions_cache_;
     }
-    
+
     // Build the cache
     all_conditions_cache_.clear();
-    
+
     // Add conditions in all actions
     for (const auto& [precondition, actions] : precondition_to_actions_) {
         all_conditions_cache_.insert(precondition);
     }
-    
+
     // Add all goal conditions
     for (const auto& goal_condition : goal_conditions_) {
         all_conditions_cache_.insert(goal_condition);
     }
-    
+
     all_conditions_cached_ = true;
     return all_conditions_cache_;
 }

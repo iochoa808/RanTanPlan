@@ -130,8 +130,8 @@ void LazyForallPropagator::register_timestep_variables(int timestep) {
         auto prev_action_vars = var_factory.get_all_action_variables(timestep - 1);
         if (!prev_action_vars.empty()) {
             registered_action_vars_[timestep - 1] = std::move(prev_action_vars);
-            for (const auto& var : registered_action_vars_[timestep - 1]) {
-                add(var);
+            for (const auto& var_ptr : registered_action_vars_[timestep - 1]) {
+                add(*var_ptr);
             }
         }
     }

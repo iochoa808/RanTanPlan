@@ -52,7 +52,7 @@ private:
     std::unordered_map<int, std::unordered_set<int>> inactive_actions_per_timestep_;
 
     // Track registered variables by timestep
-    std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
+    std::unordered_map<int, std::vector<std::shared_ptr<z3::expr>>> registered_action_vars_;
 
     // Counter for detected cycles
     int cycle_count_;
