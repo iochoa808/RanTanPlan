@@ -57,19 +57,6 @@ public:
      */
     bool has_interference(const Action& a1, const Action& a2) const;
     
-    /**
-     * @brief Get the node ID for an action in the interference graph
-     * @param action The action to get the node ID for
-     * @return Node ID in the graph, or -1 if action not found
-     */
-    Graph::NodeId get_action_node_id(const Action& action) const;
-    
-    /**
-     * @brief Get the action corresponding to a node ID
-     * @param node_id The node ID to get the action for
-     * @return Reference to the action, or nullptr if node ID invalid
-     */
-    const Action* get_action_from_node_id(Graph::NodeId node_id) const;
     
     /**
      * @brief Topologically sort a set of actions based on the interference graph
@@ -111,9 +98,6 @@ private:
     const Problem* problem_;
     Graph interference_graph_;
     
-    // Bidirectional mapping between actions and graph nodes
-    std::unordered_map<Action, Graph::NodeId> action_to_node_id_;
-    std::vector<const Action*> node_id_to_action_;
     
     // Analysis results for each action
     std::unordered_map<Action, ActionAnalysis> action_analysis_;

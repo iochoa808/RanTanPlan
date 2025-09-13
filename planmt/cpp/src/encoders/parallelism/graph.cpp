@@ -9,13 +9,13 @@ Graph::Graph(size_t num_nodes) {
     adjacency_list_.resize(num_nodes);
 }
 
-Graph::NodeId Graph::add_node() {
-    NodeId new_node = static_cast<NodeId>(adjacency_list_.size());
+int Graph::add_node() {
+    int new_node = static_cast<int>(adjacency_list_.size());
     adjacency_list_.emplace_back();
     return new_node;
 }
 
-void Graph::add_edge(NodeId source, NodeId target) {
+void Graph::add_edge(int source, int target) {
     if (source < num_nodes() && target < num_nodes()) {
         // Check if edge already exists to avoid duplicates
         auto& neighbours = adjacency_list_[source];
@@ -25,7 +25,7 @@ void Graph::add_edge(NodeId source, NodeId target) {
     }
 }
 
-bool Graph::has_edge(NodeId source, NodeId target) const {
+bool Graph::has_edge(int source, int target) const {
     if (source >= num_nodes() || target >= num_nodes()) {
         return false;
     }
@@ -34,8 +34,8 @@ bool Graph::has_edge(NodeId source, NodeId target) const {
     return std::find(neighbours.begin(), neighbours.end(), target) != neighbours.end();
 }
 
-const std::vector<Graph::NodeId>& Graph::get_neighbours(NodeId node) const {
-    static const std::vector<NodeId> empty_list;
+const std::vector<int>& Graph::get_neighbours(int node) const {
+    static const std::vector<int> empty_list;
     if (node >= num_nodes()) {
         return empty_list;
     }
@@ -51,12 +51,12 @@ size_t Graph::num_edges() const {
 }
 
 // Strongly Connected Components (SCC) analysis
-std::vector<std::vector<Graph::NodeId>> Graph::compute_strongly_connected_components() const {
+std::vector<std::vector<int>> Graph::compute_strongly_connected_components() const {
     int n = num_nodes();
     std::vector<int> ids(n, -1), low(n, -1);
     std::vector<bool> on_stack(n, false);
     std::stack<int> s;
-    std::vector<std::vector<NodeId>> sccs;
+    std::vector<std::vector<int>> sccs;
     int at = 0;
 
     std::function<void(int)> dfs = 
@@ -65,7 +65,7 @@ std::vector<std::vector<Graph::NodeId>> Graph::compute_strongly_connected_compon
         on_stack[u] = true;
         ids[u] = low[u] = at++;
 
-        for (NodeId v : get_neighbours(u)) {
+        for (int v : get_neighbours(u)) {
             if (ids[v] == -1) {
                 dfs(v);
             }
@@ -75,7 +75,7 @@ std::vector<std::vector<Graph::NodeId>> Graph::compute_strongly_connected_compon
         }
 
         if (low[u] == ids[u]) {
-            std::vector<NodeId> scc;
+            std::vector<int> scc;
             while (true) {
                 int node = s.top();
                 s.pop();
@@ -101,7 +101,7 @@ std::vector<int> Graph::get_scc_mapping() const {
         auto sccs = compute_strongly_connected_components();
         scc_mapping_.assign(num_nodes(), -1);
         for (int scc_id = 0; scc_id < sccs.size(); ++scc_id) {
-            for (NodeId node : sccs[scc_id]) {
+            for (int node : sccs[scc_id]) {
                 scc_mapping_[node] = scc_id;
             }
         }
@@ -111,12 +111,12 @@ std::vector<int> Graph::get_scc_mapping() const {
 }
 
 // Topological sorting
-std::vector<Graph::NodeId> Graph::topological_sort(const std::vector<NodeId>& nodes) const {
-    std::vector<NodeId> sorted_nodes;
+std::vector<int> Graph::topological_sort(const std::vector<int>& nodes) const {
+    std::vector<int> sorted_nodes;
     std::vector<bool> visited(num_nodes(), false);
-    std::function<void(NodeId)> dfs = [&](NodeId u) {
+    std::function<void(int)> dfs = [&](int u) {
         visited[u] = true;
-        for (NodeId v : get_neighbours(u)) {
+        for (int v : get_neighbours(u)) {
             if (!visited[v]) {
                 dfs(v);
             }
@@ -124,7 +124,7 @@ std::vector<Graph::NodeId> Graph::topological_sort(const std::vector<NodeId>& no
         sorted_nodes.push_back(u);
     };
 
-    for (NodeId node : nodes) {
+    for (int node : nodes) {
         if (!visited[node]) {
             dfs(node);
         }
@@ -141,12 +141,12 @@ std::vector<Graph::NodeId> Graph::topological_sort(const std::vector<NodeId>& no
 
     sorted_nodes.clear();
     visited.assign(num_nodes(), false);
-    std::function<void(NodeId)> post_order_dfs = [&](NodeId u) {
+    std::function<void(int)> post_order_dfs = [&](int u) {
         visited[u] = true;
-        for (NodeId v : get_neighbours(u)) {
+        for (int v : get_neighbours(u)) {
             // We only consider nodes within the provided subset for traversal
             bool is_in_nodes_subset = false;
-            for(NodeId n : nodes) {
+            for(int n : nodes) {
                 if (n == v) {
                     is_in_nodes_subset = true;
                     break;
@@ -159,7 +159,7 @@ std::vector<Graph::NodeId> Graph::topological_sort(const std::vector<NodeId>& no
         sorted_nodes.push_back(u);
     };
 
-    for (NodeId node : nodes) {
+    for (int node : nodes) {
         if (!visited[node]) {
             post_order_dfs(node);
         }

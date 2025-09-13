@@ -2,23 +2,6 @@
 
 namespace planmt {
 
-void InterferenceAnalysis::setup_action_node_mapping() {
-    if (!problem_) {
-        return;
-    }
-    
-    // Clear any existing mappings
-    action_to_node_id_.clear();
-    node_id_to_action_.clear();
-    
-    // Create bidirectional mapping between actions and node IDs
-    Graph::NodeId node_id = 0;
-    for (const Action& action : problem_->actions()) {
-        action_to_node_id_[action] = node_id;
-        node_id_to_action_.push_back(&action);
-        ++node_id;
-    }
-}
 
 void InterferenceAnalysis::analyze_all_actions() {
     if (!problem_) {

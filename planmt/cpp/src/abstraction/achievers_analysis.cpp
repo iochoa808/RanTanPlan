@@ -187,7 +187,7 @@ void AchieversAnalysis::analyze_semantic_achievers() {
     
     stats.set("achievers_analysis.conditions_to_analyze", all_conditions.size());
     std::cout << "    Analyzing " << all_conditions.size() << " conditions across " 
-              << problem_->actions().size() << " actions..." << std::endl;
+              << problem_->action_count() << " actions..." << std::endl;
     
     // For each condition, check which actions can achieve it semantically
     size_t condition_count = 0;

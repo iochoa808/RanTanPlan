@@ -21,11 +21,10 @@ void EagerInterferenceAnalysis::initialize(const Problem& problem) {
     interference_graph_ = Graph();
     
     // Setup common functionality using base class methods
-    setup_action_node_mapping();
     analyze_all_actions();
     
-    // Create nodes in the interference graph to match our node mapping
-    for (size_t i = 0; i < node_id_to_action_.size(); ++i) {
+    // Create nodes in the interference graph to match action IDs
+    for (size_t i = 0; i < problem.actions().size(); ++i) {
         interference_graph_.add_node();
     }
 
@@ -72,8 +71,8 @@ void EagerInterferenceAnalysis::analyze_action_conflicts() {
                 
                 if (actions_interfere(action1, action2)) {
                     // Cache directional interference: action1 interferes with action2
-                    Graph::NodeId node1 = action_to_node_id_[action1];
-                    Graph::NodeId node2 = action_to_node_id_[action2];
+                    int node1 = action1.id();
+                    int node2 = action2.id();
                     interference_graph_.add_edge(node1, node2);
                 }
             }
@@ -83,42 +82,24 @@ void EagerInterferenceAnalysis::analyze_action_conflicts() {
 
 
 bool EagerInterferenceAnalysis::has_interference(const Action& a1, const Action& a2) const {
-    // Retrieve graph node IDs for both actions
-    auto it1 = action_to_node_id_.find(a1);
-    auto it2 = action_to_node_id_.find(a2);
-    if (it1 == action_to_node_id_.end() || it2 == action_to_node_id_.end()) {
-        return false;
-    }
-    
     // DIRECTIONAL CHECK: Does a1 interfere with a2? (a1 -> a2)
     // This is NOT symmetric: has_interference(A,B) != has_interference(B,A) in general
-    return interference_graph_.has_edge(it1->second, it2->second);
+    return interference_graph_.has_edge(a1.id(), a2.id());
 }
 
-bool EagerInterferenceAnalysis::has_interference(Graph::NodeId node_id1, Graph::NodeId node_id2) const {
+bool EagerInterferenceAnalysis::has_interference(int node_id1, int node_id2) const {
     // DIRECTIONAL CHECK: Does node_id1 interfere with node_id2? (node_id1 -> node_id2)
     // This is NOT symmetric: has_interference(A,B) != has_interference(B,A) in general
     // This optimized version works directly with node IDs, avoiding Action object lookups
     return interference_graph_.has_edge(node_id1, node_id2);
 }
 
-Graph::NodeId EagerInterferenceAnalysis::get_action_node_id(const Action& action) const {
-    auto it = action_to_node_id_.find(action);
-    return (it != action_to_node_id_.end()) ? it->second : -1;
-}
-
-const Action* EagerInterferenceAnalysis::get_action_from_node_id(Graph::NodeId node_id) const {
-    if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
-        return node_id_to_action_[node_id];
-    }
-    return nullptr;
-}
 
 const Graph& EagerInterferenceAnalysis::get_interference_graph() const {
     return interference_graph_;
 }
 
-const std::vector<Graph::NodeId>& EagerInterferenceAnalysis::get_neighbours(Graph::NodeId node_id) const {
+const std::vector<int>& EagerInterferenceAnalysis::get_neighbours(int node_id) const {
     return interference_graph_.get_neighbours(node_id);
 }
 
@@ -129,10 +110,10 @@ std::vector<const Action*> EagerInterferenceAnalysis::topological_sort_actions(c
         result = actions; // No sorting needed
     } else {
         // Convert actions to node IDs
-        std::vector<Graph::NodeId> node_ids;
+        std::vector<int> node_ids;
         
         for (const Action* action : actions) {
-            Graph::NodeId node_id = get_action_node_id(*action);
+            int node_id = action->id();
             if (node_id >= 0) { // Valid node ID
                 node_ids.push_back(node_id);
             }
@@ -142,12 +123,12 @@ std::vector<const Action*> EagerInterferenceAnalysis::topological_sort_actions(c
             result = actions; // No valid node IDs found
         } else {
             // Use the graph's topological sort
-            std::vector<Graph::NodeId> sorted_node_ids = interference_graph_.topological_sort(node_ids);
+            std::vector<int> sorted_node_ids = interference_graph_.topological_sort(node_ids);
             
-            // Convert back to actions using the existing node_id_to_action_ vector
-            for (Graph::NodeId node_id : sorted_node_ids) {
-                if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
-                    result.push_back(node_id_to_action_[node_id]);
+            // Convert back to actions using direct problem access
+            for (int node_id : sorted_node_ids) {
+                if (node_id >= 0 && static_cast<size_t>(node_id) < problem_->action_count()) {
+                    result.push_back(&problem_->action(node_id));
                 }
             }
         }
@@ -173,19 +154,17 @@ void EagerInterferenceAnalysis::output_interference_graph_dot(const std::string&
     file << std::endl;
     
     // Write nodes (actions)
-    for (size_t i = 0; i < node_id_to_action_.size(); ++i) {
-        const Action* action = node_id_to_action_[i];
-        if (action) {
-            file << "    " << i << " [label=\"" << action->name() << "\"];" << std::endl;
-        }
+    for (size_t i = 0; i < problem_->action_count(); ++i) {
+        const Action& action = problem_->action(i);
+        file << "    " << i << " [label=\"" << action.name() << "\"];" << std::endl;
     }
     
     file << std::endl;
     
     // Write edges (interferences)
-    for (Graph::NodeId node_id = 0; node_id < static_cast<Graph::NodeId>(node_id_to_action_.size()); ++node_id) {
+    for (int node_id = 0; node_id < static_cast<int>(problem_->action_count()); ++node_id) {
         const auto& neighbors = interference_graph_.get_neighbours(node_id);
-        for (Graph::NodeId neighbor : neighbors) {
+        for (int neighbor : neighbors) {
             file << "    " << node_id << " -> " << neighbor << ";" << std::endl;
         }
     }

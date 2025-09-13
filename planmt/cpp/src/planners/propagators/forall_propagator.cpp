@@ -40,7 +40,7 @@ void ForallPropagator::fixed(z3::expr const &action_variable, z3::expr const &va
 
 void ForallPropagator::perform_forall_propagation(const Action& action, int timestep, const z3::expr& action_var) {
     // Get node ID for the action
-    Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
+    int action_node_id = action.id();
     assert(action_node_id >= 0);
     
     // Get all node IDs that need to be negated when this action is true
@@ -48,12 +48,12 @@ void ForallPropagator::perform_forall_propagation(const Action& action, int time
     if (it == actions_interfering_with_.end()) { 
         return; // No actions interfere with this one
     }
-    const std::set<Graph::NodeId>& interfering_node_ids = it->second;
+    const std::set<int>& interfering_node_ids = it->second;
 
     // Collect all negations to propagate in one batch
     z3::expr_vector negations_to_propagate(ctx());
-    for (Graph::NodeId interfering_node_id : interfering_node_ids) {
-        const Action* action_to_negate = interference_analyzer_->get_action_from_node_id(interfering_node_id);
+    for (int interfering_node_id : interfering_node_ids) {
+        const Action* action_to_negate = &problem_->action(interfering_node_id);
         z3::expr interfering_var = variable_factory_->get_action_variable(*action_to_negate, timestep);
         negations_to_propagate.push_back(!interfering_var);
     }
@@ -123,13 +123,13 @@ void ForallPropagator::build_reverse_interference_lookup() {
     // This includes both incoming edges (actions that interfere with this action) 
     // and outgoing edges (actions that this action interferes with)
     for (const Action& action : problem_->actions()) {
-        Graph::NodeId node_id = interference_analyzer_->get_action_node_id(action);
+        int node_id = action.id();
         
         // Get all actions that 'action' interferes with (outgoing edges)
-        const std::vector<Graph::NodeId>& interfered_with = 
+        const std::vector<int>& interfered_with = 
             interference_analyzer_->get_interference_graph().get_neighbours(node_id);
         
-        for (Graph::NodeId target_node : interfered_with) {
+        for (int target_node : interfered_with) {
             // Add outgoing edges: when 'action' is true, all actions it interferes with must be false
             actions_interfering_with_[node_id].insert(target_node);
             // As the graph has only directed edges, we have to build the reverse lookup: when the action

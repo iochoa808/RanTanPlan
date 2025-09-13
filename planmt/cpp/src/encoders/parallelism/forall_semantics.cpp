@@ -26,15 +26,15 @@ std::shared_ptr<z3::expr> ForallSemantics::encode_parallelism(int timestep) {
     // Iterate through all nodes (actions) in the interference graph
     for (size_t node_id = 0; node_id < interference_graph.num_nodes(); ++node_id) {
         // Get the action corresponding to this node
-        const Action* action1 = interference_analyzer_->get_action_from_node_id(node_id);
+        const Action* action1 = &problem_->action(node_id);
         if (!action1) continue;
         
         // Get all neighbors (actions that this action interferes with)
-        const std::vector<Graph::NodeId>& neighbors = interference_graph.get_neighbours(node_id);
+        const std::vector<int>& neighbors = interference_graph.get_neighbours(node_id);
         
-        for (Graph::NodeId neighbor_id : neighbors) {
+        for (int neighbor_id : neighbors) {
             // Get the second action
-            const Action* action2 = interference_analyzer_->get_action_from_node_id(neighbor_id);
+            const Action* action2 = &problem_->action(neighbor_id);
             if (!action2) continue;
             
             // Create Z3 variables for both actions at the given timestep

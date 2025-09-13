@@ -44,8 +44,8 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
 
     // Initialize active/inactive action tracking maps for all timesteps
     for (int timestep = 0; timestep < Config::instance().planner.max_steps; ++timestep) {
-        active_actions_per_timestep_[timestep] = std::unordered_set<Graph::NodeId>();
-        inactive_actions_per_timestep_[timestep] = std::unordered_set<Graph::NodeId>();
+        active_actions_per_timestep_[timestep] = std::unordered_set<int>();
+        inactive_actions_per_timestep_[timestep] = std::unordered_set<int>();
     }
 
     // Set Z3 option to persist clauses for user propagator based on config
@@ -72,9 +72,9 @@ void DecisionHeuristicPropagator::pop(unsigned num_scopes) {
                 // Check if this is an action variable and remove from active/inactive sets
                 if( is_action_variable(var) ) {
                     auto [action, timestep] = *variable_factory_->get_action_from_variable(var);
-                    Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
+                    int action_node_id = action.id();
                     
-                    // Remove action from both active and inactive sets using NodeId
+                    // Remove action from both active and inactive sets using int
                     active_actions_per_timestep_[timestep].erase(action_node_id);
                     inactive_actions_per_timestep_[timestep].erase(action_node_id);
                 } else {
@@ -99,14 +99,14 @@ void DecisionHeuristicPropagator::fixed(z3::expr const &var, z3::expr const &val
         trail_.push_back(var);
         // Extract action and timestep from the variable
         auto [action, timestep] = *variable_factory_->get_action_from_variable(var);
-        // Get NodeId for the action
-        Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
+        // Get int for the action
+        int action_node_id = action.id();
         
         if (value.is_true()) {
             // Print action and its condition status
             //print_action_condition_status(action, timestep);
             
-            // Update active actions for this timestep using NodeId
+            // Update active actions for this timestep using int
             active_actions_per_timestep_[timestep].insert(action_node_id);
             
             // Perform exists propagation logic
@@ -182,19 +182,19 @@ void DecisionHeuristicPropagator::perform_exists_propagation(const Action& actio
      */
     
     // Get currently active action node IDs at this timestep (including the current action)
-    const std::unordered_set<Graph::NodeId>& active_node_ids = active_actions_per_timestep_[timestep];
+    const std::unordered_set<int>& active_node_ids = active_actions_per_timestep_[timestep];
     
     // Check if there's a cycle among the active actions
-    std::vector<Graph::NodeId> cycle;
+    std::vector<int> cycle;
     if (find_cycle_in_active_actions(active_node_ids, cycle)) {
         // Increment cycle counter
         cycle_count_++;
         
         // Report conflict with all actions in the cycle
         z3::expr_vector conflict_actions(action_var.ctx());
-        for (Graph::NodeId cycle_node_id : cycle) {
-            // Convert NodeId back to Action to get the variable
-            const Action* cycle_action = interference_analyzer_->get_action_from_node_id(cycle_node_id);
+        for (int cycle_node_id : cycle) {
+            // Convert int back to Action to get the variable
+            const Action* cycle_action = &problem_->action(cycle_node_id);
             z3::expr cycle_var = variable_factory_->get_action_variable(*cycle_action, timestep);
             conflict_actions.push_back(cycle_var);
         }
@@ -202,22 +202,22 @@ void DecisionHeuristicPropagator::perform_exists_propagation(const Action& actio
     }
 }
 
-bool DecisionHeuristicPropagator::find_cycle_in_active_actions(const std::unordered_set<Graph::NodeId>& active_node_ids, 
-                                         std::vector<Graph::NodeId>& cycle) {
+bool DecisionHeuristicPropagator::find_cycle_in_active_actions(const std::unordered_set<int>& active_node_ids, 
+                                         std::vector<int>& cycle) {
     if (active_node_ids.size() < 2) return false;
     
-    std::unordered_set<Graph::NodeId> visited;
-    std::unordered_set<Graph::NodeId> recursion_stack;
-    std::vector<Graph::NodeId> path;
+    std::unordered_set<int> visited;
+    std::unordered_set<int> recursion_stack;
+    std::vector<int> path;
     
     // Lambda for DFS with inline graph building
-    std::function<bool(Graph::NodeId)> dfs = [&](Graph::NodeId current) -> bool {
+    std::function<bool(int)> dfs = [&](int current) -> bool {
         visited.insert(current);
         recursion_stack.insert(current);
         path.push_back(current);
         
         // Check interference with other active nodes
-        for (Graph::NodeId other_node : active_node_ids) {
+        for (int other_node : active_node_ids) {
             if (other_node == current) continue;
             
             if (interference_analyzer_->has_interference(current, other_node)) {
@@ -243,7 +243,7 @@ bool DecisionHeuristicPropagator::find_cycle_in_active_actions(const std::unorde
     };
     
     // Try to find cycle starting from each unvisited node
-    for (Graph::NodeId start_node : active_node_ids) {
+    for (int start_node : active_node_ids) {
         if (!visited.count(start_node)) {
             if (dfs(start_node)) {
                 return true;
@@ -399,7 +399,7 @@ std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support(
             // (that is, if the value of some action achieving l at t' is true)
             auto achiever_actions = achievers_analysis_.get_achievers(l);
             for (const Action& o : achiever_actions) {
-                Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
+                int action_node_id = o.id();
                 if (active_actions_per_timestep_.at(t_prime).contains(action_node_id)) {
                     // For all l' in prec(o) do push l'@t' into the Stack
                     //std::cout << "Found active achiever: action " << o.name() << " is active at T" << t_prime << ", adding its preconditions to the stack." << std::endl;
@@ -416,7 +416,7 @@ std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support(
             if (has_condition_value(l, t_prime) && get_condition_value(l, t_prime) == Z3_L_FALSE) {
                 // Return any o in O such that l in eff(o) and v(o@t') != 0
                 for (const Action& o : achiever_actions) {
-                    Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(o);
+                    int action_node_id = o.id();
                     // Check if action is unassigned or true
                     if (
                         (!active_actions_per_timestep_.at(t_prime).contains(action_node_id) &&

@@ -39,7 +39,7 @@ void LazyForallPropagator::pop(unsigned num_scopes) {
         while (trail_.size() > level_start) {
             const auto& [action_node_id, timestep] = trail_.back();
             
-            // Remove action from active set using NodeId
+            // Remove action from active set using int
             auto& active_set = active_actions_per_timestep_[timestep];
             active_set.erase(action_node_id);
             
@@ -56,13 +56,13 @@ void LazyForallPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
     const Action& action = action_info->first;
     int timestep = action_info->second;
     
-    // Get NodeId for the action
-    Graph::NodeId action_node_id = interference_analyzer_->get_action_node_id(action);
+    // Get int for the action
+    int action_node_id = action.id();
     
-    // Add to trail using NodeId and timestep
+    // Add to trail using int and timestep
     trail_.push_back({action_node_id, timestep});
     
-    // Update active actions for this timestep using NodeId
+    // Update active actions for this timestep using int
     active_actions_per_timestep_[timestep].insert(action_node_id);
     
     // Check for conflicts with other active actions at the same timestep
@@ -70,20 +70,20 @@ void LazyForallPropagator::fixed(z3::expr const &ast, z3::expr const &value) {
 }
 
 void LazyForallPropagator::check_and_generate_conflicts(const Action& action, int timestep, const z3::expr& action_var) {
-    // Get the set of active NodeIds at this timestep
-    Graph::NodeId current_node_id = interference_analyzer_->get_action_node_id(action);
+    // Get the set of active ints at this timestep
+    int current_node_id = action.id();
     
     // Check for interference with each other active action at this timestep
     z3::expr_vector conflicting_actions(ctx());
-    for (Graph::NodeId other_node_id : active_actions_per_timestep_[timestep]) {
+    for (int other_node_id : active_actions_per_timestep_[timestep]) {
         if (other_node_id == current_node_id) continue; // Skip self
         
-        // Check if there's interference in either direction using optimized NodeId method
+        // Check if there's interference in either direction using optimized int method
         if (interference_analyzer_->has_interference(current_node_id, other_node_id) || 
             interference_analyzer_->has_interference(other_node_id, current_node_id)) {
             
-            // Convert NodeId back to Action to get the variable
-            const Action* other_action = interference_analyzer_->get_action_from_node_id(other_node_id);
+            // Convert int back to Action to get the variable
+            const Action* other_action = &problem_->action(other_node_id);
             z3::expr other_var = variable_factory_->get_action_variable(*other_action, timestep);
             conflicting_actions.push_back(other_var);
         }

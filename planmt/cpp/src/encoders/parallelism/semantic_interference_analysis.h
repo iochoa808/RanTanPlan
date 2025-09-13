@@ -34,14 +34,12 @@ public:
     
     // Direct interference checking methods (fully supported)
     bool has_interference(const Action& a1, const Action& a2) const override;
-    bool has_interference(Graph::NodeId node_id1, Graph::NodeId node_id2) const override;
-    Graph::NodeId get_action_node_id(const Action& action) const override;
-    const Action* get_action_from_node_id(Graph::NodeId node_id) const override;
+    bool has_interference(int node_id1, int node_id2) const override;
     std::vector<const Action*> topological_sort_actions(const std::vector<const Action*>& actions) const override;
     
     // Graph-based methods (NOT supported - will throw exceptions)
     const Graph& get_interference_graph() const override;
-    const std::vector<Graph::NodeId>& get_neighbours(Graph::NodeId node_id) const override;
+    const std::vector<int>& get_neighbours(int node_id) const override;
     
     // Utility methods
     bool is_lazy() const override { return true; }

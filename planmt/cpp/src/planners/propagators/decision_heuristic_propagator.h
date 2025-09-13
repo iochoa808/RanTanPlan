@@ -45,11 +45,11 @@ private:
     std::vector<z3::expr> trail_;
     std::vector<size_t> decision_levels_;  // Indices into trail_ marking decision boundaries
 
-    // Active actions tracking per timestep (using NodeIds for efficiency)
-    std::unordered_map<int, std::unordered_set<Graph::NodeId>> active_actions_per_timestep_;
+    // Active actions tracking per timestep (using ints for efficiency)
+    std::unordered_map<int, std::unordered_set<int>> active_actions_per_timestep_;
     
     // Inactive actions tracking per timestep (actions assigned to false)
-    std::unordered_map<int, std::unordered_set<Graph::NodeId>> inactive_actions_per_timestep_;
+    std::unordered_map<int, std::unordered_set<int>> inactive_actions_per_timestep_;
 
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
@@ -112,8 +112,8 @@ private:
     void perform_exists_propagation(const Action& action, int timestep, const z3::expr& action_var);
     
     // Cycle detection method for active actions using node IDs
-    bool find_cycle_in_active_actions(const std::unordered_set<Graph::NodeId>& active_node_ids, 
-                                      std::vector<Graph::NodeId>& cycle);
+    bool find_cycle_in_active_actions(const std::unordered_set<int>& active_node_ids, 
+                                      std::vector<int>& cycle);
     
     // Support finding methods (Figure 2 from paper)
     std::optional<std::pair<Action, int>> find_support() const;

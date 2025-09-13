@@ -31,12 +31,12 @@ private:
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
 
-    // Trail-based state management for push/pop behavior (using NodeIds for efficiency)
-    std::vector<std::pair<Graph::NodeId, int>> trail_;  // (action_node_id, timestep)
+    // Trail-based state management for push/pop behavior (using ints for efficiency)
+    std::vector<std::pair<int, int>> trail_;  // (action_node_id, timestep)
     std::vector<size_t> decision_levels_;  // Indices into trail_ marking decision boundaries
 
-    // Active actions tracking per timestep (using NodeIds for efficiency)
-    std::unordered_map<int, std::unordered_set<Graph::NodeId>> active_actions_per_timestep_;
+    // Active actions tracking per timestep (using ints for efficiency)
+    std::unordered_map<int, std::unordered_set<int>> active_actions_per_timestep_;
 
     // Counter for conflicts thrown
     int conflict_count_;

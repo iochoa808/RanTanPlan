@@ -21,7 +21,6 @@ void SemanticInterferenceAnalysis::initialize(const Problem& problem) {
     semantic_cache_.clear();
     
     // Setup common functionality using base class methods
-    setup_action_node_mapping();
     analyze_all_actions();
     
     // Initialize Z3 context immediately
@@ -40,10 +39,10 @@ bool SemanticInterferenceAnalysis::has_interference(const Action& a1, const Acti
     return action_affects_semantically(a1, a2);
 }
 
-bool SemanticInterferenceAnalysis::has_interference(Graph::NodeId node_id1, Graph::NodeId node_id2) const {
+bool SemanticInterferenceAnalysis::has_interference(int node_id1, int node_id2) const {
     // Convert node IDs back to actions, then check if action1 affects action2
-    const Action* action1 = get_action_from_node_id(node_id1);
-    const Action* action2 = get_action_from_node_id(node_id2);
+    const Action* action1 = &problem_->action(node_id1);
+    const Action* action2 = &problem_->action(node_id2);
     return action_affects_semantically(*action1, *action2);
 }
 
@@ -294,17 +293,6 @@ bool SemanticInterferenceAnalysis::assignments_commute(const EffectExpression& e
     return (result == z3::unsat); // They commute if non-commutativity is unsatisfiable
 }
 
-Graph::NodeId SemanticInterferenceAnalysis::get_action_node_id(const Action& action) const {
-    auto it = action_to_node_id_.find(action);
-    return (it != action_to_node_id_.end()) ? it->second : -1;
-}
-
-const Action* SemanticInterferenceAnalysis::get_action_from_node_id(Graph::NodeId node_id) const {
-    if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
-        return node_id_to_action_[node_id];
-    }
-    return nullptr;
-}
 
 std::vector<const Action*> SemanticInterferenceAnalysis::topological_sort_actions(const std::vector<const Action*>& actions) const {
     if (actions.size() <= 1) {
@@ -317,9 +305,9 @@ std::vector<const Action*> SemanticInterferenceAnalysis::topological_sort_action
     }
     
     // Convert actions to their existing node IDs from the base class mappings
-    std::vector<Graph::NodeId> node_ids;
+    std::vector<int> node_ids;
     for (const Action* action : actions) {
-        Graph::NodeId node_id = get_action_node_id(*action);
+        int node_id = action->id();
         if (node_id >= 0) { // Valid node ID found
             node_ids.push_back(node_id);
         }
@@ -330,7 +318,7 @@ std::vector<const Action*> SemanticInterferenceAnalysis::topological_sort_action
     }
     
     // Build a temporary subgraph using existing node IDs and cached semantic interferences
-    Graph temp_subgraph(node_id_to_action_.size());
+    Graph temp_subgraph(problem_->action_count());
     
     // Add edges using cached semantic interference results
     for (size_t i = 0; i < actions.size(); ++i) {
@@ -341,8 +329,8 @@ std::vector<const Action*> SemanticInterferenceAnalysis::topological_sort_action
                 
                 // Add directed edge if action1 affects action2
                 if (has_interference(*action1, *action2)) {
-                    Graph::NodeId node1 = get_action_node_id(*action1);
-                    Graph::NodeId node2 = get_action_node_id(*action2);
+                    int node1 = action1->id();
+                    int node2 = action2->id();
                     if (node1 >= 0 && node2 >= 0) {
                         temp_subgraph.add_edge(node1, node2);
                     }
@@ -352,12 +340,12 @@ std::vector<const Action*> SemanticInterferenceAnalysis::topological_sort_action
     }
     
     // Use Graph's topological sort for execution order
-    std::vector<Graph::NodeId> sorted_node_ids = temp_subgraph.topological_sort(node_ids);
+    std::vector<int> sorted_node_ids = temp_subgraph.topological_sort(node_ids);
     
     // Convert back to actions using existing base class mappings
     std::vector<const Action*> result;
-    for (Graph::NodeId node_id : sorted_node_ids) {
-        const Action* action = get_action_from_node_id(node_id);
+    for (int node_id : sorted_node_ids) {
+        const Action* action = &problem_->action(node_id);
         if (action) {
             result.push_back(action);
         }
@@ -394,7 +382,7 @@ const Graph& SemanticInterferenceAnalysis::get_interference_graph() const {
                             "Use has_interference() for individual interference checks instead.");
 }
 
-const std::vector<Graph::NodeId>& SemanticInterferenceAnalysis::get_neighbours(Graph::NodeId node_id) const {
+const std::vector<int>& SemanticInterferenceAnalysis::get_neighbours(int node_id) const {
     throw std::runtime_error("SemanticInterferenceAnalysis does not support get_neighbours(). "
                             "This method is only available with eager analysis. "
                             "Use has_interference() for individual interference checks instead.");

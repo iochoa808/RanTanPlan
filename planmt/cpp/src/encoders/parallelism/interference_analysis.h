@@ -56,21 +56,8 @@ public:
      * @param node_id2 The node ID of the potentially interfered-with action
      * @return True if node_id1 interferes with node_id2, false otherwise
      */
-    virtual bool has_interference(Graph::NodeId node_id1, Graph::NodeId node_id2) const = 0;
+    virtual bool has_interference(int node_id1, int node_id2) const = 0;
     
-    /**
-     * @brief Get the node ID for an action in the interference graph
-     * @param action The action to get the node ID for
-     * @return Node ID in the graph, or -1 if action not found
-     */
-    virtual Graph::NodeId get_action_node_id(const Action& action) const = 0;
-    
-    /**
-     * @brief Get the action corresponding to a node ID
-     * @param node_id The node ID to get the action for
-     * @return Reference to the action, or nullptr if node ID invalid
-     */
-    virtual const Action* get_action_from_node_id(Graph::NodeId node_id) const = 0;
     
     /**
      * @brief Sort actions for safe execution order (reverse topological order)
@@ -112,7 +99,7 @@ public:
      * @return Vector of neighbor node IDs
      * @throws std::runtime_error if called on a lazy implementation
      */
-    virtual const std::vector<Graph::NodeId>& get_neighbours(Graph::NodeId node_id) const = 0;
+    virtual const std::vector<int>& get_neighbours(int node_id) const = 0;
     
     // Utility methods
     
@@ -154,20 +141,9 @@ protected:
 
     // Common data that all implementations need
     const Problem* problem_ = nullptr;
-    
-    // Bidirectional mapping between actions and graph nodes (shared functionality)
-    std::unordered_map<Action, Graph::NodeId> action_to_node_id_;
-    std::vector<const Action*> node_id_to_action_;
-    
+
     // Analysis results for each action (shared functionality)
     std::unordered_map<Action, ActionAnalysis> action_analysis_;
-    
-    /**
-     * @brief Setup the bidirectional mapping between actions and node IDs
-     * 
-     * This is common functionality that both eager and lazy implementations need.
-     */
-    void setup_action_node_mapping();
     
     /**
      * @brief Analyze all actions and populate the action_analysis_ map

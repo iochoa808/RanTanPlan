@@ -18,17 +18,13 @@ void InterferenceAnalyzer::initialize(const Problem& problem) {
     problem_ = &problem;
     
     // Clear any existing data
-    action_to_node_id_.clear();
-    node_id_to_action_.clear();
     action_analysis_.clear();
     interference_graph_ = Graph();
-    
+
     // Create nodes for each action and analyze them
     for (const Action& action : problem.actions()) {
-        Graph::NodeId node_id = interference_graph_.add_node();
-        action_to_node_id_[action] = node_id;
-        node_id_to_action_.push_back(&action);
-        
+        interference_graph_.add_node();
+
         // Analyze this action and store the results
         action_analysis_[action] = analyze_action(action);
     }
@@ -79,8 +75,8 @@ void InterferenceAnalyzer::analyze_action_conflicts() {
                 
                 if (actions_interfere(action1, action2)) {
                     // Cache directional interference: action1 interferes with action2
-                    Graph::NodeId node1 = action_to_node_id_[action1];
-                    Graph::NodeId node2 = action_to_node_id_[action2];
+                    int node1 = action1.id();
+                    int node2 = action2.id();
                     interference_graph_.add_edge(node1, node2);
                 }
             }
@@ -141,14 +137,8 @@ bool InterferenceAnalyzer::actions_interfere(const Action& a1, const Action& a2)
 
 bool InterferenceAnalyzer::has_interference(const Action& a1, const Action& a2) const {
 
-    // Retrieve graph node IDs for both actions
-    auto it1 = action_to_node_id_.find(a1);
-    auto it2 = action_to_node_id_.find(a2);
-    if (it1 == action_to_node_id_.end() || it2 == action_to_node_id_.end()) {
-        return false;
-    }
-    // Fast O(1) lookup in the pre-built interference graph
-    return interference_graph_.has_edge(it1->second, it2->second);
+    // Fast O(1) lookup in the pre-built interference graph using action IDs
+    return interference_graph_.has_edge(a1.id(), a2.id());
 }
 
 InterferenceAnalyzer::ActionAnalysis InterferenceAnalyzer::analyze_action(const Action& action) const {
@@ -219,17 +209,6 @@ void InterferenceAnalyzer::analyze_effects(const Action& action, ActionAnalysis&
     }
 }
 
-Graph::NodeId InterferenceAnalyzer::get_action_node_id(const Action& action) const {
-    auto it = action_to_node_id_.find(action);
-    return (it != action_to_node_id_.end()) ? it->second : -1;
-}
-
-const Action* InterferenceAnalyzer::get_action_from_node_id(Graph::NodeId node_id) const {
-    if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
-        return node_id_to_action_[node_id];
-    }
-    return nullptr;
-}
 
 void InterferenceAnalyzer::print_action_analysis() const {
     if (action_analysis_.empty()) {
@@ -311,10 +290,10 @@ std::vector<const Action*> InterferenceAnalyzer::topological_sort_actions(const 
         result = actions; // No sorting needed
     } else {
         // Convert actions to node IDs
-        std::vector<Graph::NodeId> node_ids;
+        std::vector<int> node_ids;
         
         for (const Action* action : actions) {
-            Graph::NodeId node_id = get_action_node_id(*action);
+            int node_id = action->id();
             if (node_id >= 0) { // Valid node ID
                 node_ids.push_back(node_id);
             }
@@ -324,12 +303,12 @@ std::vector<const Action*> InterferenceAnalyzer::topological_sort_actions(const 
             result = actions; // No valid node IDs found
         } else {
             // Use the graph's topological sort
-            std::vector<Graph::NodeId> sorted_node_ids = interference_graph_.topological_sort(node_ids);
+            std::vector<int> sorted_node_ids = interference_graph_.topological_sort(node_ids);
             
-            // Convert back to actions using the existing node_id_to_action_ vector
-            for (Graph::NodeId node_id : sorted_node_ids) {
-                if (node_id >= 0 && static_cast<size_t>(node_id) < node_id_to_action_.size()) {
-                    result.push_back(node_id_to_action_[node_id]);
+            // Convert back to actions using direct problem access
+            for (int node_id : sorted_node_ids) {
+                if (node_id >= 0 && static_cast<size_t>(node_id) < problem_->action_count()) {
+                    result.push_back(&problem_->action(node_id));
                 }
             }
         }
@@ -354,8 +333,8 @@ void InterferenceAnalyzer::output_interference_graph_dot(const std::string& file
     file << std::endl;
     
     // Write nodes (actions)
-    for (size_t i = 0; i < node_id_to_action_.size(); ++i) {
-        const Action* action = node_id_to_action_[i];
+    for (size_t i = 0; i < problem_->action_count(); ++i) {
+        const Action* action = &problem_->action(i);
         if (action) {
             file << "    " << i << " [label=\"" << action->name() << "\"];" << std::endl;
         }
@@ -364,9 +343,9 @@ void InterferenceAnalyzer::output_interference_graph_dot(const std::string& file
     file << std::endl;
     
     // Write edges (interferences)
-    for (Graph::NodeId node_id = 0; node_id < static_cast<Graph::NodeId>(node_id_to_action_.size()); ++node_id) {
+    for (int node_id = 0; node_id < static_cast<int>(problem_->action_count()); ++node_id) {
         const auto& neighbors = interference_graph_.get_neighbours(node_id);
-        for (Graph::NodeId neighbor : neighbors) {
+        for (int neighbor : neighbors) {
             file << "    " << node_id << " -> " << neighbor << ";" << std::endl;
         }
     }

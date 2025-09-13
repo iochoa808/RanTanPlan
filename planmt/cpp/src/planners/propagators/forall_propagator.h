@@ -35,7 +35,7 @@ private:
 
     // Precomputed complete interference lookup: node_id -> set of node_ids that need to be negated
     // to be able to do the check in constant time
-    std::unordered_map<Graph::NodeId, std::set<Graph::NodeId>> actions_interfering_with_;
+    std::unordered_map<int, std::set<int>> actions_interfering_with_;
 
     // Counter for propagations made
     int propagation_count_;

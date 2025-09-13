@@ -32,12 +32,12 @@ private:
     const ParallelismStrategy* parallelism_strategy_;  // Cached reference to parallelism strategy
     const InterferenceAnalysis* interference_analyzer_;  // Cached reference to interference analyzer
 
-    // Trail-based state management for push/pop behavior (using NodeIds for efficiency)
-    std::vector<std::pair<Graph::NodeId, int>> trail_;  // (action_node_id, timestep)
+    // Trail-based state management for push/pop behavior (using ints for efficiency)
+    std::vector<std::pair<int, int>> trail_;  // (action_node_id, timestep)
     std::vector<size_t> decision_levels_;  // Indices into trail_ marking decision boundaries
 
-    // Active actions tracking per timestep (using NodeIds for efficiency)
-    std::unordered_map<int, std::unordered_set<Graph::NodeId>> active_actions_per_timestep_;
+    // Active actions tracking per timestep (using ints for efficiency)
+    std::unordered_map<int, std::unordered_set<int>> active_actions_per_timestep_;
 
     // Track registered variables by timestep
     std::unordered_map<int, std::vector<z3::expr>> registered_action_vars_;
@@ -78,8 +78,8 @@ private:
     void perform_exists_propagation(const Action& action, int timestep, const z3::expr& action_var);
     
     // Cycle detection method for active actions using node IDs
-    bool find_cycle_in_active_actions(const std::unordered_set<Graph::NodeId>& active_node_ids, 
-                                      std::vector<Graph::NodeId>& cycle);
+    bool find_cycle_in_active_actions(const std::unordered_set<int>& active_node_ids, 
+                                      std::vector<int>& cycle);
 
 };
 
