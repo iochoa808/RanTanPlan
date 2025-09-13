@@ -19,11 +19,12 @@ class Action {
 public:
     // Constructors
     Action() = default;
-    Action(const std::string& name) : name_(name) {}
+    Action(const std::string& name) : name_(name), id_(-1) {}
     Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, const Problem* problem);
     
     // Basic accessors
     const std::string& name() const { return name_; }
+    int id() const { return id_; }
     
     // Parameter access
     const std::vector<Parameter>& parameters() const { return parameters_; }
@@ -46,6 +47,7 @@ public:
     
     // Setters
     void set_name(const std::string& name) { name_ = name; }
+    void set_id(int id) { id_ = id; }
     void add_parameter(const Parameter& param);
     void set_parameters(const std::vector<Parameter>& parameters);
     void set_precondition(const Expression& precond) { precondition_ = precond; }
@@ -62,6 +64,7 @@ public:
 
 private:
     std::string name_;
+    int id_;
     std::vector<Parameter> parameters_;
     Expression precondition_;
     std::vector<Effect> effects_;
@@ -74,13 +77,13 @@ private:
 
 } // namespace planmt
 
-// specialising std::hash for Action by using its string representation
+// specialising std::hash for Action by using its ID
 // note that for this to work we need to be in the std namespace
 namespace std {
     template<>
     struct hash<planmt::Action> {
         std::size_t operator()(const planmt::Action& action) const {
-            return std::hash<std::string>()(action.to_string());
+            return std::hash<int>()(action.id());
         }
     };
 }

@@ -64,6 +64,13 @@ public:
     bool has_action(const std::string& name) const;
     const Action* find_action(const std::string& name) const;
     
+    // Action modification
+    // NOTE: Action IDs are automatically set to match their position in the actions_ vector.
+    // This provides a stable ID system where action.id() == index in actions() vector.
+    // IDs are maintained across add_action(), set_actions(), and load_actions() operations.
+    void add_action(const Action& action);
+    void set_actions(const std::vector<Action>& actions);
+    
     // Initial state access
     const std::vector<Assignment>& initial_state() const { return initial_state_; }
     size_t initial_assignment_count() const { return initial_state_.size(); }
@@ -87,9 +94,6 @@ public:
     
     void add_fluent(const Fluent& fluent);
     void set_fluents(const std::vector<Fluent>& fluents);
-    
-    void add_action(const Action& action);
-    void set_actions(const std::vector<Action>& actions);
     
     void add_initial_assignment(const Assignment& assignment) { initial_state_.push_back(assignment); }
     void set_initial_state(const std::vector<Assignment>& initial_state) { initial_state_ = initial_state; }

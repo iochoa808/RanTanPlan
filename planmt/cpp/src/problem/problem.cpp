@@ -92,11 +92,17 @@ void Problem::set_fluents(const std::vector<Fluent>& fluents) {
 
 void Problem::add_action(const Action& action) {
     actions_.push_back(action);
+    // Set the ID to match the vector index
+    actions_.back().set_id(actions_.size() - 1);
     build_action_mappings();
 }
 
 void Problem::set_actions(const std::vector<Action>& actions) {
     actions_ = actions;
+    // Set IDs to match vector indices
+    for (size_t i = 0; i < actions_.size(); ++i) {
+        actions_[i].set_id(static_cast<int>(i));
+    }
     build_action_mappings();
 }
 
@@ -249,6 +255,8 @@ void Problem::load_actions(const pb::RepeatedAction& pb_actions) {
             params.emplace_back(pb_param.name(), param_type);
         }
         actions_.emplace_back(pb_action, params, this);
+        // Set the ID to match the vector index
+        actions_.back().set_id(actions_.size() - 1);
     }
     build_action_mappings();
 }

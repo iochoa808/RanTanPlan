@@ -4,7 +4,7 @@
 namespace planmt {
 
 Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, const Problem* problem)
-    : name_(pb_action.name()), parameters_(parameters) {
+    : name_(pb_action.name()), id_(-1), parameters_(parameters) {
     
     // Create single precondition from repeated conditions using AND
     if (pb_action.conditions().empty()) {
