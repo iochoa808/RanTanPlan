@@ -69,8 +69,8 @@ public:
         out_ << "Boolean: " << (value ? "true" : "false") << " (" << kind_to_string(kind) << ")\n";
     }
     
-    void visit_function_application(const std::string& function_name, 
-                                  const std::vector<Expression>& args,
+    void visit_function_application(const std::string& function_name,
+                                  std::span<const Expression> args,
                                   Expression::Kind kind) override {
         print_indent();
         out_ << "Function: \"" << function_name << "\" with " << args.size() 
@@ -83,7 +83,7 @@ public:
     }
     
     void visit_fluent_application(const std::string& fluent_name,
-                                const std::vector<Expression>& args,
+                                std::span<const Expression> args,
                                 Expression::Kind kind) override {
         print_indent();
         out_ << "Fluent: \"" << fluent_name << "\" with " << args.size() 

@@ -46,8 +46,8 @@ public:
         // Single fluent symbols (no arguments) - handled by collect_from_expression
     }
     
-    void visit_function_application(const std::string& function_name, 
-                                  const std::vector<Expression>& args,
+    void visit_function_application(const std::string& function_name,
+                                  std::span<const Expression> args,
                                   Expression::Kind kind) override {
         // For other functions, recursively visit all arguments
         for (const auto& arg : args) {
@@ -56,7 +56,7 @@ public:
     }
     
     void visit_fluent_application(const std::string& fluent_name,
-                                const std::vector<Expression>& args,
+                                std::span<const Expression> args,
                                 Expression::Kind kind) override {
         // Note: This method is not used anymore since we handle fluent applications
         // directly in collect_from_expression by checking for STATE_VARIABLE kind

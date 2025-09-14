@@ -1,4 +1,5 @@
 #include "expression_visitor.h"
+#include <span>
 
 namespace planmt {
 
@@ -22,12 +23,12 @@ void accept_visitor(const Expression& expr, ExpressionVisitor& visitor) {
         if (expr.is_function_application() && !list.empty() && list[0].is_atom()) {
             // Function application: first element is the function name
             const std::string& function_name = list[0].value().symbol();
-            std::vector<Expression> args(list.begin() + 1, list.end());
+            std::span<const Expression> args{list.data() + 1, list.size() - 1};
             visitor.visit_function_application(function_name, args, expr.kind());
         } else if (expr.is_state_variable() && !list.empty() && list[0].is_atom()) {
             // Fluent application: first element is the fluent name
             const std::string& fluent_name = list[0].value().symbol();
-            std::vector<Expression> args(list.begin() + 1, list.end());
+            std::span<const Expression> args{list.data() + 1, list.size() - 1};
             visitor.visit_fluent_application(fluent_name, args, expr.kind());
         } else {
             // Generic list

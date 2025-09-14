@@ -26,8 +26,8 @@ public:
         }
     }
     
-    void visit_function_application(const std::string& function_name, 
-                                  const std::vector<Expression>& args,
+    void visit_function_application(const std::string& function_name,
+                                  std::span<const Expression> args,
                                   Expression::Kind kind) override {
         // Recursively visit all arguments
         for (const auto& arg : args) {
@@ -36,7 +36,7 @@ public:
     }
     
     void visit_fluent_application(const std::string& fluent_name,
-                                const std::vector<Expression>& args,
+                                std::span<const Expression> args,
                                 Expression::Kind kind) override {
         // Recursively visit all arguments
         for (const auto& arg : args) {

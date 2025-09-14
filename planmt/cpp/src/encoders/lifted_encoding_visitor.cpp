@@ -38,8 +38,8 @@ void LiftedEncodingVisitor::visit_boolean(bool value, Expression::Kind kind) {
     result_ = ctx_.bool_val(value);
 }
 
-void LiftedEncodingVisitor::visit_function_application(const std::string& function_name, 
-                                                  const std::vector<Expression>& args,
+void LiftedEncodingVisitor::visit_function_application(const std::string& function_name,
+                                                  std::span<const Expression> args,
                                                   Expression::Kind kind) {
     // Convert arguments
     std::vector<z3::expr> z3_args;
@@ -112,7 +112,7 @@ void LiftedEncodingVisitor::visit_function_application(const std::string& functi
 }
 
 void LiftedEncodingVisitor::visit_fluent_application(const std::string& fluent_name,
-                                                const std::vector<Expression>& args,
+                                                std::span<const Expression> args,
                                                 Expression::Kind kind) {
     // Convert arguments to Z3
     std::vector<z3::expr> z3_args;

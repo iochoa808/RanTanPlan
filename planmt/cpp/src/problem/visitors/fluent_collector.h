@@ -30,8 +30,8 @@ public:
         // Single fluent symbols (no arguments) - handled by collect_from_expression
     }
     
-    void visit_function_application(const std::string& function_name, 
-                                  const std::vector<Expression>& args,
+    void visit_function_application(const std::string& function_name,
+                                  std::span<const Expression> args,
                                   Expression::Kind kind) override {
         // Recursively visit all arguments to find nested fluents
         for (const auto& arg : args) {
@@ -40,7 +40,7 @@ public:
     }
     
     void visit_fluent_application(const std::string& fluent_name,
-                                const std::vector<Expression>& args,
+                                std::span<const Expression> args,
                                 Expression::Kind kind) override {
         // Recursively visit arguments in case they contain nested fluents
         for (const auto& arg : args) {

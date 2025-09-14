@@ -44,11 +44,11 @@ public:
     void visit_integer(int64_t value, Expression::Kind kind) override;
     void visit_real(const Real& value, Expression::Kind kind) override;
     void visit_boolean(bool value, Expression::Kind kind) override;
-    void visit_function_application(const std::string& function_name, 
-                                  const std::vector<Expression>& args,
+    void visit_function_application(const std::string& function_name,
+                                  std::span<const Expression> args,
                                   Expression::Kind kind) override;
     void visit_fluent_application(const std::string& fluent_name,
-                                const std::vector<Expression>& args,
+                                std::span<const Expression> args,
                                 Expression::Kind kind) override;
     void visit_list(const std::vector<Expression>& elements, 
                    Expression::Kind kind) override;
