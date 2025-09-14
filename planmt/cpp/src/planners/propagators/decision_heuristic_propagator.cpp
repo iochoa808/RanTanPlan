@@ -31,8 +31,8 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
 
     // pre-allocate vector for up to max_steps timesteps
     // and pre-reserve capacity in each timestep map based on number of conditions
-    reification_vars_per_timestep_.resize(Config::instance().planner.max_steps);
-    condition_values_per_timestep_.resize(Config::instance().planner.max_steps);
+    reification_vars_per_timestep_.resize(Config::instance().planner.max_steps + 1);
+    condition_values_per_timestep_.resize(Config::instance().planner.max_steps + 1);
 
     const auto& all_conditions = achievers_analysis_.get_all_conditions();
     for (auto& timestep_map : reification_vars_per_timestep_) {
@@ -43,7 +43,7 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
     }
 
     // Initialize active/inactive action tracking maps for all timesteps
-    for (int timestep = 0; timestep < Config::instance().planner.max_steps; ++timestep) {
+    for (int timestep = 0; timestep < Config::instance().planner.max_steps + 1; ++timestep) {
         active_actions_per_timestep_[timestep] = std::unordered_set<int>();
         inactive_actions_per_timestep_[timestep] = std::unordered_set<int>();
     }
@@ -348,7 +348,7 @@ Z3_lbool DecisionHeuristicPropagator::get_condition_value(const Expression& cond
  phase	The tentative truth-value
 */
 void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
-    //std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
+    // std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
     auto support_result = find_support(); // Find support for unsupported goals/subgoals
     //std::cout << "\n*** DecisionHeuristicPropagator returned from find_support() ***\n" << std::endl;
 

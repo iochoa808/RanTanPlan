@@ -87,6 +87,7 @@ bool ARPG::construct_graph() {
         double current_memory = MemoryTracker::instance().get_current_memory_mb();
         std::cout << "[ARPG] construction took: time=" << total_time << "s, memory=" << current_memory << "MB";
         std::cout << std::endl;
+        //print_construction_steps();
     }
     
     return goal_reached_;
@@ -119,21 +120,21 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
     
     // Handle ALL effects to ensure ARPG is at least as informative as RPG
     
-    // Simple rule: if effect is increase/decrease, it's numeric; otherwise it's propositional
-    if (effect.effect_expression().is_increase() || effect.effect_expression().is_decrease()) {
-        // This is a numeric effect - handle with ARPG Definition 9
-        // (will be processed below)
-    } else {
-        // This is a propositional effect (assign true/false, or other non-numeric operations)
+    // Distinguish between boolean predicates and numeric functions using Expression type info
+    // Check if the fluent being affected has boolean type
+    bool is_boolean_fluent = effect.fluent().is_bool_type();
+
+    if (is_boolean_fluent || (!effect.effect_expression().is_increase() && !effect.effect_expression().is_decrease() && !effect.effect_expression().is_assign())) {
+        // This is a propositional effect (boolean predicate or non-numeric operation)
         // In relaxed planning, we ignore delete effects and only consider add effects
         // This is fundamental to RPG construction - every positive effect creates a supporter
-        
+
         auto add_supporter = std::make_shared<Supporter>(
             action.name() + "_add_" + var_name, var_name, &action);
         add_supporter->add_precondition(action.precondition());
         add_supporter->set_boolean_add_effect();
         result.push_back(add_supporter);
-        
+
         return result;
     }
     
@@ -155,38 +156,13 @@ std::vector<std::shared_ptr<Supporter>> ARPG::create_supporters_for_effect(
         result.push_back(supporter);
         
     } else if (effect.effect_expression().is_assign()) {
-        // Check if this is a boolean assignment or numeric assignment
-        if (effect.value().is_constant() && effect.value().is_atom()) {
-            if (effect.value().value().is_boolean()) {
-                // Boolean assignment - treat as add effect in relaxed planning
-                auto boolean_supporter = std::make_shared<Supporter>(
-                    action.name() + "_assign_" + var_name, var_name, &action);
-                boolean_supporter->add_precondition(action.precondition());
-                boolean_supporter->set_boolean_add_effect();
-                result.push_back(boolean_supporter);
-            } else {
-                // Numeric constant assignment
-                auto constant_supporter = std::make_shared<Supporter>(
-                    action.name() + "_" + var_name + "_const", var_name, &action);
-                constant_supporter->add_precondition(action.precondition());
-                
-                if (effect.value().value().is_real()) {
-                    constant_supporter->set_constant_effect(effect.value().value().real().to_double());
-                } else if (effect.value().value().is_integer()) {
-                    constant_supporter->set_constant_effect(static_cast<double>(effect.value().value().integer()));
-                } else {
-                    constant_supporter->set_constant_effect(0.0);
-                }
-                result.push_back(constant_supporter);
-            }
-        } else {
-            // Non-constant assignment - create a general supporter
-            auto assignment_supporter = std::make_shared<Supporter>(
-                action.name() + "_assign_" + var_name, var_name, &action);
-            assignment_supporter->add_precondition(action.precondition());
-            assignment_supporter->set_constant_effect(0.0); // Fallback
-            result.push_back(assignment_supporter);
-        }
+        // For assignments in relaxed planning, we create a supporter that can achieve any positive value
+        // This handles both constant assignments and variable assignments optimistically
+        auto assignment_supporter = std::make_shared<Supporter>(
+            action.name() + "_assign_" + var_name, var_name, &action);
+        assignment_supporter->add_precondition(action.precondition());
+        assignment_supporter->set_positive_infinity_effect(); // Optimistic: can assign any value
+        result.push_back(assignment_supporter);
     } else {
         // Fallback: create a general supporter for any unhandled effect types
         // This ensures we don't miss any effects that should contribute to the RPG baseline
@@ -232,11 +208,17 @@ RelaxedState ARPG::apply_supporters(const RelaxedState& current_state,
 
 bool ARPG::check_goal_satisfaction(const RelaxedState& state) const {
     // Check if all goal conditions are satisfied in the relaxed state
+    //std::cout << "[ARPG] Checking goal satisfaction with " << problem_.goals().size() << " goal conditions:" << std::endl;
+
     for (const auto& goal_condition : problem_.goals()) {
-        if (!state.satisfies_condition(goal_condition.goal_expression())) {
+        bool satisfied = state.satisfies_condition(goal_condition.goal_expression());
+        //std::cout << "  Goal: " << goal_condition.goal_expression().to_string()
+        //          << " -> " << (satisfied ? "SATISFIED" : "NOT SATISFIED") << std::endl;
+        if (!satisfied) {
             return false;
         }
     }
+    //std::cout << "[ARPG] All goals satisfied!" << std::endl;
     return true;
 }
 
@@ -292,28 +274,51 @@ const RelaxedState& ARPG::get_final_state() const {
 
 std::unordered_map<Expression, Interval> ARPG::get_state_variable_bounds() const {
     std::unordered_map<Expression, Interval> bounds_map;
-    
+
     if (interval_layers_.empty()) {
         return bounds_map;
     }
-    
+
     const RelaxedState& final_state = interval_layers_.back().state;
+    //std::cout << "[ARPG] Final state (layer " << (interval_layers_.size() - 1) << ") variables:" << std::endl;
+
+    // Print each numeric variable and its bounds
+    //auto var_names = final_state.get_variable_names();
+    //for (const auto& var : var_names) {
+    //    auto interval_opt = final_state.get_variable(var);
+    //    if (interval_opt.has_value()) {
+    //        std::cout << "  " << var << ": " << interval_opt->to_string() << std::endl;
+    //    }
+    //}
+
+    // Print propositions
+    //auto props = final_state.get_true_propositions();
+    //if (!props.empty()) {
+    //    std::cout << "  Propositions: ";
+    //    bool first = true;
+    //    for (const auto& prop : props) {
+    //        if (!first) std::cout << ", ";
+    //        std::cout << prop;
+    //        first = false;
+    //    }
+    //    std::cout << std::endl;
+    //}
     
     // Collect all state variable expressions from the problem and match them to final state
     std::unordered_set<Expression> all_state_vars;
-    
+
     // Add from initial state
     for (const auto& assignment : problem_.initial_state()) {
         all_state_vars.insert(assignment.fluent());
     }
-    
-    // Add from action effects  
+
+    // Add from action effects
     for (const auto& action : problem_.actions()) {
         for (const auto& effect : action.effects()) {
             all_state_vars.insert(effect.fluent());
         }
     }
-    
+
     // For each state variable expression, check if we have bounds for it in final state
     for (const Expression& state_var : all_state_vars) {
         std::string var_name = state_var.to_string();

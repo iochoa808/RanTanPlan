@@ -231,14 +231,14 @@ void AchieversAnalysis::analyze_semantic_achievers() {
             
             // Use SMT to check if this action can achieve the condition
             if (check_action_achieves_condition_with_pushpop(action, condition)) {
-
+                //std::cout << "   Action " << action.name() << " CAN achieve condition " << condition.to_string() << std::endl;
                 condition_to_achievers_[condition].insert(action);
                 action_to_achieved_conditions_[action].insert(condition);
                 // Only show achievers for conditions that have fluents or are interesting
                 //if (!condition_fluents.empty() || condition.is_function_application()) {
                 //    std::cout << "   " << action.name() << " could achieve " << condition.to_string() << std::endl;
                 //}
-            }
+            } 
         }
     }
     
@@ -356,6 +356,9 @@ void AchieversAnalysis::initialize_persistent_solver() {
 void AchieversAnalysis::add_bounds_constraints_to_solver() {
     // Add bounds constraints for all state variables in both timesteps
     for (const auto& [fluent, interval] : state_variable_bounds_) {
+        //std::cout << "    Adding bounds for fluent: " << fluent.to_string()
+        //          << " [" << interval.lower() << ", " << interval.upper() << "]" << std::endl;
+
         // Add bounds for current state (timestep 0)
         auto fluent_current = convert_expression_to_z3(fluent, 0);
         if (fluent_current) {
@@ -366,7 +369,7 @@ void AchieversAnalysis::add_bounds_constraints_to_solver() {
                 persistent_solver_->add(*fluent_current <= ctx_->real_val(std::to_string(interval.upper()).c_str()));
             }
         }
-        
+
         // Add bounds for next state (timestep 1)
         // Note: We add these bounds as they provide useful constraints for the SMT solver
         // even though action effects will further constrain the values
@@ -449,6 +452,13 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
     
     // Step 4: Check if there exists such a transition
     ++z3_query_count_;
+    // Print all the constraints asserted to the solver for debugging
+    //std::cout << "   === SMT Constraints for Action " << action.name() << " achieving " << condition.to_string() << " ===" << std::endl;
+    //z3::expr_vector assertions = persistent_solver_->assertions();
+    //for (unsigned i = 0; i < assertions.size(); ++i) {
+    //    std::cout << "   Constraint[" << i << "]: " << assertions[i].to_string() << std::endl;
+    //}
+    //std::cout << "   === End of Constraints ===" << std::endl;
     z3::check_result result = persistent_solver_->check();
     
     // Pop the solver scope to remove all constraints added for this query

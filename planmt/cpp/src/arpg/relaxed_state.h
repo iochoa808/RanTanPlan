@@ -132,7 +132,22 @@ public:
         
         // Handle propositions
         if (condition.is_state_variable() || condition.is_fluent_symbol()) {
-            return is_proposition_true(condition.to_string());
+            std::string condition_name = condition.to_string();
+
+            // First check if it exists as a boolean proposition
+            if (is_proposition_true(condition_name)) {
+                return true;
+            }
+
+            // If not found as proposition, check if it exists as a numeric interval
+            // This handles cases like location predicates that may be stored as intervals
+            auto interval_opt = get_variable(condition_name);
+            if (interval_opt.has_value()) {
+                // Consider the condition satisfied if the interval has a positive upper bound
+                return interval_opt->upper() > 0.0;
+            }
+
+            return false;
         }
         
         // Handle logical operations
@@ -153,15 +168,30 @@ public:
         }
         
         // Handle numeric comparisons
-        if (condition.list_size() == 2) {
-            Interval left = evaluate_expression(condition.list_element(0));
-            Interval right = evaluate_expression(condition.list_element(1));
-            
+        if (condition.list_size() >= 2) {
+            // For expressions like (<= a b), the operands are typically at indices 0 and 1
+            // But if list_size() is 3, it might be operator at 0 and operands at 1,2
+            size_t left_idx = (condition.list_size() == 3) ? 1 : 0;
+            size_t right_idx = (condition.list_size() == 3) ? 2 : 1;
+
+            Interval left = evaluate_expression(condition.list_element(left_idx));
+            Interval right = evaluate_expression(condition.list_element(right_idx));
+
             if (condition.is_greater_equal()) {
-                return (left - right).upper() >= 0.0;
+                return (left - right).lower() >= 0.0;
             }
             if (condition.is_greater_than()) {
-                return (left - right).upper() > 0.0;
+                return (left - right).lower() > 0.0;
+            }
+            if (condition.is_less_equal()) {
+                // For relaxed planning: A <= B is satisfied if it's possible that A <= B
+                // This means A.lower() <= B.upper()
+                return left.lower() <= right.upper();
+            }
+            if (condition.is_less_than()) {
+                // For relaxed planning: A < B is satisfied if it's possible that A < B
+                // This means A.lower() < B.upper()
+                return left.lower() < right.upper();
             }
             if (condition.is_equals()) {
                 return !(left.upper() < right.lower() || right.upper() < left.lower());
