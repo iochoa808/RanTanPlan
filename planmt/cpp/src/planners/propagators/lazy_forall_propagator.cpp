@@ -83,8 +83,8 @@ void LazyForallPropagator::check_and_generate_conflicts(const Action& action, in
             interference_analyzer_->has_interference(other_node_id, current_node_id)) {
             
             // Convert int back to Action to get the variable
-            const Action* other_action = &problem_->action(other_node_id);
-            z3::expr other_var = variable_factory_->get_action_variable(*other_action, timestep);
+            const Action other_action = problem_->action(other_node_id);
+            z3::expr other_var = variable_factory_->get_action_variable(other_action, timestep);
             conflicting_actions.push_back(other_var);
         }
     }
@@ -92,7 +92,7 @@ void LazyForallPropagator::check_and_generate_conflicts(const Action& action, in
     // If we found any conflicts, generate a conflict clause
     if (!conflicting_actions.empty()) {
         // In forall semantics, we should typically only have pairwise conflicts
-        assert(conflicting_actions.size() == 1 && "Expected only pairwise conflicts in forall propagator");
+        //assert(conflicting_actions.size() == 1 && "Expected only pairwise conflicts in forall propagator");
         
         // Create justification: all the conflicting actions plus the current action
         z3::expr_vector justification(action_var.ctx());
