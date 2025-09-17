@@ -497,13 +497,15 @@ std::vector<const Action*> GroundedEncoder::topologically_sort_actions(
 
 void GroundedEncoder::analyze_symmetries() {
     auto& config = Config::instance();
-    
+
     // Only analyze symmetries if symmetry detection is enabled
-    if (!config.symmetry.detect_symmetries && config.is_debug()) {
-        std::cout << "Symmetry detection disabled - skipping analysis" << std::endl;
+    if (!config.symmetry.detect_symmetries) {
+        if (config.is_debug()) {
+            std::cout << "Symmetry detection disabled - skipping analysis" << std::endl;
+        }
         return;
     }
-    
+
     // Create symmetry checker and perform analysis once
     symmetry_checker_ = std::make_unique<SMTSymmetryChecker>(&problem_, ctx_);
     detected_symmetries_ = symmetry_checker_->detect_all_object_swaps();
