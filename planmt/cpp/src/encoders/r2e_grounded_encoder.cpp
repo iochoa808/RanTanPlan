@@ -54,44 +54,32 @@ std::vector<const Action*> R2EGroundedEncoder::extract_arpg_ordering() {
         return fallback_order;
     }
     
-    // Simple approach: Put actions from each ARPG layer in order
-    std::vector<const Action*> arpg_ordered_actions;
-    std::unordered_set<const Action*> added_actions;
-    
-    // Go through each supporter layer and extract the unique actions
-    const auto& supporter_layers = arpg.get_supporter_layers();
-    for (const auto& supporter_layer : supporter_layers) {
-        // Collect unique actions from this layer
-        std::unordered_set<const Action*> layer_actions;
-        
-        for (const auto& supporter : supporter_layer.applicable_supporters) {
-            const Action* source_action = supporter->source_action();
-            if (source_action != nullptr) {
-                layer_actions.insert(source_action);
-            }
-        }
-        
-        // Add actions from this layer to the ordering (if not already added)
-        for (const Action* action : layer_actions) {
-            if (added_actions.find(action) == added_actions.end()) {
-                arpg_ordered_actions.push_back(action);
-                added_actions.insert(action);
-            }
-        }
+    // Use detailed ARPG supporter ordering to get high-quality action ordering
+    std::vector<const Action*> arpg_ordered_actions = arpg.get_action_ordering();
+
+    // Get detailed supporter ordering for analysis
+    auto supporter_ordering = arpg.get_supporter_ordering();
+
+    std::cout << "ARPG ordering: " << supporter_ordering.size() << " supporters across "
+              << arpg.get_num_iterations() << " iterations, "
+              << arpg_ordered_actions.size() << " unique actions" << std::endl;
+
+    // Print detailed iteration-by-iteration ordering for debugging
+    /*
+    std::unordered_map<int, std::vector<std::string>> iteration_actions;
+    for (const auto& info : supporter_ordering) {
+        iteration_actions[info.iteration].push_back(info.source_action.name());
     }
-    
-    // Ensure all actions are included (add any missing ones at the end)
-    for (const Action& action : problem_.actions()) {
-        if (added_actions.find(&action) == added_actions.end()) {
-            //std::cout << "Warning: Action '" << action.name() 
-            //          << "' not included in ARPG ordering, adding at the end." << std::endl;
-            arpg_ordered_actions.push_back(&action);
-            added_actions.insert(&action);
+
+    for (const auto& [iteration, actions] : iteration_actions) {
+        std::cout << "  Iteration " << iteration << ": ";
+        for (size_t i = 0; i < actions.size(); ++i) {
+            if (i > 0) std::cout << ", ";
+            std::cout << actions[i];
         }
+        std::cout << std::endl;
     }
-    
-    std::cout << "ARPG ordering: processed " << supporter_layers.size() 
-              << " layers, ordered " << arpg_ordered_actions.size() << " actions" << std::endl;
+    */
     
     return arpg_ordered_actions;
 }

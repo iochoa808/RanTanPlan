@@ -11,7 +11,7 @@
 #include "../encoders/grounded_encoding_visitor.h"
 #include "../encoders/z3_variable_factory.h"
 #include "../problem/visitors/fluent_collector.h"
-#include "../arpg/interval.h"
+#include "../arpg/arpg.h"
 #include "../util/stats.h"
 #include <z3++.h>
 #include <memory>
