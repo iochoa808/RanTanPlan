@@ -299,6 +299,11 @@ void DecisionHeuristicPropagator::create_condition_reification_variables(int tim
 
     // Process goal conditions at next timestep
     create_reification_vars(goal_conditions, timestep + 1, "goal");
+
+    // consider the edge case of t==0
+    if (timestep == 0){
+        create_reification_vars(goal_conditions, timestep, "goal");
+    }
 }
 
 void DecisionHeuristicPropagator::reification_variable_assigned(const z3::expr& ast, const z3::expr& value) {
@@ -335,6 +340,7 @@ std::optional<std::pair<Expression, int>> DecisionHeuristicPropagator::get_condi
 }
 
 bool DecisionHeuristicPropagator::has_condition_value(const Expression& condition, int timestep) const {
+    assert(timestep >= 0 && condition_values_per_timestep_[timestep].contains(condition) && "Condition not tracked");
     return condition_values_per_timestep_[timestep].at(condition) != Z3_L_UNDEF;
 }
 

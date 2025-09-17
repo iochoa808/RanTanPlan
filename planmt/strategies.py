@@ -130,7 +130,7 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         propagator="heuristic", 
         interference_analysis="semantic",
         encoder="chained",
-        detect_symmetries=True,
+        detect_symmetries=False,
         description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding with decision heuristics"
     ),
 }
