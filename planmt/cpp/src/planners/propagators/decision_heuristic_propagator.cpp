@@ -348,11 +348,11 @@ Z3_lbool DecisionHeuristicPropagator::get_condition_value(const Expression& cond
  phase	The tentative truth-value
 */
 void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
-    // std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
+    //std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
     auto support_result = find_support(); // Find support for unsupported goals/subgoals
-    //std::cout << "\n*** DecisionHeuristicPropagator returned from find_support() ***\n" << std::endl;
 
     if (support_result.has_value()) {
+        //std::cout << "\n*** DecisionHeuristicPropagator returned WITH VALUE ***\n" << std::endl;
         // Found an action to support a goal/subgoal
         auto [action, timestep] = *support_result;
         assert(timestep >= 0 && "Timestep should be non-negative");
@@ -364,8 +364,9 @@ void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, boo
         // Use Z3's next_split to suggest this action (set to true)
         next_split(action_var, 0, Z3_L_TRUE);
         //std::cout << "*** after next_split() ***\n" << std::endl;
-    } else {
-        //std::cout << "DECISION HEURISTIC: No support needed, using default Z3 decision" << std::endl;
+    } else 
+    {
+        //std::cout << "\n*** DecisionHeuristicPropagator returned NO VALUE ***\n" << std::endl;
     }
     //std::cout << "*** End of decide() ***\n" << std::endl;
     // If no support needed, let Z3 make the decision normally (no action needed)
@@ -385,6 +386,7 @@ std::optional<std::pair<Action, int>> DecisionHeuristicPropagator::find_support(
         // Pop l@t from the Stack
         auto [l, t] = subgoal_stack_.back();
         subgoal_stack_.pop_back();
+        if (!l.is_bool_type()) continue;
         //std::cout << "Processing subgoal: " << l.to_string() << " at timestep " << t << std::endl;
         
         // t' := t - 1;

@@ -222,27 +222,13 @@ RelaxedState ARPG::create_initial_state() const {
 std::unordered_map<Expression, Interval> ARPG::get_state_variable_bounds() const {
     std::unordered_map<Expression, Interval> bounds_map;
 
-    // Collect all state variable expressions from the problem
-    std::unordered_set<Expression> all_state_vars;
-
-    // Add from initial state
-    for (const auto& assignment : problem_.initial_state()) {
-        all_state_vars.insert(assignment.fluent());
-    }
-
-    // Add from action effects
-    for (const auto& action : problem_.actions()) {
-        for (const auto& effect : action.effects()) {
-            all_state_vars.insert(effect.fluent());
-        }
-    }
-
-    // For each state variable expression, check if we have bounds for it in final state
-    for (const Expression& state_var : all_state_vars) {
-        std::string var_name = state_var.to_string();
+    // Use the systematic grounded fluent collection from the problem
+    // This is much more efficient than manually collecting from initial state and effects
+    for (const Expression& grounded_fluent : problem_.grounded_fluents()) {
+        std::string var_name = grounded_fluent.to_string();
         auto interval_opt = current_state_.get_variable(var_name);
         if (interval_opt.has_value()) {
-            bounds_map[state_var] = interval_opt.value();
+            bounds_map[grounded_fluent] = interval_opt.value();
         }
     }
 
@@ -265,6 +251,7 @@ std::vector<ARPG::SupporterOrderingInfo> ARPG::get_supporter_ordering() const {
 
 std::vector<const Action*> ARPG::get_action_ordering() const {
     std::vector<const Action*> action_ordering;
+
     std::unordered_set<const Action*> seen_actions;
 
     for (const auto& debug_iter : debug_iterations_) {
@@ -279,7 +266,7 @@ std::vector<const Action*> ARPG::get_action_ordering() const {
         }
     }
 
-    // Add any remaining actions that didn't appear in ARPG (shouldn't normally happen)
+    // Add any remaining actions that didn't appear in ARPG
     for (const Action& action : problem_.actions()) {
         if (seen_actions.find(&action) == seen_actions.end()) {
             action_ordering.push_back(&action);
