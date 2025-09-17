@@ -87,9 +87,10 @@ std::vector<const Action*> R2EGroundedEncoder::extract_arpg_ordering() {
 
 void R2EGroundedEncoder::collect_all_state_variables() {
     all_state_variables_.clear();
-    // Collect from initial state
-    for (const Assignment& assignment : problem_.initial_state()) {
-        all_state_variables_.insert(assignment.fluent());
+    // Use the systematic grounded fluent collection from the problem
+    // This ensures we capture ALL grounded fluents that appear anywhere in the problem
+    for (const Expression& fluent : problem_.grounded_fluents()) {
+        all_state_variables_.insert(fluent);
     }
 }
 

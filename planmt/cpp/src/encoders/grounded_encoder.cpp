@@ -398,14 +398,14 @@ void GroundedEncoder::build_epc_index() {
     };
 
     epc_index_.clear();
-    
-    // First, populate the EPC index with ALL fluents from the initial state
-    // This ensures every fluent gets frame axioms, even those never modified by actions
-    for (const auto& assignment : problem_.initial_state()) {
-        const Expression& fluent = assignment.fluent();
+
+    // Use the systematic grounded fluent collection from the problem
+    // This ensures ALL grounded fluents get frame axioms, including those from
+    // initial state, action effects, preconditions, and goals
+    for (const Expression& fluent : problem_.grounded_fluents()) {
         epc_index_[fluent] = std::vector<std::pair<const Action*, const EffectExpression*>>();
     }
-    
+
     // Then, add action effects to the fluents that can be modified
     for (const auto& action : problem_.actions()) {
         for (const auto& effect : action.effects()) {
@@ -413,7 +413,7 @@ void GroundedEncoder::build_epc_index() {
             index_effect_fluents(&action, &eff_expr);
         }
     }
-    
+
     // Print the index for debugging
     //print_epc_index("After building EPC index");
 }

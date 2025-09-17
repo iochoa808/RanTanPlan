@@ -28,18 +28,6 @@ namespace planmt {
  * For each action-condition pair, checks if there exists a state where executing the
  * action transitions the condition from false to true.
  * 
- * FIXED: Added ARPG bounds analysis to prevent incorrect results from impossible variable values.
- * The SMT queries now include bounds constraints for all involved fluents, preventing scenarios
- * like negative weights that would make physically impossible transitions appear satisfiable.
- * 
- * For example, the previous issue where weight_cargo1 could be assigned negative values
- * is now prevented by ARPG bounds constraints: (assert (>= weight_cargo1_0 20.0)) etc.
- * 
- * OPTIMIZED: Uses push/pop approach with persistent solver to avoid recreating bounds constraints.
- * Instead of creating a fresh solver for each query, maintains a persistent solver with all
- * bounds constraints pre-loaded, then uses push/pop to add/remove action-specific constraints.
- * This significantly reduces SMT solver initialization overhead for large problems.
- * 
  * TODO: Replace ARPG with step-bounded reachability analysis to get tighter bounds.
  * The current ARPG provides bounds like [-inf, inf] for changeable variables (e.g., current_load)
  * because it computes asymptotic bounds over infinite time. A step-bounded analysis that

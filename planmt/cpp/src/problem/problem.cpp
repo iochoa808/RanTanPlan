@@ -25,7 +25,9 @@ Problem::Problem(const pb::Problem& pb_problem) {
     for (const auto& pb_goal : pb_problem.goals()) {
         goals_.emplace_back(pb_goal, this);
     }
-    
+
+    // Collect all grounded fluents systematically
+    collect_all_grounded_fluents();
 }
 
 bool Problem::has_object(const std::string& name) const {
@@ -82,11 +84,17 @@ void Problem::set_objects(const std::vector<Object>& objects) {
 
 void Problem::add_fluent(const Fluent& fluent) {
     fluents_.push_back(fluent);
+    // Set the ID to match the vector index
+    fluents_.back().set_id(fluents_.size() - 1);
     build_fluent_mappings();
 }
 
 void Problem::set_fluents(const std::vector<Fluent>& fluents) {
     fluents_ = fluents;
+    // Set IDs to match vector indices
+    for (size_t i = 0; i < fluents_.size(); ++i) {
+        fluents_[i].set_id(static_cast<int>(i));
+    }
     build_fluent_mappings();
 }
 
@@ -106,20 +114,32 @@ void Problem::set_actions(const std::vector<Action>& actions) {
     build_action_mappings();
 }
 
+void Problem::add_grounded_fluent(const Expression& fluent) {
+    grounded_fluents_.push_back(fluent);
+    build_grounded_fluent_mappings();
+}
+
+void Problem::set_grounded_fluents(const std::vector<Expression>& fluents) {
+    grounded_fluents_ = fluents;
+    build_grounded_fluent_mappings();
+}
+
 void Problem::clear_all() {
     objects_.clear();
     fluents_.clear();
     actions_.clear();
+    grounded_fluents_.clear();
     initial_state_.clear();
     goals_.clear();
     object_name_to_index_.clear();
     fluent_name_to_index_.clear();
     action_name_to_index_.clear();
+    grounded_fluent_to_index_.clear();
 }
 
 bool Problem::is_empty() const {
-    return objects_.empty() && fluents_.empty() && actions_.empty() && 
-           initial_state_.empty() && goals_.empty();
+    return objects_.empty() && fluents_.empty() && actions_.empty() &&
+           grounded_fluents_.empty() && initial_state_.empty() && goals_.empty();
 }
 
 std::string Problem::to_string() const {
@@ -139,6 +159,11 @@ std::string Problem::to_string() const {
     oss << "\n\nActions (" << actions_.size() << "):";
     for (const auto& action : actions_) {
         oss << "\n  " << action.to_string();
+    }
+
+    oss << "\n\nGrounded Fluents (" << grounded_fluents_.size() << "):";
+    for (const auto& fluent : grounded_fluents_) {
+        oss << "\n  " << fluent.to_string();
     }
     
     oss << "\n\nInitial State (" << initial_state_.size() << " assignments):";
@@ -182,6 +207,13 @@ void Problem::build_action_mappings() {
     action_name_to_index_.clear();
     for (size_t i = 0; i < actions_.size(); ++i) {
         action_name_to_index_[actions_[i].name()] = i;
+    }
+}
+
+void Problem::build_grounded_fluent_mappings() {
+    grounded_fluent_to_index_.clear();
+    for (size_t i = 0; i < grounded_fluents_.size(); ++i) {
+        grounded_fluent_to_index_[grounded_fluents_[i]] = i;
     }
 }
 
@@ -259,6 +291,27 @@ void Problem::load_actions(const pb::RepeatedAction& pb_actions) {
         actions_.back().set_id(actions_.size() - 1);
     }
     build_action_mappings();
+}
+
+void Problem::collect_all_grounded_fluents() {
+    grounded_fluents_.clear();
+    std::unordered_set<Expression> unique_fluents;
+
+    // Helper function to add a fluent if it's not already present
+    auto add_unique_fluent = [&](const Expression& fluent) {
+        if (unique_fluents.find(fluent) == unique_fluents.end()) {
+            unique_fluents.insert(fluent);
+            grounded_fluents_.push_back(fluent);
+        }
+    };
+
+    // Collect grounded fluents from initial state
+    for (const auto& assignment : initial_state_) {
+        add_unique_fluent(assignment.fluent());
+    }
+
+    // Build the lookup mappings
+    build_grounded_fluent_mappings();
 }
 
 } // namespace planmt
