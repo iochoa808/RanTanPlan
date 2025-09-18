@@ -451,22 +451,13 @@ int RelaxedPlanningGraph::find_grounded_fluent_id(const Expression& expr) const 
     // Handle negated expressions
     if (is_negated_condition(expr)) {
         const Expression& inner_condition = get_inner_condition(expr);
-        // Find the positive fluent ID and return the negative encoding
-        for (size_t i = 0; i < problem_.grounded_fluent_count(); ++i) {
-            if (problem_.grounded_fluent(i).to_string() == inner_condition.to_string()) {
-                return encode_negative_fact_id(static_cast<int>(i));
-            }
-        }
-        return -1; // Not found
+        // Use O(1) hash map lookup for the positive fluent ID and return the negative encoding
+        int fluent_id = problem_.find_grounded_fluent_index(inner_condition);
+        return (fluent_id != -1) ? encode_negative_fact_id(fluent_id) : -1;
     }
 
-    // Handle positive expressions
-    for (size_t i = 0; i < problem_.grounded_fluent_count(); ++i) {
-        if (problem_.grounded_fluent(i).to_string() == expr.to_string()) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1; // Not found
+    // Handle positive expressions - use O(1) hash map lookup
+    return problem_.find_grounded_fluent_index(expr);
 }
 
 bool RelaxedPlanningGraph::is_negated_condition(const Expression& condition) const {

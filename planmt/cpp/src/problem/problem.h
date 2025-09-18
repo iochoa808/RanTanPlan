@@ -76,6 +76,14 @@ public:
     void add_grounded_fluent(const Expression& fluent);
     void set_grounded_fluents(const std::vector<Expression>& fluents);
 
+    // Grounded fluent lookup
+    /**
+     * Find the index of a grounded fluent expression using O(1) hash map lookup.
+     * @param fluent The fluent expression to find
+     * @return fluent index (0-based), or -1 if not found
+     */
+    int find_grounded_fluent_index(const Expression& fluent) const;
+
     // Action access
     const std::vector<Action>& actions() const { return actions_; }
     size_t action_count() const { return actions_.size(); }

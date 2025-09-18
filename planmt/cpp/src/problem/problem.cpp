@@ -314,4 +314,9 @@ void Problem::collect_all_grounded_fluents() {
     build_grounded_fluent_mappings();
 }
 
+int Problem::find_grounded_fluent_index(const Expression& fluent) const {
+    auto it = grounded_fluent_to_index_.find(fluent);
+    return (it != grounded_fluent_to_index_.end()) ? static_cast<int>(it->second) : -1;
+}
+
 } // namespace planmt
