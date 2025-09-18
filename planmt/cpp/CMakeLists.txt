@@ -112,6 +112,7 @@ add_executable(planmt
     src/symmetries/smt_symmetry_checker.cpp
     src/arpg/arpg.cpp
     src/abstraction/achievers_analysis.cpp
+    src/analysis/relaxed_planning_graph.cpp
 )
 
 # Define proto files and generate C++ sources
@@ -139,6 +140,7 @@ target_include_directories(planmt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/planners/        # planners headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/symmetries/      # symmetries headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/abstraction/     # abstraction headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/analysis/        # analysis headers
     ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
     ${Z3_INCLUDE_DIR}                                # Z3 headers
 )

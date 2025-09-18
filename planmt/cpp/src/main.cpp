@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <iomanip>
+#include <chrono>
 
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
@@ -18,6 +19,7 @@
 #include "symmetries/smt_symmetry_checker.h"
 #include "arpg/arpg.h"
 #include "abstraction/achievers_analysis.h"
+#include "analysis/relaxed_planning_graph.h"
 
 #include "z3++.h"
 
@@ -117,6 +119,29 @@ int main(int argc, char* argv[]) {
     // Create a Problem wrapper from the protobuf message
     planmt::Problem planning_problem(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
+
+    // === RELAXED PLANNING GRAPH DEMONSTRATION ===
+    if (planmt::Config::instance().is_info()) {
+        std::cout << "\n=== Testing Relaxed Planning Graph ===" << std::endl;
+
+        // Create and build the RPG
+        planmt::RelaxedPlanningGraph rpg(planning_problem);
+        std::cout << "Building relaxed planning graph..." << std::endl;
+
+        auto start = std::chrono::high_resolution_clock::now();
+        bool goals_reachable = rpg.build();
+        auto end = std::chrono::high_resolution_clock::now();
+
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "RPG built in " << duration.count() << "ms" << std::endl;
+        std::cout << "Goals reachable: " << (goals_reachable ? "YES" : "NO") << std::endl;
+        std::cout << "Total layers: " << rpg.get_layer_count() << std::endl;
+
+        // Print detailed debug information
+        rpg.print_debug_info();
+
+        std::cout << "=== End RPG Test ===\n" << std::endl;
+    }
 
     // Check if symmetry detection is requested
     auto& config = planmt::Config::instance();
