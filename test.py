@@ -33,6 +33,7 @@ QUICK_TEST_DIRS = [
     "pddl/test/zenotravel",
     "pddl/test/rover",
     "pddl/test/gripper-round-1-adl",
+    "pddl/test/hydropower"
 ]
 
 # Test all available strategies

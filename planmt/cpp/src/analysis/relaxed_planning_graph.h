@@ -175,6 +175,20 @@ private:
     void add_effects_to_layer(const Action& action, int target_layer_index);
 
     /**
+     * Add a simple atomic effect to the target layer.
+     * @param effect The simple effect to add
+     * @param target_layer_index The layer index to add effect to
+     */
+    void add_simple_effect_to_layer(const Effect& effect, int target_layer_index);
+
+    /**
+     * Add conditional or quantified effects to the target layer optimistically.
+     * @param effect The conditional/quantified effect to add
+     * @param target_layer_index The layer index to add effect to
+     */
+    void add_conditional_or_quantified_effect_to_layer(const Effect& effect, int target_layer_index);
+
+    /**
      * Check if a fixpoint has been reached (no new facts in the last layer).
      * @return true if no progress was made in the last iteration
      */
