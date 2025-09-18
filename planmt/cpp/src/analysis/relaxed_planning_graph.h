@@ -7,6 +7,7 @@
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
+#include <chrono>
 
 namespace planmt {
 
@@ -121,6 +122,10 @@ private:
 
     // Configuration options
     bool early_termination_on_goals_;                                   // Stop building when goals are achieved (default: true)
+
+    // Timing and statistics
+    mutable std::chrono::high_resolution_clock::time_point build_start_time_;
+    mutable double build_time_ms_;
 
     // Static empty containers for safe returns
     static const std::vector<const Action*> empty_action_vector_;

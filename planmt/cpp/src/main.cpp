@@ -122,25 +122,9 @@ int main(int argc, char* argv[]) {
 
     // === RELAXED PLANNING GRAPH DEMONSTRATION ===
     if (planmt::Config::instance().is_info()) {
-        std::cout << "\n=== Testing Relaxed Planning Graph ===" << std::endl;
-
         // Create and build the RPG
         planmt::RelaxedPlanningGraph rpg(planning_problem);
-        std::cout << "Building relaxed planning graph..." << std::endl;
-
-        auto start = std::chrono::high_resolution_clock::now();
         bool goals_reachable = rpg.build();
-        auto end = std::chrono::high_resolution_clock::now();
-
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "RPG built in " << duration.count() << "ms" << std::endl;
-        std::cout << "Goals reachable: " << (goals_reachable ? "YES" : "NO") << std::endl;
-        std::cout << "Total layers: " << rpg.get_layer_count() << std::endl;
-
-        // Print detailed debug information
-        rpg.print_debug_info();
-
-        std::cout << "=== End RPG Test ===\n" << std::endl;
     }
 
     // Check if symmetry detection is requested

@@ -1,4 +1,6 @@
 #include "relaxed_planning_graph.h"
+#include "../config/config.h"
+#include "../util/memory_tracker.h"
 #include <iostream>
 #include <iomanip>
 
@@ -9,17 +11,33 @@ const std::vector<const Action*> RelaxedPlanningGraph::empty_action_vector_;
 const std::unordered_set<int> RelaxedPlanningGraph::empty_condition_set_;
 
 RelaxedPlanningGraph::RelaxedPlanningGraph(const Problem& problem)
-    : problem_(problem), early_termination_on_goals_(true) {
+    : problem_(problem), early_termination_on_goals_(true), build_time_ms_(0.0) {
     extract_goal_conditions();
     analyze_numeric_modifications();
 }
 
 bool RelaxedPlanningGraph::build() {
+    auto& config = Config::instance();
+    build_start_time_ = std::chrono::high_resolution_clock::now();
+    double start_memory = MemoryTracker::instance().get_current_memory_mb();
+
     reset();
     initialize_fact_layer();
 
     // Check if goals are already achievable in the initial state (if early termination is enabled)
     if (early_termination_on_goals_ && are_goals_achievable()) {
+        auto end_time = std::chrono::high_resolution_clock::now();
+        build_time_ms_ = std::chrono::duration<double, std::milli>(end_time - build_start_time_).count();
+
+        // Compact output
+        std::cout << "RPG built in " << static_cast<int>(build_time_ms_) << "ms" << std::endl;
+        std::cout << "Goals reachable: YES" << std::endl;
+        std::cout << "Total layers: " << fact_layers_.size() << std::endl;
+
+        if (config.is_debug()) {
+            print_debug_info();
+        }
+
         return true;
     }
 
@@ -52,7 +70,28 @@ bool RelaxedPlanningGraph::build() {
         }
     }
 
-    return are_goals_achievable();
+    auto end_time = std::chrono::high_resolution_clock::now();
+    build_time_ms_ = std::chrono::duration<double, std::milli>(end_time - build_start_time_).count();
+    double end_memory = MemoryTracker::instance().get_current_memory_mb();
+
+    bool goals_reachable = are_goals_achievable();
+
+    // Compact output similar to ARPG
+    std::cout << "RPG built in " << static_cast<int>(build_time_ms_) << "ms" << std::endl;
+    std::cout << "Goals reachable: " << (goals_reachable ? "YES" : "NO") << std::endl;
+    std::cout << "Total layers: " << fact_layers_.size() << std::endl;
+
+    if (config.is_info()) {
+        std::cout << "[RPG] construction took: time=" << (build_time_ms_ / 1000.0) << "s"
+                  << ", memory=" << end_memory << "MB"
+                  << ", layers=" << fact_layers_.size() << std::endl;
+    }
+
+    if (config.is_debug()) {
+        print_debug_info();
+    }
+
+    return goals_reachable;
 }
 
 bool RelaxedPlanningGraph::is_achievable(const Expression& condition) const {
