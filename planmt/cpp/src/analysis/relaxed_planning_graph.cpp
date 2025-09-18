@@ -9,7 +9,7 @@ const std::vector<const Action*> RelaxedPlanningGraph::empty_action_vector_;
 const std::unordered_set<int> RelaxedPlanningGraph::empty_condition_set_;
 
 RelaxedPlanningGraph::RelaxedPlanningGraph(const Problem& problem)
-    : problem_(problem) {
+    : problem_(problem), early_termination_on_goals_(true) {
     extract_goal_conditions();
     analyze_numeric_modifications();
 }
@@ -18,13 +18,24 @@ bool RelaxedPlanningGraph::build() {
     reset();
     initialize_fact_layer();
 
-    // Build layers until fixpoint
-    while (!is_fixpoint_reached()) {
+    // Check if goals are already achievable in the initial state (if early termination is enabled)
+    if (early_termination_on_goals_ && are_goals_achievable()) {
+        return true;
+    }
+
+    // Build layers until fixpoint (with safety limit)
+    const int MAX_RPG_LAYERS = 100; // Prevent infinite expansion
+    while (!is_fixpoint_reached() && fact_layers_.size() < MAX_RPG_LAYERS) {
         int current_layer = fact_layers_.size() - 1;
 
         // Compute applicable actions
         auto applicable_actions = compute_applicable_actions(current_layer);
         action_layers_.push_back(std::move(applicable_actions));
+
+        // Early termination if no actions are applicable
+        if (action_layers_[current_layer].empty()) {
+            break; // Fixpoint reached - no new actions can be applied
+        }
 
         // Create next fact layer - copy all facts from current layer (no delete effects in RPG)
         fact_layers_.emplace_back(fact_layers_[current_layer]);
@@ -34,6 +45,11 @@ bool RelaxedPlanningGraph::build() {
         for (const Action* action : action_layers_[current_layer]) {
             add_effects_to_layer(*action, next_layer);
         }
+
+        // Check if goals are now achievable (if early termination is enabled)
+        if (early_termination_on_goals_ && are_goals_achievable()) {
+            break;
+        }
     }
 
     return are_goals_achievable();
@@ -41,10 +57,7 @@ bool RelaxedPlanningGraph::build() {
 
 bool RelaxedPlanningGraph::is_achievable(const Expression& condition) const {
     int fluent_id = find_grounded_fluent_id(condition);
-    if (fluent_id == -1) {
-        return false;
-    }
-    return achievability_layer_.find(fluent_id) != achievability_layer_.end();
+    return fluent_id != -1 && achievability_layer_.find(fluent_id) != achievability_layer_.end();
 }
 
 int RelaxedPlanningGraph::get_achievability_layer(const Expression& condition) const {
@@ -58,14 +71,21 @@ int RelaxedPlanningGraph::get_achievability_layer(const Expression& condition) c
 }
 
 const std::vector<const Action*>& RelaxedPlanningGraph::get_actions_in_layer(int layer) const {
-    return (layer >= 0 && layer < action_layers_.size()) ? action_layers_[layer] : empty_action_vector_;
+    return (layer >= 0 && layer < static_cast<int>(action_layers_.size())) ? action_layers_[layer] : empty_action_vector_;
 }
 
 const std::unordered_set<int>& RelaxedPlanningGraph::get_conditions_in_layer(int layer) const {
-    return (layer >= 0 && layer < fact_layers_.size()) ? fact_layers_[layer] : empty_condition_set_;
+    return (layer >= 0 && layer < static_cast<int>(fact_layers_.size())) ? fact_layers_[layer] : empty_condition_set_;
 }
 
 bool RelaxedPlanningGraph::are_goals_achievable() const {
+    // If no Boolean goal conditions were extracted (e.g., only numeric goals),
+    // we assume the goals are achievable in the RPG context.
+    // This is a simplification - numeric goals should be handled separately.
+    if (goal_condition_ids_.empty()) {
+        return true;
+    }
+
     for (int goal_id : goal_condition_ids_) {
         if (achievability_layer_.find(goal_id) == achievability_layer_.end()) {
             return false;
@@ -89,9 +109,7 @@ void RelaxedPlanningGraph::print_debug_info() const {
         std::cout << "--- Layer " << i << " ---\n";
         std::cout << "Facts (" << fact_layers_[i].size() << "):\n";
         for (int fact_id : fact_layers_[i]) {
-            if (fact_id >= 0 && fact_id < problem_.grounded_fluent_count()) {
-                std::cout << "  " << problem_.grounded_fluent(fact_id).to_string() << "\n";
-            }
+            std::cout << "  " << fact_id_to_string(fact_id) << "\n";
         }
 
         if (i < action_layers_.size()) {
@@ -107,9 +125,7 @@ void RelaxedPlanningGraph::print_debug_info() const {
     for (int goal_id : goal_condition_ids_) {
         auto it = achievability_layer_.find(goal_id);
         int layer = (it != achievability_layer_.end()) ? it->second : -1;
-        if (goal_id >= 0 && goal_id < problem_.grounded_fluent_count()) {
-            std::cout << "  " << problem_.grounded_fluent(goal_id).to_string() << " -> layer " << layer << "\n";
-        }
+        std::cout << "  " << fact_id_to_string(goal_id) << " -> layer " << layer << "\n";
     }
 
     std::cout << "Modified numeric fluents: " << modified_numeric_fluents_.size() << "\n";
@@ -118,6 +134,9 @@ void RelaxedPlanningGraph::print_debug_info() const {
 
 void RelaxedPlanningGraph::initialize_fact_layer() {
     fact_layers_.emplace_back();
+
+    // Track which positive Boolean fluents are true in initial state
+    std::unordered_set<int> initially_true_fluents;
 
     // Add initial state facts
     for (size_t i = 0; i < problem_.initial_assignment_count(); ++i) {
@@ -130,6 +149,7 @@ void RelaxedPlanningGraph::initialize_fact_layer() {
             if (fluent_id != -1) {
                 fact_layers_[0].insert(fluent_id);
                 achievability_layer_[fluent_id] = 0;
+                initially_true_fluents.insert(fluent_id);
             }
         } else if (assignment.value().is_atom() && !assignment.value().value().is_boolean()) {
             // For numeric fluents, store the assignment itself as a fact
@@ -137,6 +157,23 @@ void RelaxedPlanningGraph::initialize_fact_layer() {
             if (fluent_id != -1) {
                 fact_layers_[0].insert(fluent_id);
                 achievability_layer_[fluent_id] = 0;
+            }
+        }
+    }
+
+    // For all Boolean fluents not initially true, add their negations as facts
+    for (size_t i = 0; i < problem_.grounded_fluent_count(); ++i) {
+        const Expression& fluent = problem_.grounded_fluent(i);
+
+        // Only consider Boolean fluents
+        if (fluent.is_bool_type()) {
+            int fluent_id = static_cast<int>(i);
+
+            // If this fluent is not initially true, add its negation
+            if (initially_true_fluents.count(fluent_id) == 0) {
+                int negative_fluent_id = encode_negative_fact_id(fluent_id);
+                fact_layers_[0].insert(negative_fluent_id);
+                achievability_layer_[negative_fluent_id] = 0;
             }
         }
     }
@@ -154,6 +191,9 @@ void RelaxedPlanningGraph::extract_goal_conditions() {
             if (goal_id != -1) {
                 goal_condition_ids_.push_back(goal_id);
             }
+            // Note: Numeric conditions (like >= comparisons) are not stored as goal IDs
+            // since they can't be mapped to grounded fluents. For RPG purposes,
+            // we assume all numeric conditions are satisfiable once modified fluents exist.
         }
     }
 }
@@ -204,22 +244,10 @@ bool RelaxedPlanningGraph::are_preconditions_satisfied(const Action& action, int
 }
 
 bool RelaxedPlanningGraph::is_condition_satisfied(const Expression& condition, int layer_index) const {
-    // Handle negated conditions
-    if (is_negated_condition(condition)) {
-        const Expression& inner_condition = get_inner_condition(condition);
-
-        if (inner_condition.is_bool_type()) {
-            // For negated Boolean: satisfied if positive version is NOT in fact layer
-            return !is_positive_condition_satisfied(inner_condition, layer_index);
-        } else {
-            // For negated numeric: use simplified approach (assume satisfiable)
-            return true;
-        }
-    }
-
-    // Handle positive conditions
-    if (condition.is_bool_type()) {
-        return is_positive_condition_satisfied(condition, layer_index);
+    // Both positive and negative Boolean conditions are handled the same way:
+    // check if the condition (or its negation) exists as a fact in the layer
+    if (condition.is_bool_type() || is_negated_condition(condition)) {
+        return is_fact_in_layer(condition, layer_index);
     }
 
     // For numeric conditions in relaxed planning graph: assume all are satisfiable
@@ -232,17 +260,23 @@ void RelaxedPlanningGraph::add_effects_to_layer(const Action& action, int target
         const Effect& effect = action.effect(i);
         const Expression& fluent = effect.fluent();
 
-        // In relaxed planning graph, we ignore delete effects
-        // Add positive effects and numeric assignments
-        if (effect.value().is_atom() && effect.value().value().is_boolean() && effect.value().value().boolean()) {
+        // Handle both positive and negative Boolean effects
+        if (effect.value().is_atom() && effect.value().value().is_boolean()) {
             int fluent_id = find_grounded_fluent_id(fluent);
             if (fluent_id != -1) {
-                // Set automatically handles uniqueness
-                fact_layers_[target_layer_index].insert(fluent_id);
-
-                // Track achievability (first occurrence only)
-                if (achievability_layer_.find(fluent_id) == achievability_layer_.end()) {
-                    achievability_layer_[fluent_id] = target_layer_index;
+                if (effect.value().value().boolean()) {
+                    // Positive effect: add the positive fact
+                    fact_layers_[target_layer_index].insert(fluent_id);
+                    if (achievability_layer_.find(fluent_id) == achievability_layer_.end()) {
+                        achievability_layer_[fluent_id] = target_layer_index;
+                    }
+                } else {
+                    // Negative effect: add the negative fact
+                    int negative_fluent_id = encode_negative_fact_id(fluent_id);
+                    fact_layers_[target_layer_index].insert(negative_fluent_id);
+                    if (achievability_layer_.find(negative_fluent_id) == achievability_layer_.end()) {
+                        achievability_layer_[negative_fluent_id] = target_layer_index;
+                    }
                 }
             }
         } else if (effect.value().is_atom() && !effect.value().value().is_boolean()) {
@@ -327,7 +361,19 @@ void RelaxedPlanningGraph::analyze_numeric_modifications() {
 }
 
 int RelaxedPlanningGraph::find_grounded_fluent_id(const Expression& expr) const {
-    // Linear search through grounded fluents to find matching expression
+    // Handle negated expressions
+    if (is_negated_condition(expr)) {
+        const Expression& inner_condition = get_inner_condition(expr);
+        // Find the positive fluent ID and return the negative encoding
+        for (size_t i = 0; i < problem_.grounded_fluent_count(); ++i) {
+            if (problem_.grounded_fluent(i).to_string() == inner_condition.to_string()) {
+                return encode_negative_fact_id(static_cast<int>(i));
+            }
+        }
+        return -1; // Not found
+    }
+
+    // Handle positive expressions
     for (size_t i = 0; i < problem_.grounded_fluent_count(); ++i) {
         if (problem_.grounded_fluent(i).to_string() == expr.to_string()) {
             return static_cast<int>(i);
@@ -345,13 +391,25 @@ const Expression& RelaxedPlanningGraph::get_inner_condition(const Expression& ne
     return negated_condition.list_element(0);
 }
 
-bool RelaxedPlanningGraph::is_positive_condition_satisfied(const Expression& condition, int layer_index) const {
+bool RelaxedPlanningGraph::is_fact_in_layer(const Expression& condition, int layer_index) const {
     int fluent_id = find_grounded_fluent_id(condition);
-    if (fluent_id == -1) {
-        return false; // Unknown fluent
-    }
+    return fluent_id != -1 && fact_layers_[layer_index].count(fluent_id) > 0;
+}
 
-    return fact_layers_[layer_index].count(fluent_id) > 0;
+std::string RelaxedPlanningGraph::fact_id_to_string(int fact_id) const {
+    if (fact_id >= 0) {
+        // Positive fact
+        if (fact_id < static_cast<int>(problem_.grounded_fluent_count())) {
+            return problem_.grounded_fluent(fact_id).to_string();
+        }
+    } else {
+        // Negative fact: decode to get original fluent_id
+        int original_fluent_id = decode_negative_fact_id(fact_id);
+        if (original_fluent_id >= 0 && original_fluent_id < static_cast<int>(problem_.grounded_fluent_count())) {
+            return "(not " + problem_.grounded_fluent(original_fluent_id).to_string() + ")";
+        }
+    }
+    return "unknown_fact_" + std::to_string(fact_id);
 }
 
 } // namespace planmt

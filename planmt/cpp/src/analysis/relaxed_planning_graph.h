@@ -19,10 +19,14 @@ namespace planmt {
  * - Syntactic achievability check for Boolean fluents
  * - Simplified numeric handling: any modification of a numeric variable enables any condition containing it
  * - Layer-by-layer construction until fixpoint is reached
+ * - Configurable early termination when goals are achieved (default: enabled)
  * - Independent from ARPG and current achievers analysis
  *
  * The relaxed planning graph ignores delete effects and negative interactions,
  * providing an optimistic view of what's achievable for heuristic computation.
+ *
+ * Early termination can be disabled using set_early_termination_on_goals(false)
+ * for cases where a complete RPG analysis is needed regardless of goal achievability.
  */
 class RelaxedPlanningGraph {
 public:
@@ -84,21 +88,39 @@ public:
      */
     void print_debug_info() const;
 
+    /**
+     * Configure whether to stop building the RPG when goals are achieved.
+     * @param enable If true, stop as soon as goals are achievable (default behavior)
+     *               If false, continue building until fixpoint for complete analysis
+     */
+    void set_early_termination_on_goals(bool enable) { early_termination_on_goals_ = enable; }
+
+    /**
+     * Get the current early termination setting.
+     * @return true if early termination is enabled
+     */
+    bool get_early_termination_on_goals() const { return early_termination_on_goals_; }
+
 private:
     const Problem& problem_;
 
     // Layer-based storage using grounded fluent IDs for efficiency
-    std::vector<std::unordered_set<int>> fact_layers_;                   // IDs of facts true at each layer
+    // Fact encoding: positive facts use fluent_id (0, 1, 2, ...),
+    // negative facts use -(fluent_id + 1) (-1, -2, -3, ...)
+    std::vector<std::unordered_set<int>> fact_layers_;                   // IDs of facts (positive and negative) true at each layer
     std::vector<std::vector<const Action*>> action_layers_;               // Pointers to actions applicable at each layer
 
-    // Achievability tracking using fluent IDs
-    std::unordered_map<int, int> achievability_layer_;                   // Maps fluent_id -> first layer it's achievable
+    // Achievability tracking using fluent IDs (same encoding as fact_layers_)
+    std::unordered_map<int, int> achievability_layer_;                   // Maps fact_id -> first layer it's achievable
 
     // Numeric fluent tracking using fluent IDs
     std::unordered_set<int> modified_numeric_fluents_;                   // IDs of fluents modified by any action
 
     // Goal tracking - we'll extract condition IDs during goal processing
     std::vector<int> goal_condition_ids_;                               // IDs of goal conditions
+
+    // Configuration options
+    bool early_termination_on_goals_;                                   // Stop building when goals are achieved (default: true)
 
     // Static empty containers for safe returns
     static const std::vector<const Action*> empty_action_vector_;
@@ -159,13 +181,12 @@ private:
     bool is_fixpoint_reached() const;
 
     /**
-     * Handle Boolean fluent achievability using syntactic checks.
-     * Assumes condition is positive (not negated).
-     * @param condition The positive Boolean condition to check
+     * Check if a fact (positive or negative) exists in the given layer.
+     * @param condition The condition to check (can be positive or negative)
      * @param layer_index The layer to check against
-     * @return true if the Boolean condition is satisfied
+     * @return true if the fact exists in the layer
      */
-    bool is_positive_condition_satisfied(const Expression& condition, int layer_index) const;
+    bool is_fact_in_layer(const Expression& condition, int layer_index) const;
 
     /**
      * Check if a condition is negated (starts with 'not').
@@ -212,10 +233,33 @@ private:
 
     /**
      * Find the grounded fluent ID for a given expression.
-     * @param expr The expression to find ID for
-     * @return fluent ID, or -1 if not found
+     * For positive expressions: returns fluent_id (0, 1, 2, ...)
+     * For negative expressions: returns -(fluent_id + 1) (-1, -2, -3, ...)
+     * @param expr The expression to find ID for (can be positive or negative)
+     * @return encoded fact ID, or -1 if not found
      */
     int find_grounded_fluent_id(const Expression& expr) const;
+
+    /**
+     * Helper to decode fact ID and get string representation for debugging.
+     * @param fact_id The encoded fact ID
+     * @return string representation of the fact (with "not" prefix for negative facts)
+     */
+    std::string fact_id_to_string(int fact_id) const;
+
+    /**
+     * Encode a positive fluent ID as a negative fact ID.
+     * @param fluent_id The positive fluent ID (0, 1, 2, ...)
+     * @return negative fact ID (-(fluent_id + 1))
+     */
+    static int encode_negative_fact_id(int fluent_id) { return -(fluent_id + 1); }
+
+    /**
+     * Decode a negative fact ID to get the original positive fluent ID.
+     * @param negative_fact_id The negative fact ID (-1, -2, -3, ...)
+     * @return original positive fluent ID
+     */
+    static int decode_negative_fact_id(int negative_fact_id) { return -(negative_fact_id + 1); }
 };
 
 } // namespace planmt
