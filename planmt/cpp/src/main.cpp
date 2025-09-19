@@ -23,6 +23,20 @@
 
 #include "z3++.h"
 
+// Helper function to write result and exit
+int write_result_and_exit(const PlanGenerationResult& result, const char* output_file) {
+    std::fstream output(output_file, std::ios::out | std::ios::trunc | std::ios::binary);
+    if (!output || !result.SerializeToOstream(&output)) {
+        std::cerr << "Error: Could not write result to file: " << output_file << std::endl;
+        return 1;
+    }
+    if (planmt::Config::instance().is_info()) {
+        std::cout << "C++ Planner: Successfully wrote result to: " << output_file << std::endl;
+    }
+    google::protobuf::ShutdownProtobufLibrary();
+    return 0;
+}
+
 // Function to print the complete planning problem structure using enhanced planning classes
 PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     auto& config = planmt::Config::instance();
@@ -120,11 +134,21 @@ int main(int argc, char* argv[]) {
     planmt::Problem planning_problem(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
 
-    // === RELAXED PLANNING GRAPH DEMONSTRATION ===
-    if (planmt::Config::instance().is_info()) {
-        // Create and build the RPG
-        planmt::RelaxedPlanningGraph rpg(planning_problem);
-        bool goals_reachable = rpg.build();
+    // === RELAXED PLANNING GRAPH CHECK ===
+    // Create and build the RPG to check for unsolvability
+    planmt::RelaxedPlanningGraph rpg(planning_problem);
+    bool goals_reachable = rpg.build();
+
+    // If goals are not reachable in the relaxed planning graph, the problem is unsolvable
+    if (!goals_reachable) {
+        PlanGenerationResult result;
+        result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
+
+        auto* log_message = result.add_log_messages();
+        log_message->set_level(LogMessage_LogLevel_INFO);
+        log_message->set_message("Problem proven unsolvable: goals not reachable in relaxed planning graph");
+
+        return write_result_and_exit(result, argv[2]);
     }
 
     // Check if symmetry detection is requested
@@ -143,15 +167,5 @@ int main(int argc, char* argv[]) {
         planmt::Stats::instance().write_to_file(config.global.stats_file);
     }
 
-    // Write the result to the output file
-    std::fstream output(argv[2], std::ios::out | std::ios::trunc | std::ios::binary);
-    if (!output || !result.SerializeToOstream(&output)) {
-        std::cerr << "Error: Could not write result to file: " << argv[2] << std::endl;
-        return 1;
-    }
-    if (config.is_info()) {
-        std::cout << "C++ Planner: Successfully wrote result to: " << argv[2] << std::endl;
-    }
-    google::protobuf::ShutdownProtobufLibrary();
-    return 0;
+    return write_result_and_exit(result, argv[2]);
 }
