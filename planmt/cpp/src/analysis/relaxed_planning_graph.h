@@ -90,6 +90,11 @@ public:
     void print_debug_info() const;
 
     /**
+     * Print reachability analysis comparing reached vs total fluents/actions.
+     */
+    void print_reachability_analysis() const;
+
+    /**
      * Configure whether to stop building the RPG when goals are achieved.
      * @param enable If true, stop as soon as goals are achievable (default behavior)
      *               If false, continue building until fixpoint for complete analysis

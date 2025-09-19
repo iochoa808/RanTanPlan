@@ -36,6 +36,7 @@ bool RelaxedPlanningGraph::build() {
 
         if (config.is_debug()) {
             print_debug_info();
+            print_reachability_analysis();
         }
 
         return true;
@@ -89,6 +90,7 @@ bool RelaxedPlanningGraph::build() {
 
     if (config.is_debug()) {
         print_debug_info();
+        print_reachability_analysis();
     }
 
     return goals_reachable;
@@ -119,8 +121,9 @@ const std::unordered_set<int>& RelaxedPlanningGraph::get_conditions_in_layer(int
 
 bool RelaxedPlanningGraph::are_goals_achievable() const {
     // If no Boolean goal conditions were extracted (e.g., only numeric goals),
-    // we assume the goals are achievable in the RPG context.
-    // This is a simplification - numeric goals should be handled separately.
+    // we cannot reliably determine achievability in the RPG context without
+    // proper numeric analysis. For reachability analysis, we should continue
+    // building the RPG to see what actions become applicable.
     if (goal_condition_ids_.empty()) {
         return true;
     }
@@ -169,6 +172,92 @@ void RelaxedPlanningGraph::print_debug_info() const {
 
     std::cout << "Modified numeric fluents: " << modified_numeric_fluents_.size() << "\n";
     std::cout << "=========================================\n\n";
+}
+
+void RelaxedPlanningGraph::print_reachability_analysis() const {
+    std::cout << "\n=== RPG Reachability Analysis ===\n";
+
+    // Collect all reached fluent IDs from all layers
+    std::unordered_set<int> all_reached_fluents;
+    for (const auto& layer : fact_layers_) {
+        for (int fact_id : layer) {
+            // Only count positive fluent IDs (negative are encoded negations)
+            if (fact_id >= 0) {
+                all_reached_fluents.insert(fact_id);
+            }
+        }
+    }
+
+    // Collect all reached actions from all layers
+    std::unordered_set<const Action*> all_reached_actions;
+    for (const auto& layer : action_layers_) {
+        for (const Action* action : layer) {
+            all_reached_actions.insert(action);
+        }
+    }
+
+    // Total counts
+    size_t total_grounded_fluents = problem_.grounded_fluent_count();
+    size_t total_actions = problem_.action_count();
+
+    // Reachable counts
+    size_t reachable_fluents = all_reached_fluents.size();
+    size_t reachable_actions = all_reached_actions.size();
+
+    // Calculate unreachable counts
+    size_t unreachable_fluents = total_grounded_fluents - reachable_fluents;
+    size_t unreachable_actions = total_actions - reachable_actions;
+
+    std::cout << "Fluent Analysis:\n";
+    std::cout << "  Total grounded fluents: " << total_grounded_fluents << "\n";
+    std::cout << "  Reachable fluents: " << reachable_fluents << "\n";
+    std::cout << "  Unreachable fluents: " << unreachable_fluents << "\n";
+    if (total_grounded_fluents > 0) {
+        double fluent_coverage = (double)reachable_fluents / total_grounded_fluents * 100.0;
+        std::cout << "  Fluent coverage: " << std::fixed << std::setprecision(1) << fluent_coverage << "%\n";
+    }
+
+    std::cout << "\nAction Analysis:\n";
+    std::cout << "  Total actions: " << total_actions << "\n";
+    std::cout << "  Reachable actions: " << reachable_actions << "\n";
+    std::cout << "  Unreachable actions: " << unreachable_actions << "\n";
+    if (total_actions > 0) {
+        double action_coverage = (double)reachable_actions / total_actions * 100.0;
+        std::cout << "  Action coverage: " << std::fixed << std::setprecision(1) << action_coverage << "%\n";
+    }
+
+    // List unreachable fluents (up to 10 for brevity)
+    if (unreachable_fluents > 0) {
+        std::cout << "\nUnreachable fluents (showing up to 10):\n";
+        int count = 0;
+        for (size_t i = 0; i < total_grounded_fluents && count < 10; ++i) {
+            if (all_reached_fluents.find(static_cast<int>(i)) == all_reached_fluents.end()) {
+                std::cout << "  " << problem_.grounded_fluent(i).to_string() << "\n";
+                count++;
+            }
+        }
+        if (unreachable_fluents > 10) {
+            std::cout << "  ... and " << (unreachable_fluents - 10) << " more\n";
+        }
+    }
+
+    // List unreachable actions (up to 10 for brevity)
+    if (unreachable_actions > 0) {
+        std::cout << "\nUnreachable actions (showing up to 10):\n";
+        int count = 0;
+        for (size_t i = 0; i < total_actions && count < 10; ++i) {
+            const Action& action = problem_.action(i);
+            if (all_reached_actions.find(&action) == all_reached_actions.end()) {
+                std::cout << "  " << action.name() << "\n";
+                count++;
+            }
+        }
+        if (unreachable_actions > 10) {
+            std::cout << "  ... and " << (unreachable_actions - 10) << " more\n";
+        }
+    }
+
+    std::cout << "==================================\n\n";
 }
 
 void RelaxedPlanningGraph::initialize_fact_layer() {
