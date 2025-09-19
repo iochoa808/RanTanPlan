@@ -29,6 +29,7 @@ public:
         std::string parallelism_strategy = "sequential";
         std::string encoder = "grounded";
         int max_steps = 100;
+        int start_timestep = 0;  // Starting timestep for search (can be set by RPG lower bound)
     } planner;
     
     struct Propagators {

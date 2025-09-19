@@ -107,6 +107,14 @@ public:
      */
     bool get_early_termination_on_goals() const { return early_termination_on_goals_; }
 
+    /**
+     * Get the minimum number of steps (transitions) needed to achieve the goals.
+     * This provides a lower bound for planning based on the RPG structure.
+     * @return minimum steps needed, or -1 if goals are not achievable
+     * Note: 1 layer = 0 steps, 2 layers = 1 step, etc.
+     */
+    int get_minimum_steps_lower_bound() const;
+
 private:
     const Problem& problem_;
 

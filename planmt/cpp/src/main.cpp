@@ -151,8 +151,14 @@ int main(int argc, char* argv[]) {
         return write_result_and_exit(result, argv[2]);
     }
 
+    // Extract lower bound from RPG for starting timestep
+    int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
+
     // Check if symmetry detection is requested
     auto& config = planmt::Config::instance();
+
+    // Set the starting timestep from RPG lower bound in config
+    config.planner.start_timestep = rpg_lower_bound;
 
     // Solve the planning problem using configuration
     PlanGenerationResult result = solve_planning_problem(planning_problem);

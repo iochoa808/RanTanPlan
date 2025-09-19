@@ -15,9 +15,9 @@ class SequentialPlanner {
 public:
     // Constructor
     SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx);
-    
+
     // Constructor with propagator support
-    SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx, 
+    SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx,
                      std::unique_ptr<PropagatorStrategy> propagator);
 
     // Search for a plan and return it
@@ -38,15 +38,18 @@ private:
     z3::context& ctx_;
     z3::solver solver_;  // Solver to maintain current constraints state
     bool solution_found_ = false;  // Track if last search found a solution
-    
+
     // Propagator strategy for custom propagation (defaults to null propagator)
     std::unique_ptr<PropagatorStrategy> propagator_strategy_;
     
     // Debug method to output constraints for a given timestep
     void debug_output_constraints();
-    
+
     // Collect comprehensive statistics
     void collect_statistics();
+
+    // Add constraints for a given timestep (actions, frames, symmetries, parallelism)
+    void add_timestep_constraints(int timestep);
 };
 
 } // namespace planmt

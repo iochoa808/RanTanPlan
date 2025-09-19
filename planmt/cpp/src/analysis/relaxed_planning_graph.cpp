@@ -585,4 +585,27 @@ std::string RelaxedPlanningGraph::fact_id_to_string(int fact_id) const {
     return "unknown_fact_" + std::to_string(fact_id);
 }
 
+int RelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
+    if (!are_goals_achievable()) {
+        return -1; // Goals not achievable
+    }
+
+    if (fact_layers_.empty()) {
+        return -1; // RPG not built yet
+    }
+
+    // Find the maximum layer where any goal condition first becomes achievable
+    int max_goal_layer = 0;
+    for (int goal_id : goal_condition_ids_) {
+        auto it = achievability_layer_.find(goal_id);
+        if (it != achievability_layer_.end()) {
+            max_goal_layer = std::max(max_goal_layer, it->second);
+        }
+    }
+
+    // Convert layer number to steps: layer N means N steps are needed
+    // Layer 0 = initial state (0 steps), Layer 1 = 1 step, etc.
+    return max_goal_layer;
+}
+
 } // namespace planmt
