@@ -31,7 +31,7 @@ namespace planmt {
  */
 class RelaxedPlanningGraph {
 public:
-    explicit RelaxedPlanningGraph(const Problem& problem);
+    explicit RelaxedPlanningGraph(Problem& problem);
 
     /**
      * Build the relaxed planning graph from initial state until fixpoint.
@@ -124,9 +124,18 @@ public:
      */
     std::vector<const Action*> get_removable_actions() const;
 
+    /**
+     * Remove unreachable actions from the problem after RPG analysis.
+     * This method modifies the problem by removing actions that never appear
+     * in any RPG layer, reducing the SAT encoding size.
+     * @return number of actions removed
+     * @warning This modifies the problem and invalidates existing action pointers
+     */
+    size_t remove_unreachable_actions();
+
 
 private:
-    const Problem& problem_;
+    Problem& problem_;
 
     // Layer-based storage using grounded fluent IDs for efficiency
     // Fact encoding: positive facts use fluent_id (0, 1, 2, ...),

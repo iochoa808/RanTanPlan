@@ -3,6 +3,7 @@
 #include "../util/memory_tracker.h"
 #include <iostream>
 #include <iomanip>
+#include <algorithm>
 
 namespace planmt {
 
@@ -10,7 +11,7 @@ namespace planmt {
 const std::vector<const Action*> RelaxedPlanningGraph::empty_action_vector_;
 const std::unordered_set<int> RelaxedPlanningGraph::empty_condition_set_;
 
-RelaxedPlanningGraph::RelaxedPlanningGraph(const Problem& problem)
+RelaxedPlanningGraph::RelaxedPlanningGraph(Problem& problem)
     : problem_(problem), early_termination_on_goals_(false), build_time_ms_(0.0) {
     extract_goal_conditions();
 }
@@ -390,6 +391,41 @@ std::vector<const Action*> RelaxedPlanningGraph::get_removable_actions() const {
     }
 
     return removable_actions;
+}
+
+size_t RelaxedPlanningGraph::remove_unreachable_actions() {
+    // Get actions that can be safely removed
+    auto removable_actions = get_removable_actions();
+
+    if (removable_actions.empty()) {
+        return 0;
+    }
+
+    // Sort by index in descending order to maintain index validity during removal
+    // We need to remove from highest index to lowest to avoid invalidating indices
+    std::vector<size_t> indices_to_remove;
+    for (const Action* action : removable_actions) {
+        // Find the index of this action
+        for (size_t i = 0; i < problem_.action_count(); ++i) {
+            if (&problem_.action(i) == action) {
+                indices_to_remove.push_back(i);
+                break;
+            }
+        }
+    }
+
+    // Sort indices in descending order
+    std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<size_t>());
+
+    // Remove actions from highest index to lowest
+    size_t removed_count = 0;
+    for (size_t index : indices_to_remove) {
+        if (problem_.remove_action(index)) {
+            removed_count++;
+        }
+    }
+
+    return removed_count;
 }
 
 

@@ -151,6 +151,16 @@ int main(int argc, char* argv[]) {
         return write_result_and_exit(result, argv[2]);
     }
 
+    // Remove unreachable actions to reduce encoding size
+    size_t total_actions = planning_problem.action_count();
+    size_t removed_actions = rpg.remove_unreachable_actions();
+    if (planmt::Config::instance().is_info()) {
+        double percentage = (double)removed_actions / total_actions * 100.0;
+        std::cout << "[RPG] Removed " << removed_actions << "/" << total_actions
+                    << " unreachable actions (" << std::fixed << std::setprecision(1)
+                    << percentage << "%)" << std::endl;
+    }
+
     // Extract lower bound from RPG for starting timestep
     int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
 
