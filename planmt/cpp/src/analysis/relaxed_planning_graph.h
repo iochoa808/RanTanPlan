@@ -115,6 +115,16 @@ public:
      */
     int get_minimum_steps_lower_bound() const;
 
+    /**
+     * Get actions that never appear in any RPG layer after fixpoint analysis.
+     * These actions are safe to remove because:
+     * - Actions with only numeric preconditions would appear immediately
+     * - Actions that never appear have unsatisfiable Boolean preconditions
+     * @return vector of pointers to actions that never become applicable
+     */
+    std::vector<const Action*> get_removable_actions() const;
+
+
 private:
     const Problem& problem_;
 
@@ -127,8 +137,6 @@ private:
     // Achievability tracking using fluent IDs (same encoding as fact_layers_)
     std::unordered_map<int, int> achievability_layer_;                   // Maps fact_id -> first layer it's achievable
 
-    // Numeric fluent tracking using fluent IDs
-    std::unordered_set<int> modified_numeric_fluents_;                   // IDs of fluents modified by any action
 
     // Goal tracking - we'll extract condition IDs during goal processing
     std::vector<int> goal_condition_ids_;                               // IDs of goal conditions
@@ -199,12 +207,6 @@ private:
      */
     void add_simple_effect_to_layer(const Effect& effect, int target_layer_index);
 
-    /**
-     * Add conditional or quantified effects to the target layer optimistically.
-     * @param effect The conditional/quantified effect to add
-     * @param target_layer_index The layer index to add effect to
-     */
-    void add_conditional_or_quantified_effect_to_layer(const Effect& effect, int target_layer_index);
 
     /**
      * Check if a fixpoint has been reached (no new facts in the last layer).
@@ -220,12 +222,6 @@ private:
      */
     bool is_fact_in_layer(const Expression& condition, int layer_index) const;
 
-    /**
-     * Check if a condition is negated (starts with 'not').
-     * @param condition The condition to check
-     * @return true if condition is negated
-     */
-    bool is_negated_condition(const Expression& condition) const;
 
     /**
      * Extract the inner condition from a negated condition.
@@ -234,34 +230,6 @@ private:
      */
     const Expression& get_inner_condition(const Expression& negated_condition) const;
 
-    /**
-     * Handle numeric condition achievability using simplified approach.
-     * If any numeric variable in the condition has been modified, assume it can be satisfied.
-     * @param condition The numeric condition to check
-     * @param layer_index The layer to check against (unused in simplified approach)
-     * @return true if any fluent in the condition has been modified
-     */
-    bool is_numeric_condition_potentially_satisfied(const Expression& condition, int layer_index) const;
-
-    /**
-     * Check if an expression contains any numeric fluents that have been modified.
-     * @param expr The expression to analyze
-     * @return true if any numeric fluent in the expression has been modified
-     */
-    bool contains_modified_numeric_fluent(const Expression& expr) const;
-
-    /**
-     * Collect all fluent expressions that appear in the given expression.
-     * @param expr The expression to analyze
-     * @param fluents Output set for pointers to collected fluents
-     */
-    void collect_fluents_in_expression(const Expression& expr, std::unordered_set<const Expression*>& fluents) const;
-
-    /**
-     * Process action effects to identify which numeric fluents are modified.
-     * Called during initialization to build the modified_numeric_fluents_ set.
-     */
-    void analyze_numeric_modifications();
 
     /**
      * Find the grounded fluent ID for a given expression.
