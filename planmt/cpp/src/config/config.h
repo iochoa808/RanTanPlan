@@ -23,6 +23,7 @@ public:
         int timeout = 3600;
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
+        bool enable_action_removal = true;  // Enable RPG-based action removal optimization
     } global;
     
     struct Planner {
