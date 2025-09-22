@@ -23,12 +23,14 @@ public:
         int timeout = 3600;
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
+        bool enable_action_removal = true;  // Enable RPG-based action removal optimization
     } global;
     
     struct Planner {
         std::string parallelism_strategy = "sequential";
         std::string encoder = "grounded";
         int max_steps = 100;
+        int start_timestep = 0;  // Starting timestep for search (can be set by RPG lower bound)
     } planner;
     
     struct Propagators {

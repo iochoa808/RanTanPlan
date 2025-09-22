@@ -86,6 +86,10 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         else if (arg == "--detect-symmetries") {
             config.symmetry.detect_symmetries = true;
         }
+        // Action removal options
+        else if (arg == "--no-action-removal") {
+            config.global.enable_action_removal = false;
+        }
         // Statistics options
         else if (arg == "--stats-file") {
             if (i + 1 < argc) {

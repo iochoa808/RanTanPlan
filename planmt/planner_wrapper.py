@@ -41,6 +41,7 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         self._stats_file = options.get('stats_file')  # None if not specified
         # allow disabling CNF normalization via planner params (default: enabled)
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
+        self._no_action_removal = options.get('no_action_removal', False)
 
     def _find_executable(self, provided_path):
         """Find the planmt executable, trying various locations."""
@@ -254,7 +255,10 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             
             if self._stats_file is not None:
                 command.extend(["--stats-file", self._stats_file])
-            
+
+            if self._no_action_removal:
+                command.append("--no-action-removal")
+
             print(f"Running planner: {' '.join(command)}")
 
             # Run the C++ planner with real-time output streaming

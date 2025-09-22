@@ -33,6 +33,10 @@ public:
     bool is_integer() const { return std::holds_alternative<int64_t>(value_); }
     bool is_real() const { return std::holds_alternative<Real>(value_); }
     bool is_boolean() const { return std::holds_alternative<bool>(value_); }
+
+    // Boolean value checkers
+    bool is_true() const { return is_boolean() && boolean(); }
+    bool is_false() const { return is_boolean() && !boolean(); }
     
     // Value getters
     const std::string& symbol() const { return std::get<std::string>(value_); }

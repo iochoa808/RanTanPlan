@@ -76,6 +76,14 @@ public:
     void add_grounded_fluent(const Expression& fluent);
     void set_grounded_fluents(const std::vector<Expression>& fluents);
 
+    // Grounded fluent lookup
+    /**
+     * Find the index of a grounded fluent expression using O(1) hash map lookup.
+     * @param fluent The fluent expression to find
+     * @return fluent index (0-based), or -1 if not found
+     */
+    int find_grounded_fluent_index(const Expression& fluent) const;
+
     // Action access
     const std::vector<Action>& actions() const { return actions_; }
     size_t action_count() const { return actions_.size(); }
@@ -89,6 +97,24 @@ public:
     // IDs are maintained across add_action(), set_actions(), and load_actions() operations.
     void add_action(const Action& action);
     void set_actions(const std::vector<Action>& actions);
+
+    /**
+     * Remove an action by index and maintain ID system consistency.
+     * All actions after the removed index will have their IDs decremented by 1.
+     * This ensures action.id() continues to match the vector index.
+     * @param index The index of the action to remove (0-based)
+     * @return true if removal successful, false if index out of bounds
+     * @warning This invalidates any existing pointers/references to actions with index >= removed index
+     */
+    bool remove_action(size_t index);
+
+    /**
+     * Remove an action by pointer and maintain ID system consistency.
+     * @param action Pointer to the action to remove
+     * @return true if removal successful, false if action not found
+     * @warning This invalidates any existing pointers/references to actions after the removed action
+     */
+    bool remove_action(const Action* action);
     
     // Initial state access
     const std::vector<Assignment>& initial_state() const { return initial_state_; }

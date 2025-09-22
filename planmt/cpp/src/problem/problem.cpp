@@ -114,6 +114,35 @@ void Problem::set_actions(const std::vector<Action>& actions) {
     build_action_mappings();
 }
 
+bool Problem::remove_action(size_t index) {
+    if (index >= actions_.size()) {
+        return false;
+    }
+
+    // Remove the action from the vector
+    actions_.erase(actions_.begin() + index);
+
+    // Update IDs for all remaining actions to maintain index == ID invariant
+    for (size_t i = index; i < actions_.size(); ++i) {
+        actions_[i].set_id(static_cast<int>(i));
+    }
+
+    // Rebuild the name-to-index mapping
+    build_action_mappings();
+
+    return true;
+}
+
+bool Problem::remove_action(const Action* action) {
+    // Find the action index
+    for (size_t i = 0; i < actions_.size(); ++i) {
+        if (&actions_[i] == action) {
+            return remove_action(i);
+        }
+    }
+    return false;
+}
+
 void Problem::add_grounded_fluent(const Expression& fluent) {
     grounded_fluents_.push_back(fluent);
     build_grounded_fluent_mappings();
@@ -312,6 +341,11 @@ void Problem::collect_all_grounded_fluents() {
 
     // Build the lookup mappings
     build_grounded_fluent_mappings();
+}
+
+int Problem::find_grounded_fluent_index(const Expression& fluent) const {
+    auto it = grounded_fluent_to_index_.find(fluent);
+    return (it != grounded_fluent_to_index_.end()) ? static_cast<int>(it->second) : -1;
 }
 
 } // namespace planmt

@@ -23,6 +23,20 @@
 
 #include "z3++.h"
 
+// Helper function to write result and exit
+int write_result_and_exit(const PlanGenerationResult& result, const char* output_file) {
+    std::fstream output(output_file, std::ios::out | std::ios::trunc | std::ios::binary);
+    if (!output || !result.SerializeToOstream(&output)) {
+        std::cerr << "Error: Could not write result to file: " << output_file << std::endl;
+        return 1;
+    }
+    if (planmt::Config::instance().is_info()) {
+        std::cout << "C++ Planner: Successfully wrote result to: " << output_file << std::endl;
+    }
+    google::protobuf::ShutdownProtobufLibrary();
+    return 0;
+}
+
 // Function to print the complete planning problem structure using enhanced planning classes
 PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     auto& config = planmt::Config::instance();
@@ -120,31 +134,44 @@ int main(int argc, char* argv[]) {
     planmt::Problem planning_problem(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
 
-    // === RELAXED PLANNING GRAPH DEMONSTRATION ===
-    if (planmt::Config::instance().is_info()) {
-        std::cout << "\n=== Testing Relaxed Planning Graph ===" << std::endl;
+    // === RELAXED PLANNING GRAPH CHECK ===
+    // Create and build the RPG to check for unsolvability
+    planmt::RelaxedPlanningGraph rpg(planning_problem);
+    bool goals_reachable = rpg.build();
 
-        // Create and build the RPG
-        planmt::RelaxedPlanningGraph rpg(planning_problem);
-        std::cout << "Building relaxed planning graph..." << std::endl;
+    // If goals are not reachable in the relaxed planning graph, the problem is unsolvable
+    if (!goals_reachable) {
+        PlanGenerationResult result;
+        result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
 
-        auto start = std::chrono::high_resolution_clock::now();
-        bool goals_reachable = rpg.build();
-        auto end = std::chrono::high_resolution_clock::now();
+        auto* log_message = result.add_log_messages();
+        log_message->set_level(LogMessage_LogLevel_INFO);
+        log_message->set_message("Problem proven unsolvable: goals not reachable in relaxed planning graph");
 
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        std::cout << "RPG built in " << duration.count() << "ms" << std::endl;
-        std::cout << "Goals reachable: " << (goals_reachable ? "YES" : "NO") << std::endl;
-        std::cout << "Total layers: " << rpg.get_layer_count() << std::endl;
-
-        // Print detailed debug information
-        rpg.print_debug_info();
-
-        std::cout << "=== End RPG Test ===\n" << std::endl;
+        return write_result_and_exit(result, argv[2]);
     }
+
+    // Remove unreachable actions to reduce encoding size
+    size_t total_actions = planning_problem.action_count();
+    size_t removed_actions = 0;
+    if (planmt::Config::instance().global.enable_action_removal) {
+        removed_actions = rpg.remove_unreachable_actions();
+        if (planmt::Config::instance().is_info()) {
+            double percentage = (double)removed_actions / total_actions * 100.0;
+            std::cout << "[RPG] Removed " << removed_actions << "/" << total_actions
+                        << " unreachable actions (" << std::fixed << std::setprecision(1)
+                        << percentage << "%)" << std::endl;
+        }
+    }
+
+    // Extract lower bound from RPG for starting timestep
+    int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
 
     // Check if symmetry detection is requested
     auto& config = planmt::Config::instance();
+
+    // Set the starting timestep from RPG lower bound in config
+    config.planner.start_timestep = rpg_lower_bound;
 
     // Solve the planning problem using configuration
     PlanGenerationResult result = solve_planning_problem(planning_problem);
@@ -159,15 +186,5 @@ int main(int argc, char* argv[]) {
         planmt::Stats::instance().write_to_file(config.global.stats_file);
     }
 
-    // Write the result to the output file
-    std::fstream output(argv[2], std::ios::out | std::ios::trunc | std::ios::binary);
-    if (!output || !result.SerializeToOstream(&output)) {
-        std::cerr << "Error: Could not write result to file: " << argv[2] << std::endl;
-        return 1;
-    }
-    if (config.is_info()) {
-        std::cout << "C++ Planner: Successfully wrote result to: " << argv[2] << std::endl;
-    }
-    google::protobuf::ShutdownProtobufLibrary();
-    return 0;
+    return write_result_and_exit(result, argv[2]);
 }

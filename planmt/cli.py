@@ -69,6 +69,8 @@ Examples:
                        help="Enable symmetry detection and output")
     parser.add_argument("--no-cnf-normalization", action="store_true",
                        help="Disable CNF normalization of goals and preconditions")
+    parser.add_argument("--no-action-removal", action="store_true",
+                       help="Disable RPG-based action removal optimization")
     
     parser.add_argument(
         "--version",
@@ -102,9 +104,10 @@ def solve_problem(problem, args):
         'parallelism': strategy_config.parallelism,
         'propagator': strategy_config.propagator,
         'encoder': strategy_config.encoder,
-        'detect_symmetries' : strategy_config.detect_symmetries
+        'detect_symmetries': strategy_config.detect_symmetries,
+        'no_action_removal': strategy_config.no_action_removal
     }
-    
+
     planner_params['interference_analysis'] = strategy_config.interference_analysis
     
     if args.executable:
@@ -119,7 +122,9 @@ def solve_problem(problem, args):
         planner_params['detect_symmetries'] = True
     if args.no_cnf_normalization:
         planner_params['no_cnf_normalization'] = True
-        
+    if args.no_action_removal:
+        planner_params['no_action_removal'] = True
+
     # Handle verbosity
     if args.silent:
         planner_params['verbosity'] = "silent"

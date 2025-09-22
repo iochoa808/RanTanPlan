@@ -14,15 +14,15 @@
 
 namespace planmt {
 
-    SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx) 
+    SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
         : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
           propagator_strategy_(std::make_unique<NullPropagator>()) {
         // Initialize planner with the given problem, encoder, and Z3 context
         // Uses null propagator by default (no propagation)
     }
 
-    SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx, 
-                                       std::unique_ptr<PropagatorStrategy> propagator) 
+    SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx,
+                                       std::unique_ptr<PropagatorStrategy> propagator)
         : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
           propagator_strategy_(propagator ? std::move(propagator) : std::make_unique<NullPropagator>()) {
         // Initialize planner with the given problem, encoder, Z3 context, and propagator strategy
@@ -42,29 +42,58 @@ void SequentialPlanner::debug_output_constraints() {
 
 void SequentialPlanner::collect_statistics() {
     auto& stats = Stats::instance();
-    
+
     // Collect key Z3 solver statistics (just the important numbers)
     z3::stats z3_stats = solver_.statistics();
     for (unsigned i = 0; i < z3_stats.size(); ++i) {
         std::string key = "z3." + z3_stats.key(i);
-        
+
         if (z3_stats.is_uint(i)) {
             stats.set(key, static_cast<double>(z3_stats.uint_value(i)));
         } else if (z3_stats.is_double(i)) {
             stats.set(key, z3_stats.double_value(i));
         }
     }
-    
+
     // Add memory info
     stats.set("memory.current_mb", MemoryTracker::instance().get_current_memory_mb());
+}
+
+void SequentialPlanner::add_timestep_constraints(int timestep) {
+    auto& config = Config::instance();
+
+    solver_.add(*encoder_.encode_actions(timestep));
+    solver_.add(*encoder_.encode_frames(timestep));
+
+    // Add symmetry breaking constraints if enabled
+    if (config.symmetry.detect_symmetries) {
+        solver_.add(*encoder_.encode_symmetries(timestep));
+    }
+
+    // Only add parallelism constraints if not using certain propagators
+    if (get_propagator_type() != PropagatorType::FORALL
+        && get_propagator_type() != PropagatorType::LAZY_FORALL
+        && get_propagator_type() != PropagatorType::HEURISTIC
+        && get_propagator_type() != PropagatorType::EXISTS) {
+        solver_.add(*encoder_.encode_parallelism(timestep));
+    }
+
+    // Register variables for next timestep
+    propagator_strategy_->register_timestep_variables(timestep + 1);
 }
 
 Plan SequentialPlanner::search() {
     auto& config = Config::instance();
     auto& stats = Stats::instance();
-    
+
+    int start_timestep = std::max(0, config.planner.start_timestep);
+
     if (config.is_info()) {
-        std::cout << "Starting search with propagator: " << propagator_strategy_->get_name() << std::endl;
+        std::cout << "Starting search with propagator: " << propagator_strategy_->get_name();
+        if (start_timestep > 0) {
+            std::cout << " from timestep " << start_timestep;
+        }
+        std::cout << std::endl;
     }
     
     // Reset solution found flag and statistics
@@ -73,15 +102,20 @@ Plan SequentialPlanner::search() {
 
     // Add initial state constraints (these are invariant)
     solver_.add(*encoder_.encode_initial_state());
-    
+
     // Register variables for timestep 0 (initial state)
     propagator_strategy_->register_timestep_variables(0);
-    
-    // Iterate from 0 to max_steps timesteps
+
+    // Pre-add all constraints for timesteps 1 through start_timestep-1
+    // This ensures all necessary constraints are in place before starting the main search
+    for (int pre_timestep = 1; pre_timestep < start_timestep; ++pre_timestep) {
+        add_timestep_constraints(pre_timestep - 1);
+    }
+
+    // Now that we are all set up, iterate from start_timestep to max_steps timesteps and properly search
     double total_time = 0.0; // Track total time used
     auto start_time = std::chrono::high_resolution_clock::now(); // Track total search time for timeout
-    
-    for (int timestep = 0; timestep <= config.planner.max_steps; ++timestep) {
+    for (int timestep = start_timestep; timestep <= config.planner.max_steps; ++timestep) {
         // Check timeout
         auto current_time = std::chrono::high_resolution_clock::now();
         auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
@@ -96,27 +130,11 @@ Plan SequentialPlanner::search() {
         // Time formula creation
         auto formula_start = std::chrono::high_resolution_clock::now();
         
-        // Add constraints for this timestep (incremental)
-        if (timestep > 0) {
-            solver_.add(*encoder_.encode_actions(timestep-1));
-            solver_.add(*encoder_.encode_frames(timestep-1));
-            
-            // Add symmetry breaking constraints if enabled
-            if (config.symmetry.detect_symmetries) {
-                solver_.add(*encoder_.encode_symmetries(timestep-1));
-            }
-            
-            // Only add parallelism constraints if not using ForallPropagator or LazyForallPropagator
-            // (ForallPropagator and LazyForallPropagator handle interference dynamically via propagation)
-            if (get_propagator_type() != PropagatorType::FORALL
-                && get_propagator_type() != PropagatorType::LAZY_FORALL
-                && get_propagator_type() != PropagatorType::HEURISTIC
-                && get_propagator_type() != PropagatorType::EXISTS) {
-                solver_.add(*encoder_.encode_parallelism(timestep-1));
-            }
-            
-            // Register variables for timestep after constraints are added
-            propagator_strategy_->register_timestep_variables(timestep);
+        // This check is needed in case start_timestep_ is 0 as the first check will be for timestep 0
+        // and we want to check if the goal is satisfiable in the initial state
+        if (timestep > 0) { 
+            // Add constraints for this timestep (incremental)
+            add_timestep_constraints(timestep - 1);
         }
         
         // Make the goal literal imply the goal at this timestep
