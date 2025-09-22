@@ -1,6 +1,6 @@
-#include "sequential_semantics.h"
-#include "../../problem/action.h"
-#include "../../util/stats.h"
+#include "sequential_semantics.hpp"
+#include "../../problem/action.hpp"
+#include "../../util/stats.hpp"
 #include <iostream>
 
 namespace planmt {

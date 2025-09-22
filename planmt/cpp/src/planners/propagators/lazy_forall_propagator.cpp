@@ -1,8 +1,8 @@
-#include "lazy_forall_propagator.h"
-#include "../../config/config.h"
-#include "../../encoders/z3_variable_factory.h"
-#include "../../encoders/parallelism/interference_analysis.h"
-#include "../../util/stats.h"
+#include "lazy_forall_propagator.hpp"
+#include "../../config/config.hpp"
+#include "../../encoders/z3_variable_factory.hpp"
+#include "../../encoders/parallelism/interference_analysis.hpp"
+#include "../../util/stats.hpp"
 #include <iostream>
 
 namespace planmt {

@@ -1,4 +1,4 @@
-#include "problem.h"
+#include "problem.hpp"
 #include <sstream>
 
 namespace planmt {

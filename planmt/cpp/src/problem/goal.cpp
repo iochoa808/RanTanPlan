@@ -1,4 +1,4 @@
-#include "goal.h"
+#include "goal.hpp"
 
 namespace planmt {
 

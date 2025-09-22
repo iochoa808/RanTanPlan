@@ -1,6 +1,6 @@
-#include "arpg.h"
-#include "../config/config.h"
-#include "../util/memory_tracker.h"
+#include "arpg.hpp"
+#include "../config/config.hpp"
+#include "../util/memory_tracker.hpp"
 #include <iostream>
 #include <algorithm>
 #include <chrono>

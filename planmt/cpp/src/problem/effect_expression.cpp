@@ -1,4 +1,4 @@
-#include "effect_expression.h"
+#include "effect_expression.hpp"
 #include <sstream>
 
 namespace planmt {

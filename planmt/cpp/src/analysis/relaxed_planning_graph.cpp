@@ -1,4 +1,4 @@
-#include "relaxed_planning_graph.h"
+#include "relaxed_planning_graph.hpp"
 #include <iostream>
 #include <iomanip>
 

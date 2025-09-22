@@ -1,6 +1,6 @@
-#include "achievers_analysis.h"
-#include "../arpg/arpg.h"
-#include "../util/memory_tracker.h"
+#include "achievers_analysis.hpp"
+#include "../arpg/arpg.hpp"
+#include "../util/memory_tracker.hpp"
 #include <iostream>
 #include <algorithm>
 

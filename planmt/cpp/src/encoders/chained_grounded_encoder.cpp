@@ -1,6 +1,6 @@
-#include "chained_grounded_encoder.h"
-#include "../util/stats.h"
-#include "../problem/visitors/expression_visitor.h"
+#include "chained_grounded_encoder.hpp"
+#include "../util/stats.hpp"
+#include "../problem/visitors/expression_visitor.hpp"
 #include <iostream>
 #include <algorithm>
 #include <cassert>

@@ -1,7 +1,7 @@
-#include "smt_symmetry_checker.h"
-#include "../problem/visitors/expression_visitor.h"
-#include "../util/memory_tracker.h"
-#include "../config/config.h"
+#include "smt_symmetry_checker.hpp"
+#include "../problem/visitors/expression_visitor.hpp"
+#include "../util/memory_tracker.hpp"
+#include "../config/config.hpp"
 #include <iostream>
 #include <algorithm>
 #include <set>

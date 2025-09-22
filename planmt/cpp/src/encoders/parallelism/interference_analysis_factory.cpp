@@ -1,8 +1,8 @@
-#include "interference_analysis_factory.h"
-#include "eager_interference_analysis.h"
-#include "lazy_interference_analysis.h"
-#include "semantic_interference_analysis.h"
-#include "../../config/config.h"
+#include "interference_analysis_factory.hpp"
+#include "eager_interference_analysis.hpp"
+#include "lazy_interference_analysis.hpp"
+#include "semantic_interference_analysis.hpp"
+#include "../../config/config.hpp"
 #include <iostream>
 #include <stdexcept>
 

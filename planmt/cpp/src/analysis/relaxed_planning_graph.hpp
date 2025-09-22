@@ -1,0 +1,221 @@
+#pragma once
+
+#include "../problem/problem.hpp"
+#include "../problem/action.hpp"
+#include "../problem/expression.hpp"
+#include "../problem/goal.hpp"
+#include <vector>
+#include <unordered_set>
+#include <unordered_map>
+
+namespace planmt {
+
+/**
+ * @brief RelaxedPlanningGraph
+ *
+ * Layer-by-layer relaxed planning graph implementation using traditional fixpoint computation.
+ *
+ * Features:
+ * - Syntactic achievability check for Boolean fluents
+ * - Simplified numeric handling: any modification of a numeric variable enables any condition containing it
+ * - Layer-by-layer construction until fixpoint is reached
+ * - Independent from ARPG and current achievers analysis
+ *
+ * The relaxed planning graph ignores delete effects and negative interactions,
+ * providing an optimistic view of what's achievable for heuristic computation.
+ */
+class RelaxedPlanningGraph {
+public:
+    explicit RelaxedPlanningGraph(const Problem& problem);
+
+    /**
+     * Build the relaxed planning graph from initial state until fixpoint.
+     * @return true if all goals are reachable, false otherwise
+     */
+    bool build();
+
+    /**
+     * Check if a specific condition expression is achievable.
+     * @param condition The condition to check (can be Boolean or numeric)
+     * @return true if the condition is achievable in the relaxed graph
+     */
+    bool is_achievable(const Expression& condition) const;
+
+    /**
+     * Get the first layer where a condition becomes achievable.
+     * @param condition The condition to check
+     * @return layer number (0-based), or -1 if not achievable
+     */
+    int get_achievability_layer(const Expression& condition) const;
+
+    /**
+     * Get all actions that become applicable in a given layer.
+     * @param layer The layer number (0-based)
+     * @return reference to vector of actions, empty if layer doesn't exist
+     */
+    const std::vector<const Action*>& get_actions_in_layer(int layer) const;
+
+    /**
+     * Get all conditions that become true in a given layer.
+     * @param layer The layer number (0-based)
+     * @return reference to set of condition IDs, empty if layer doesn't exist
+     */
+    const std::unordered_set<int>& get_conditions_in_layer(int layer) const;
+
+    /**
+     * Get the total number of layers in the graph.
+     * @return number of layers, 0 if graph hasn't been built
+     */
+    size_t get_layer_count() const { return fact_layers_.size(); }
+
+    /**
+     * Check if all goal conditions are achievable.
+     * @return true if all goals are reachable
+     */
+    bool are_goals_achievable() const;
+
+    /**
+     * Reset the graph for recomputation.
+     */
+    void reset();
+
+    /**
+     * Print debugging information about the graph structure.
+     */
+    void print_debug_info() const;
+
+private:
+    const Problem& problem_;
+
+    // Layer-based storage using grounded fluent IDs for efficiency
+    std::vector<std::unordered_set<int>> fact_layers_;                   // IDs of facts true at each layer
+    std::vector<std::vector<const Action*>> action_layers_;               // Pointers to actions applicable at each layer
+
+    // Achievability tracking using fluent IDs
+    std::unordered_map<int, int> achievability_layer_;                   // Maps fluent_id -> first layer it's achievable
+
+    // Numeric fluent tracking using fluent IDs
+    std::unordered_set<int> modified_numeric_fluents_;                   // IDs of fluents modified by any action
+
+    // Goal tracking - we'll extract condition IDs during goal processing
+    std::vector<int> goal_condition_ids_;                               // IDs of goal conditions
+
+    // Static empty containers for safe returns
+    static const std::vector<const Action*> empty_action_vector_;
+    static const std::unordered_set<int> empty_condition_set_;
+
+    /**
+     * Initialize the first fact layer with the initial state.
+     */
+    void initialize_fact_layer();
+
+    /**
+     * Extract all goal conditions from the problem goals.
+     */
+    void extract_goal_conditions();
+
+    /**
+     * Extract conditions from CNF expressions (based on AchieversAnalysis pattern).
+     * @param expr The expression to extract from
+     * @param conditions Output vector for pointers to extracted conditions
+     */
+    void extract_cnf_conditions(const Expression& expr, std::vector<const Expression*>& conditions) const;
+
+    /**
+     * Compute which actions become applicable at the current layer.
+     * @param layer_index The current layer index
+     * @return vector of newly applicable actions
+     */
+    std::vector<const Action*> compute_applicable_actions(int layer_index) const;
+
+    /**
+     * Check if all preconditions of an action are satisfied at a given layer.
+     * @param action The action to check
+     * @param layer_index The layer to check against
+     * @return true if all preconditions are satisfied
+     */
+    bool are_preconditions_satisfied(const Action& action, int layer_index) const;
+
+    /**
+     * Check if a single condition is satisfied at a given layer.
+     * Handles both positive and negated conditions.
+     * @param condition The condition to check (may be negated)
+     * @param layer_index The layer to check against
+     * @return true if the condition is satisfied
+     */
+    bool is_condition_satisfied(const Expression& condition, int layer_index) const;
+
+    /**
+     * Add effects of an action to the next fact layer.
+     * @param action The action whose effects to add
+     * @param target_layer_index The layer index to add effects to
+     */
+    void add_effects_to_layer(const Action& action, int target_layer_index);
+
+    /**
+     * Check if a fixpoint has been reached (no new facts in the last layer).
+     * @return true if no progress was made in the last iteration
+     */
+    bool is_fixpoint_reached() const;
+
+    /**
+     * Handle Boolean fluent achievability using syntactic checks.
+     * Assumes condition is positive (not negated).
+     * @param condition The positive Boolean condition to check
+     * @param layer_index The layer to check against
+     * @return true if the Boolean condition is satisfied
+     */
+    bool is_positive_condition_satisfied(const Expression& condition, int layer_index) const;
+
+    /**
+     * Check if a condition is negated (starts with 'not').
+     * @param condition The condition to check
+     * @return true if condition is negated
+     */
+    bool is_negated_condition(const Expression& condition) const;
+
+    /**
+     * Extract the inner condition from a negated condition.
+     * @param negated_condition The negated condition (must be negated)
+     * @return reference to the inner positive condition
+     */
+    const Expression& get_inner_condition(const Expression& negated_condition) const;
+
+    /**
+     * Handle numeric condition achievability using simplified approach.
+     * If any numeric variable in the condition has been modified, assume it can be satisfied.
+     * @param condition The numeric condition to check
+     * @param layer_index The layer to check against (unused in simplified approach)
+     * @return true if any fluent in the condition has been modified
+     */
+    bool is_numeric_condition_potentially_satisfied(const Expression& condition, int layer_index) const;
+
+    /**
+     * Check if an expression contains any numeric fluents that have been modified.
+     * @param expr The expression to analyze
+     * @return true if any numeric fluent in the expression has been modified
+     */
+    bool contains_modified_numeric_fluent(const Expression& expr) const;
+
+    /**
+     * Collect all fluent expressions that appear in the given expression.
+     * @param expr The expression to analyze
+     * @param fluents Output set for pointers to collected fluents
+     */
+    void collect_fluents_in_expression(const Expression& expr, std::unordered_set<const Expression*>& fluents) const;
+
+    /**
+     * Process action effects to identify which numeric fluents are modified.
+     * Called during initialization to build the modified_numeric_fluents_ set.
+     */
+    void analyze_numeric_modifications();
+
+    /**
+     * Find the grounded fluent ID for a given expression.
+     * @param expr The expression to find ID for
+     * @return fluent ID, or -1 if not found
+     */
+    int find_grounded_fluent_id(const Expression& expr) const;
+};
+
+} // namespace planmt

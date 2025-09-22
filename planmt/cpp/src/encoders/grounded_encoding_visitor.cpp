@@ -1,7 +1,7 @@
-#include "grounded_encoding_visitor.h"
-#include "z3_variable_factory.h"
-#include "../problem/fluent.h"
-#include "../problem/effect_expression.h"
+#include "grounded_encoding_visitor.hpp"
+#include "z3_variable_factory.hpp"
+#include "../problem/fluent.hpp"
+#include "../problem/effect_expression.hpp"
 #include <iostream>
 
 namespace planmt {

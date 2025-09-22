@@ -1,5 +1,5 @@
-#include "lifted_encoding_visitor.h"
-#include "../problem/visitors/expression_visitor.h"
+#include "lifted_encoding_visitor.hpp"
+#include "../problem/visitors/expression_visitor.hpp"
 
 namespace planmt {
 

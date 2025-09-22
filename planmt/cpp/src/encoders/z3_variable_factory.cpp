@@ -1,5 +1,5 @@
-#include "z3_variable_factory.h"
-#include "../problem/action.h"
+#include "z3_variable_factory.hpp"
+#include "../problem/action.hpp"
 #include <iostream>
 
 namespace planmt {

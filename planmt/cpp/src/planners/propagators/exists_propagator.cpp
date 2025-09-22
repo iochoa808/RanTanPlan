@@ -1,9 +1,9 @@
-#include "exists_propagator.h"
-#include "../../config/config.h"
-#include "../../util/memory_tracker.h"
-#include "../../util/stats.h"
-#include "../../encoders/z3_variable_factory.h"
-#include "../../encoders/parallelism/interference_analysis.h"
+#include "exists_propagator.hpp"
+#include "../../config/config.hpp"
+#include "../../util/memory_tracker.hpp"
+#include "../../util/stats.hpp"
+#include "../../encoders/z3_variable_factory.hpp"
+#include "../../encoders/parallelism/interference_analysis.hpp"
 #include <iostream>
 #include <set>
 #include <algorithm>

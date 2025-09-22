@@ -1,6 +1,6 @@
-#include "lazy_interference_analysis.h"
-#include "../../util/memory_tracker.h"
-#include "../../config/config.h"
+#include "lazy_interference_analysis.hpp"
+#include "../../util/memory_tracker.hpp"
+#include "../../config/config.hpp"
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>

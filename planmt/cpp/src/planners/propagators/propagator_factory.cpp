@@ -1,9 +1,9 @@
-#include "propagator_factory.h"
-#include "null_propagator.h"
-#include "forall_propagator.h"
-#include "lazy_forall_propagator.h"
-#include "exists_propagator.h"
-#include "decision_heuristic_propagator.h"
+#include "propagator_factory.hpp"
+#include "null_propagator.hpp"
+#include "forall_propagator.hpp"
+#include "lazy_forall_propagator.hpp"
+#include "exists_propagator.hpp"
+#include "decision_heuristic_propagator.hpp"
 #include <algorithm>
 #include <cctype>
 

@@ -1,4 +1,4 @@
-#include "atom.h"
+#include "atom.hpp"
 #include <stdexcept>
 
 namespace planmt {

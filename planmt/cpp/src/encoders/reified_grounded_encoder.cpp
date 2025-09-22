@@ -1,4 +1,4 @@
-#include "reified_grounded_encoder.h"
+#include "reified_grounded_encoder.hpp"
 
 namespace planmt {
 

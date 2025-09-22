@@ -1,5 +1,5 @@
-#include "config.h"
-#include "cli_parser.h"
+#include "config.hpp"
+#include "cli_parser.hpp"
 #include <stdexcept>
 #include <memory>
 #include <vector>

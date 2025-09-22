@@ -1,4 +1,4 @@
-#include "encoder_factory.h"
+#include "encoder_factory.hpp"
 #include <stdexcept>
 
 namespace planmt {

@@ -1,7 +1,7 @@
-#include "exists_semantics.h"
-#include "interference_analysis_factory.h"
-#include "../../problem/action.h"
-#include "../../util/stats.h"
+#include "exists_semantics.hpp"
+#include "interference_analysis_factory.hpp"
+#include "../../problem/action.hpp"
+#include "../../util/stats.hpp"
 #include <iostream>
 
 namespace planmt {

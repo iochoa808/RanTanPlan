@@ -1,12 +1,12 @@
-#include "grounded_encoder.h"
-#include "parallelism/parallelism_factory.h"
-#include "parallelism/interference_analysis.h"
-#include "../util/stats.h"
-#include "../symmetries/smt_symmetry_checker.h"
-#include "../config/config.h"
+#include "grounded_encoder.hpp"
+#include "parallelism/parallelism_factory.hpp"
+#include "parallelism/interference_analysis.hpp"
+#include "../util/stats.hpp"
+#include "../symmetries/smt_symmetry_checker.hpp"
+#include "../config/config.hpp"
 #include <iostream>
-#include "problem/visitors/print_visitor.h"
-#include "problem/visitors/expression_visitor.h"
+#include "problem/visitors/print_visitor.hpp"
+#include "problem/visitors/expression_visitor.hpp"
 #include <functional>
 
 namespace planmt {

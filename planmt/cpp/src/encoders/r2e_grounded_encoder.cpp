@@ -1,6 +1,6 @@
-#include "r2e_grounded_encoder.h"
-#include "../util/stats.h"
-#include "../config/config.h"
+#include "r2e_grounded_encoder.hpp"
+#include "../util/stats.hpp"
+#include "../config/config.hpp"
 #include <algorithm>
 #include <cassert>
 
