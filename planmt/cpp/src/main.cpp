@@ -11,8 +11,9 @@
 
 #include "config/config.hpp"
 #include "problem/problem.hpp"
-#include "encoders/encoder_factory.hpp" 
+#include "encoders/encoder_factory.hpp"
 #include "planners/sequential.hpp"
+#include "planners/formula_exporter.hpp"
 #include "planners/propagators/propagator_factory.hpp"
 #include "util/memory_tracker.hpp"
 #include "util/stats.hpp"
@@ -35,6 +36,66 @@ int write_result_and_exit(const PlanGenerationResult& result, const char* output
     }
     google::protobuf::ShutdownProtobufLibrary();
     return 0;
+}
+
+// Function to export formula and exit
+int export_formula_and_exit(const planmt::Problem& problem) {
+    auto& config = planmt::Config::instance();
+
+    // Validate formula export parameters
+    if (config.formula_export.timestep < 0) {
+        std::cerr << "Error: --formula-timestep must be specified with --export-formula" << std::endl;
+        return 1;
+    }
+
+    if (config.formula_export.output_file.empty()) {
+        std::cerr << "Error: --formula-output must be specified with --export-formula" << std::endl;
+        return 1;
+    }
+
+    // Only allow formula export with null propagator strategies
+    if (config.propagators.type != "null") {
+        std::cerr << "Error: Formula export is only supported with null propagator (no propagators)" << std::endl;
+        std::cerr << "Current propagator type: " << config.propagators.type << std::endl;
+        return 1;
+    }
+
+    try {
+        // Create Z3 context
+        z3::context ctx;
+
+        // Create encoder with the specified strategy
+        auto encoder = planmt::EncoderFactory::create_encoder(config.planner.encoder, problem, ctx);
+        encoder->set_parallelism_strategy(config.planner.parallelism_strategy);
+
+        if (config.is_info()) {
+            std::cout << "Exporting formula for timestep " << config.formula_export.timestep
+                      << " using strategy: " << encoder->get_parallelism_strategy_name() << std::endl;
+        }
+
+        // Create formula exporter and generate formula
+        planmt::FormulaExporter exporter(problem, *encoder, ctx);
+        std::string formula = exporter.export_formula(config.formula_export.timestep);
+
+        // Output formula to file
+        std::ofstream output_file(config.formula_export.output_file);
+        if (!output_file) {
+            std::cerr << "Error: Could not open output file: " << config.formula_export.output_file << std::endl;
+            return 1;
+        }
+        output_file << formula;
+        if (config.is_info()) {
+            std::cout << "Formula exported to: " << config.formula_export.output_file << std::endl;
+        }
+
+        google::protobuf::ShutdownProtobufLibrary();
+        return 0;
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error during formula export: " << e.what() << std::endl;
+        google::protobuf::ShutdownProtobufLibrary();
+        return 1;
+    }
 }
 
 // Function to print the complete planning problem structure using enhanced planning classes
@@ -134,6 +195,12 @@ int main(int argc, char* argv[]) {
     planmt::Problem planning_problem(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
 
+    // Check if formula export is requested
+    auto& config = planmt::Config::instance();
+    if (config.formula_export.export_formula) {
+        return export_formula_and_exit(planning_problem);
+    }
+
     // === RELAXED PLANNING GRAPH CHECK ===
     // Create and build the RPG to check for unsolvability
     planmt::RelaxedPlanningGraph rpg(planning_problem);
@@ -166,9 +233,6 @@ int main(int argc, char* argv[]) {
 
     // Extract lower bound from RPG for starting timestep
     int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
-
-    // Check if symmetry detection is requested
-    auto& config = planmt::Config::instance();
 
     // Set the starting timestep from RPG lower bound in config
     config.planner.start_timestep = rpg_lower_bound;

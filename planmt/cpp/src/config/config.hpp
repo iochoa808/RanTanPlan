@@ -45,6 +45,12 @@ public:
     struct Symmetry {
         bool detect_symmetries = false;  // Enable symmetry detection
     } symmetry;
+
+    struct FormulaExport {
+        bool export_formula = false;      // Enable formula export mode
+        int timestep = -1;                // Timestep to export formula for
+        std::string output_file = "";     // Output file for formula (required)
+    } formula_export;
     
     void initialize(int argc, char* argv[]);
     void validate() const;
