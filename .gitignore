@@ -196,3 +196,4 @@ ideas
 
 # pre-converted files
 *.pb
+pddl/pb-test
