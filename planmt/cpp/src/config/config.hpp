@@ -39,7 +39,7 @@ public:
     } propagators;
     
     struct InterferenceAnalyzer {
-        std::string type = "eager";  // "eager", "lazy", or "semantic"
+        std::string type = "eager";  // "eager", "lazy", "semantic" or "eager-semantic"
     } interference_analyzer;
     
     struct Symmetry {

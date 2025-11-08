@@ -82,6 +82,9 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         else if (arg == "--semantic-interference") {
             config.interference_analyzer.type = "semantic";
         }
+        else if (arg == "--eager-semantic-interference") {
+            config.interference_analyzer.type = "eager-semantic";
+        }
         // Symmetry options
         else if (arg == "--detect-symmetries") {
             config.symmetry.detect_symmetries = true;

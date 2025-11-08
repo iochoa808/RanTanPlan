@@ -249,7 +249,9 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
                 command.append("--lazy-interference")
             elif self._interference_analysis == "semantic":
                 command.append("--semantic-interference")
-            
+            elif self._interference_analysis == "eager-semantic":
+                command.append("--eager-semantic-interference")
+
             if self._detect_symmetries:
                 command.append("--detect-symmetries")
             

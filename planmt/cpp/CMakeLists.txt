@@ -94,6 +94,7 @@ add_executable(planmt
     src/encoders/parallelism/interference_analyzer.cpp
     src/encoders/parallelism/interference_analysis.cpp
     src/encoders/parallelism/eager_interference_analysis.cpp
+    src/encoders/parallelism/eager_semantic_interference_analysis.cpp
     src/encoders/parallelism/lazy_interference_analysis.cpp
     src/encoders/parallelism/semantic_interference_analysis.cpp
     src/encoders/parallelism/interference_analysis_factory.cpp

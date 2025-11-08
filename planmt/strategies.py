@@ -71,15 +71,15 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         no_action_removal=False,
         description="Forall-step semantics with semantic interference analysis, only propagating neighbours as false and using a chained encoding"
     ),
-    "forall-lazy-semantic-chain-symm": StrategyConfig(
-        parallelism="forall",
-        propagator="lazy_forall",
-        interference_analysis="semantic",
-        encoder="chained",
-        detect_symmetries=True,
-        no_action_removal=False,
-        description="Forall-step semantics with semantic interference analysis, only propagating neighbours as false and using a chained encoding"
-    ),
+    #"forall-lazy-semantic-chain-symm": StrategyConfig(
+    #    parallelism="forall",
+    #    propagator="lazy_forall",
+    #    interference_analysis="semantic",
+    #    encoder="chained",
+    #    detect_symmetries=True,
+    #    no_action_removal=False,
+    #    description="Forall-step semantics with semantic interference analysis, only propagating neighbours as false and using a chained encoding"
+    #),
 
     # EXISTS SEMANTICS
 
@@ -119,15 +119,15 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         no_action_removal=False,
         description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding"
     ),
-    "exists-lazy-semantic-chain-symm": StrategyConfig(
-        parallelism="exists",
-        propagator="exists",
-        interference_analysis="semantic",
-        encoder="chained",
-        detect_symmetries=True,
-        no_action_removal=False,
-        description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding"
-    ),
+    #"exists-lazy-semantic-chain-symm": StrategyConfig(
+    #    parallelism="exists",
+    #    propagator="exists",
+    #    interference_analysis="semantic",
+    #    encoder="chained",
+    #    detect_symmetries=True,
+    #    no_action_removal=False,
+    #    description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding"
+    #),
 
     "r2e": StrategyConfig(
         parallelism="sequential",
@@ -149,37 +149,46 @@ STRATEGIES: Dict[str, StrategyConfig] = {
         description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding with decision heuristics"
     ),
 
-    # Variants with action removal disabled
-
-    "exists-lazy-semantic-chain-no-removal": StrategyConfig(
-        parallelism="exists",
-        propagator="exists",
-        interference_analysis="semantic",
-        encoder="chained",
-        detect_symmetries=False,
-        no_action_removal=True,
-        description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding (no action removal)"
-    ),
-
-    "r2e-no-removal": StrategyConfig(
-        parallelism="sequential",
+    # ADDITIONAL VARIANTS JUST FOR TESTING EXPERIMENTS
+    # -------------------------------------------------
+    "forall-eager-semantic": StrategyConfig(
+        parallelism="forall",
         propagator="null",
-        interference_analysis="eager",
-        encoder="r2e",
+        interference_analysis="eager-semantic",
+        encoder="grounded",
         detect_symmetries=False,
-        no_action_removal=True,
-        description="R2∃-step semantics with built-in parallelism using declaration order (no action removal)"
+        no_action_removal=False,
+        description=""
     ),
-
-    "dec-no-removal": StrategyConfig(
-        parallelism="exists",
-        propagator="heuristic",
-        interference_analysis="semantic",
+    "forall-eager-semantic-chain": StrategyConfig(
+        parallelism="forall",
+        propagator="null",
+        interference_analysis="eager-semantic",
         encoder="chained",
         detect_symmetries=False,
-        no_action_removal=True,
-        description="Exists-step semantics with semantic interference analysis, throwing a conflict when a cycle is detected and using a chained encoding with decision heuristics (no action removal)"
+        no_action_removal=False,
+        description=""
     ),
+
+    "exists-eager-semantic": StrategyConfig(
+        parallelism="exists",
+        propagator="null",
+        interference_analysis="eager-semantic",
+        encoder="grounded",
+        detect_symmetries=False,
+        no_action_removal=False,
+        description=""
+    ),
+    "exists-eager-semantic-chain": StrategyConfig(
+        parallelism="exists",
+        propagator="null",
+        interference_analysis="eager-semantic",
+        encoder="chained",
+        detect_symmetries=False,
+        no_action_removal=False,
+        description=""
+    ),
+
 }
 
 def get_strategy_config(strategy_name: str) -> StrategyConfig:

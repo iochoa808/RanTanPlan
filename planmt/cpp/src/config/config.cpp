@@ -72,7 +72,7 @@ void Config::validate() const {
     }
     
     // Validate interference analyzer settings
-    const std::vector<std::string> valid_analyzers = {"eager", "lazy", "semantic"};
+    const std::vector<std::string> valid_analyzers = {"eager", "lazy", "semantic", "eager-semantic"};
     bool valid_analyzer = false;
     for (const auto& analyzer : valid_analyzers) {
         if (interference_analyzer.type == analyzer) {
