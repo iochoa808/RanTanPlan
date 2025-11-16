@@ -25,6 +25,7 @@ public:
         std::string stats_file = "";  // Empty means no file output
         bool enable_action_removal = true;  // Enable RPG-based action removal optimization
         bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
+        double epsilon = 1e-6;  // Numerical tolerance for floating-point comparisons
     } global;
     
     struct Planner {

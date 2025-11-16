@@ -112,6 +112,7 @@ add_executable(planmt
     src/arpg/arpg.cpp
     src/abstraction/achievers_analysis.cpp
     src/analysis/relaxed_planning_graph.cpp
+    src/analysis/numeric_relaxed_planning_graph.cpp
 )
 
 # Define proto files and generate C++ sources

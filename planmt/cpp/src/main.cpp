@@ -20,6 +20,7 @@
 #include "arpg/arpg.hpp"
 #include "abstraction/achievers_analysis.hpp"
 #include "analysis/relaxed_planning_graph.hpp"
+#include "analysis/numeric_relaxed_planning_graph.hpp"
 
 #include "z3++.h"
 
@@ -253,6 +254,55 @@ int main(int argc, char* argv[]) {
 
     // Set the starting timestep from RPG lower bound in config
     config.planner.start_timestep = rpg_lower_bound;
+
+    // === NUMERIC RELAXED PLANNING GRAPH DEBUG ===
+    // Create Z3 context for numeric RPG testing
+    z3::context ctx;
+
+    // Create and build the numeric RPG
+    if (config.is_info()) {
+        std::cout << "\n=== Testing NumericRelaxedPlanningGraph ===" << std::endl;
+    }
+
+    planmt::NumericRelaxedPlanningGraph numeric_rpg(planning_problem, ctx);
+
+    if (config.is_verbose()) {
+        std::cout << "NumericRelaxedPlanningGraph created successfully" << std::endl;
+        std::cout << "Building numeric RPG..." << std::endl;
+    }
+
+    auto numeric_rpg_start = std::chrono::high_resolution_clock::now();
+    bool numeric_goals_reachable = numeric_rpg.build();
+    auto numeric_rpg_end = std::chrono::high_resolution_clock::now();
+    auto numeric_rpg_time = std::chrono::duration<double>(numeric_rpg_end - numeric_rpg_start).count();
+
+    if (config.is_info()) {
+        std::cout << "Numeric RPG build completed in " << numeric_rpg_time << "s" << std::endl;
+        std::cout << "Goals reachable: " << (numeric_goals_reachable ? "YES" : "NO") << std::endl;
+        std::cout << "Number of layers: " << numeric_rpg.get_layer_count() << std::endl;
+    }
+
+    // Remove unreachable actions using numeric RPG
+    if (planmt::Config::instance().global.enable_action_removal) {
+        auto numeric_removable = numeric_rpg.get_removable_actions();
+        size_t numeric_unreachable = numeric_removable.size();
+        size_t numeric_removed = numeric_rpg.remove_unreachable_actions();
+        if (config.is_info()) {
+            size_t total_after_boolean = planning_problem.action_count() + numeric_removed;
+            double percentage = (double)numeric_removed / total_after_boolean * 100.0;
+            std::cout << "[Numeric RPG] " << numeric_unreachable << " unreachable, removed " 
+                        << numeric_removed << "/" << total_after_boolean
+                        << " additional actions (" << std::fixed << std::setprecision(1)
+                        << percentage << "%)" << std::endl;
+        }
+    }
+
+    if (config.is_verbose()) {
+        // Print statistics
+        numeric_rpg.print_statistics();
+
+        std::cout << "=== End NumericRelaxedPlanningGraph Test ===\n" << std::endl;
+    }
 
     // Solve the planning problem using configuration
     PlanGenerationResult result = solve_planning_problem(planning_problem);
