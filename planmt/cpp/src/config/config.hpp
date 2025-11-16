@@ -24,23 +24,14 @@ public:
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
         bool enable_action_removal = true;  // Enable RPG-based action removal optimization
+        bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
     } global;
     
     struct Planner {
-        std::string parallelism_strategy = "sequential";
-        std::string encoder = "grounded";
+        std::string strategy = "seq";  // Strategy name (replaces parallelism_strategy, encoder, propagator, interference)
         int max_steps = 100;
         int start_timestep = 0;  // Starting timestep for search (can be set by RPG lower bound)
     } planner;
-    
-    struct Propagators {
-        std::string type = "null";
-        bool persist_clauses = true;
-    } propagators;
-    
-    struct InterferenceAnalyzer {
-        std::string type = "eager";  // "eager", "lazy", "semantic" or "eager-semantic"
-    } interference_analyzer;
     
     struct Symmetry {
         bool detect_symmetries = false;  // Enable symmetry detection

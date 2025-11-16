@@ -6,7 +6,6 @@
 #include "../problem/effect_expression.hpp"
 #include "z3_variable_factory.hpp"
 #include "parallelism/parallelism_strategy.hpp"
-#include "parallelism/parallelism_factory.hpp"
 #include <z3++.h>
 
 #include <memory>
@@ -28,8 +27,7 @@ public:
     virtual std::shared_ptr<z3::expr> encode_symmetries(int t) = 0;
     
     // Parallelism management
-    virtual void set_parallelism_strategy(ParallelismFactory::ParallelismType type) = 0;
-    virtual void set_parallelism_strategy(const std::string& strategy_name) = 0;
+    virtual void set_parallelism_strategy(std::unique_ptr<ParallelismStrategy> strategy) = 0;
     virtual std::string get_parallelism_strategy_name() const = 0;
     virtual const ParallelismStrategy* get_parallelism_strategy() const = 0; // for plan extraction
     

@@ -25,8 +25,12 @@ public:
     void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) override;
     
     std::string get_name() const override { return "ExistsSemantics"; }
-    
+
     // Analyzer access methods
+    void set_interference_analyzer(std::unique_ptr<InterferenceAnalysis> analyzer) override {
+        interference_analyzer_ = std::move(analyzer);
+    }
+
     const InterferenceAnalysis* get_interference_analyzer() const override;
 
 private:

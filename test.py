@@ -2,15 +2,11 @@
 """
 Comprehensive test script for the planMT planning system.
 
-This script discovers all PDDL problems in the `pddl/` directory and runs the 
-planMT planner against them with various parallelism strategies, propagators, 
-and interference analysis methods (eager vs lazy). It then validates the 
-resulting plans to ensure correctness.
+This script discovers all PDDL problems in the `pddl/` directory and runs the
+planMT planner against them with all available strategies. It then validates
+the resulting plans to ensure correctness.
 
-Test configurations include:
-- Different parallelism semantics (sequential, forall, exists)
-- Various propagator strategies (null, forall, lazy_forall, exists)
-- Eager vs lazy interference analysis (pre-computed vs on-demand)
+Strategies are defined in the C++ backend and automatically discovered at runtime.
 """
 import os
 import sys
@@ -22,9 +18,9 @@ from unified_planning.shortcuts import OneshotPlanner, PlanValidator
 from unified_planning.engines.results import PlanGenerationResultStatus
 from unified_planning.engines import ValidationResultStatus
 
-# Import the planner wrapper and strategies
+# Import the planner wrapper
 from planmt.planner_wrapper import planMTPlanner
-from planmt.strategies import STRATEGIES, get_strategy_config
+import subprocess
 
 # --- Test Configuration ---
 
@@ -36,8 +32,25 @@ QUICK_TEST_DIRS = [
     "pddl/test/hydropower"
 ]
 
+# Get available strategies from C++ planner
+def get_available_strategies():
+    """Query the C++ planner for available strategies."""
+    planner = planMTPlanner()
+    result = subprocess.run(
+        [planner.executable_path, "/dev/null", "/dev/null", "--list-strategies"],
+        capture_output=True, text=True, check=True
+    )
+    # Parse strategy names from output (format: "  strategy_name")
+    strategies = []
+    for line in result.stdout.strip().split('\n'):
+        line = line.strip()
+        # Skip header line and empty lines
+        if line and not line.startswith('Available'):
+            strategies.append(line)
+    return strategies
+
 # Test all available strategies
-TEST_STRATEGIES = list(STRATEGIES.keys())
+TEST_STRATEGIES = get_available_strategies()
 
 # --- ANSI Color Codes for Output ---
 class Colors:
@@ -112,23 +125,17 @@ def run_test(problem_name, domain_file, problem_file, strategy_name, verbose=Fal
         reader = PDDLReader()
         problem = reader.parse_problem(str(domain_file), str(problem_file))
 
-        # 2. Get strategy configuration
-        strategy_config = get_strategy_config(strategy_name)
-        
-        # 3. Configure and run the planner
+        # 2. Configure and run the planner
         planner_params = {
-            'parallelism': strategy_config.parallelism,
-            'propagator': strategy_config.propagator
+            'strategy': strategy_name
         }
-        
+
         # Set verbosity level based on verbose flag
         if verbose:
             planner_params['verbosity'] = 'info'  # Enable verbose output
         else:
             planner_params['verbosity'] = 'silent'  # Suppress output
-        
-        planner_params['interference_analysis'] = strategy_config.interference_analysis
-        
+
         with OneshotPlanner(name='planMT', params=planner_params) as planner:
             result = planner.solve(problem, timeout=60)
 

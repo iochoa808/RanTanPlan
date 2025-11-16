@@ -66,7 +66,7 @@ public:
     void register_timestep_variables(int timestep) override;
     void cleanup() override;
     std::string get_name() const override { return "LazyForallPropagator"; }
-    PropagatorType get_type() const override;
+    bool manages_parallelism_constraints() const override { return true; }
 
 private:
     // Dynamic interference checking and conflict generation

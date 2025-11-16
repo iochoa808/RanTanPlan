@@ -19,7 +19,7 @@ ForallPropagator::ForallPropagator(z3::solver& solver, const Problem& problem, c
     register_final();
     
     // Set Z3 option to persist clauses for user propagator based on config
-    solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
+    solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
     
     // Build reverse interference lookup for efficient propagation
     build_reverse_interference_lookup();
@@ -109,10 +109,6 @@ void ForallPropagator::register_timestep_variables(int timestep) {
 void ForallPropagator::cleanup() {
     auto& stats = Stats::instance();
     stats.set("propagator.forall_total_propagations", propagation_count_);
-}
-
-PropagatorType ForallPropagator::get_type() const {
-    return PropagatorType::FORALL;
 }
 
 void ForallPropagator::build_reverse_interference_lookup() {

@@ -44,6 +44,12 @@ public:
     virtual std::string get_name() const = 0;
     
     /**
+     * @brief Set the interference analyzer for this strategy
+     * @param analyzer The interference analyzer to use
+     */
+    virtual void set_interference_analyzer(std::unique_ptr<InterferenceAnalysis> analyzer) = 0;
+
+    /**
      * @brief Get access to the interference analyzer (if available)
      * @return Pointer to the interference analyzer, or nullptr if not available
      */

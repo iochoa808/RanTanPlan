@@ -4,7 +4,6 @@
 #include "../problem/plan.hpp"
 #include "../encoders/base_encoder.hpp"
 #include "propagators/propagator_strategy.hpp"
-#include "propagators/propagator_factory.hpp"
 #include <z3++.h>
 #include <memory>
 
@@ -27,10 +26,11 @@ public:
     bool solution_found() const { return solution_found_; }
     
     // Strategy management
-    void set_propagator_strategy(PropagatorType type);
-    void set_propagator_strategy(const std::string& strategy_name);
+    void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator);
     std::string get_propagator_strategy_name() const;
-    PropagatorType get_propagator_type() const;
+
+    // Get solver reference (for creating propagators)
+    z3::solver& get_solver() { return solver_; }
 
 private:
     const Problem& problem_;

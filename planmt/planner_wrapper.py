@@ -26,17 +26,14 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
     def __init__(self, **options):
         Engine.__init__(self)
         OneshotPlannerMixin.__init__(self)
-        
+
         self._writer = ProtobufWriter()
         self._reader = ProtobufReader()
         self.executable_path = self._find_executable(options.get('executable_path'))
         self._verbosity = options.get('verbosity')  # None if not specified
-        self._parallelism = options.get('parallelism', 'sequential')
-        self._propagator = options.get('propagator', 'null')
-        self._encoder = options.get('encoder', 'grounded')
+        self._strategy = options.get('strategy', 'seq')
         self._max_steps = options.get('max_steps')  # None if not specified
         self._no_persist_clauses = options.get('no_persist_clauses', False)
-        self._interference_analysis = options.get('interference_analysis', 'eager')
         self._detect_symmetries = options.get('detect_symmetries', False)
         self._stats_file = options.get('stats_file')  # None if not specified
         # allow disabling CNF normalization via planner params (default: enabled)
@@ -232,29 +229,22 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
             with open(problem_filepath, "wb") as f:
                 f.write(pb_problem_msg.SerializeToString())
 
-            command = [self.executable_path, problem_filepath, solution_filepath, 
-                      "--parallelism", self._parallelism, "--propagator", self._propagator, "--encoder", self._encoder]
-            
+            command = [self.executable_path, problem_filepath, solution_filepath,
+                      "--strategy", self._strategy]
+
             # Add optional parameters only if specified
             if self._verbosity is not None:
                 command.extend(["--verbosity", self._verbosity])
-            
+
             if self._max_steps is not None:
                 command.extend(["--max-steps", str(self._max_steps)])
-            
+
             if self._no_persist_clauses:
                 command.append("--no-persist-clauses")
-            
-            if self._interference_analysis == "lazy":
-                command.append("--lazy-interference")
-            elif self._interference_analysis == "semantic":
-                command.append("--semantic-interference")
-            elif self._interference_analysis == "eager-semantic":
-                command.append("--eager-semantic-interference")
 
             if self._detect_symmetries:
                 command.append("--detect-symmetries")
-            
+
             if self._stats_file is not None:
                 command.extend(["--stats-file", self._stats_file])
 

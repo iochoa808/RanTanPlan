@@ -49,7 +49,7 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
     }
 
     // Set Z3 option to persist clauses for user propagator based on config
-    solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
+    solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
 }
 
 void DecisionHeuristicPropagator::push() {
@@ -155,10 +155,6 @@ void DecisionHeuristicPropagator::register_timestep_variables(int timestep) {
             }
         }
     }
-}
-
-PropagatorType DecisionHeuristicPropagator::get_type() const {
-    return PropagatorType::HEURISTIC;
 }
 
 void DecisionHeuristicPropagator::cleanup() {

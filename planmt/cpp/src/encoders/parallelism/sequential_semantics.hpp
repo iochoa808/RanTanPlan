@@ -19,8 +19,13 @@ public:
     void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) override;
     
     std::string get_name() const override { return "SequentialSemantics"; }
-    
+
     // Analyzer access methods (not applicable for sequential semantics)
+    void set_interference_analyzer(std::unique_ptr<InterferenceAnalysis> analyzer) override {
+        // Sequential semantics doesn't use interference analysis
+        (void)analyzer;  // Suppress unused parameter warning
+    }
+
     const InterferenceAnalysis* get_interference_analyzer() const override { return nullptr; }
 
 private:

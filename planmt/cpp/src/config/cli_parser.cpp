@@ -1,24 +1,39 @@
 #include "cli_parser.hpp"
+#include "strategy_registry.hpp"
 #include <iostream>
 #include <string>
-#include <vector>
 #include <stdexcept>
+#include <iomanip>
 
 namespace planmt {
 
-// Parse command line arguments to configure the planner
-// This parser handles configuration options for the C++ backend
-// Skip first two arguments which are input/output filenames
 void CLIParser::parse(Config& config, int argc, char* argv[]) {
     for (int i = 3; i < argc; ++i) {
         std::string arg = argv[i];
-        
+
+        // Strategy selection
+        if (arg == "--strategy") {
+            if (i + 1 < argc) {
+                config.planner.strategy = argv[++i];
+            } else {
+                throw std::invalid_argument("--strategy requires a value");
+            }
+        }
+        else if (arg == "--list-strategies") {
+            // Print available strategies and exit
+            std::cout << "Available strategies:" << std::endl;
+            auto strategies = StrategyRegistry::list_strategies();
+            for (const auto& name : strategies) {
+                std::cout << "  " << name << std::endl;
+            }
+            exit(0);
+        }
         // Verbosity options
-        if (arg == "--verbosity") {
+        else if (arg == "--verbosity") {
             if (i + 1 < argc) {
                 config.global.verbosity = parse_verbosity(argv[++i]);
             } else {
-                throw std::invalid_argument("--verbosity requires a value (silent, info, verbose, debug)");
+                throw std::invalid_argument("--verbosity requires a value");
             }
         }
         else if (arg == "-v") {
@@ -42,21 +57,6 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--timeout requires a value");
             }
         }
-        // Planner options
-        else if (arg == "--parallelism") {
-            if (i + 1 < argc) {
-                config.planner.parallelism_strategy = argv[++i];
-            } else {
-                throw std::invalid_argument("--parallelism requires a value");
-            }
-        }
-        else if (arg == "--encoder") {
-            if (i + 1 < argc) {
-                config.planner.encoder = argv[++i];
-            } else {
-                throw std::invalid_argument("--encoder requires a value");
-            }
-        }
         else if (arg == "--max-steps") {
             if (i + 1 < argc) {
                 config.planner.max_steps = std::stoi(argv[++i]);
@@ -64,34 +64,13 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--max-steps requires a value");
             }
         }
-        // Propagator options
-        else if (arg == "--propagator") {
-            if (i + 1 < argc) {
-                config.propagators.type = argv[++i];
-            } else {
-                throw std::invalid_argument("--propagator requires a value");
-            }
-        }
-        else if (arg == "--no-persist-clauses") {
-            config.propagators.persist_clauses = false;
-        }
-        // Interference Analyzer options
-        else if (arg == "--lazy-interference") {
-            config.interference_analyzer.type = "lazy";
-        }
-        else if (arg == "--semantic-interference") {
-            config.interference_analyzer.type = "semantic";
-        }
-        else if (arg == "--eager-semantic-interference") {
-            config.interference_analyzer.type = "eager-semantic";
-        }
-        // Symmetry options
-        else if (arg == "--detect-symmetries") {
-            config.symmetry.detect_symmetries = true;
-        }
         // Action removal options
         else if (arg == "--no-action-removal") {
             config.global.enable_action_removal = false;
+        }
+        // Z3 solver options
+        else if (arg == "--no-persist-clauses") {
+            config.global.persist_clauses = false;
         }
         // Statistics options
         else if (arg == "--stats-file") {

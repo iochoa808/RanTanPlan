@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../../encoders/base_encoder.hpp"
-#include "propagator_types.hpp"
 #include <z3++.h>
 #include <memory>
 #include <string>
@@ -37,12 +36,12 @@ public:
      * @return String identifier for this strategy
      */
     virtual std::string get_name() const = 0;
-    
+
     /**
-     * @brief Get the type of this propagator strategy
-     * @return PropagatorType enum value for this strategy
+     * @brief Check if this propagator manages parallelism constraints internally
+     * @return true if propagator handles parallelism constraints, false otherwise
      */
-    virtual PropagatorType get_type() const = 0;
+    virtual bool manages_parallelism_constraints() const { return false; }
 };
 
 } // namespace planmt

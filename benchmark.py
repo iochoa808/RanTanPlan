@@ -22,19 +22,35 @@ import subprocess
 import csv
 from pathlib import Path
 from collections import defaultdict
-from planmt.strategies import STRATEGIES, get_strategy_config
+from planmt.planner_wrapper import planMTPlanner
 
 # --- Benchmark Configuration ---
 
+# Get available strategies from C++ planner
+def get_available_strategies():
+    """Query the C++ planner for available strategies."""
+    planner = planMTPlanner()
+    result = subprocess.run(
+        [planner.executable_path, "/dev/null", "/dev/null", "--list-strategies"],
+        capture_output=True, text=True, check=True
+    )
+    # Parse strategy names from output (format: "  strategy_name")
+    strategies = []
+    for line in result.stdout.strip().split('\n'):
+        line = line.strip()
+        # Skip header line and empty lines
+        if line and not line.startswith('Available'):
+            strategies.append(line)
+    return strategies
+
 # Benchmark strategies (excluding sequential for performance focus)
 BENCHMARK_STRATEGIES = [
-    "forall-basic",
-    "forall-optimized",
-    "forall-lazy",
-    "forall-lazy-semantic",
-    "exists-basic",
-    "exists-optimized",
-    "exists-optimized-semantic",
+    "r2e",
+    "dec",
+    "exists-lazy-semantic-chain",
+    "forall-lazy-semantic-chain",
+    "exists-lazy",
+    "forall-lazy"
 ]
 
 # Default timeout per solver run (seconds)
@@ -487,16 +503,15 @@ def main():
     if args.configs:
         with open(args.configs, 'r') as f:
             strategies = json.load(f)
-    
-    # Validate that all strategies exist
+
+    # Get available strategies from C++ planner and validate
+    available_strategies = get_available_strategies()
     valid_strategies = []
     for strategy_name in strategies:
-        try:
-            get_strategy_config(strategy_name)  # Just validate it exists
+        if strategy_name in available_strategies:
             valid_strategies.append(strategy_name)
-        except ValueError as e:
-            print_warning(f"Skipping unknown strategy '{strategy_name}': {e}")
-            continue
+        else:
+            print_warning(f"Skipping unknown strategy '{strategy_name}' (not in available strategies)")
     
     print_header("--- Starting planMT Benchmark Suite ---")
     print_info(f"PDDL directory: {args.pddl_dir}")

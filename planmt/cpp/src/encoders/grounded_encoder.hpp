@@ -5,7 +5,6 @@
 #include "grounded_encoding_visitor.hpp"
 #include "z3_variable_factory.hpp"
 #include "parallelism/parallelism_strategy.hpp"
-#include "parallelism/parallelism_factory.hpp"
 #include "../symmetries/smt_symmetry_checker.hpp"
 #include <z3++.h>
 
@@ -31,8 +30,7 @@ public:
     std::shared_ptr<z3::expr> encode_symmetries(int t) override;
     
     // Strategy management
-    void set_parallelism_strategy(ParallelismFactory::ParallelismType type) override;
-    void set_parallelism_strategy(const std::string& strategy_name) override;
+    void set_parallelism_strategy(std::unique_ptr<ParallelismStrategy> strategy) override;
     std::string get_parallelism_strategy_name() const override;
     
     // Access to variable factory for plan extraction

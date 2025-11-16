@@ -3,7 +3,6 @@
 #include "../encoders/parallelism/graph.hpp"
 #include "../encoders/parallelism/interference_analysis.hpp"
 #include "propagators/null_propagator.hpp"
-#include "propagators/propagator_factory.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/stats.hpp"
 #include <fstream>
@@ -70,11 +69,8 @@ void SequentialPlanner::add_timestep_constraints(int timestep) {
         solver_.add(*encoder_.encode_symmetries(timestep));
     }
 
-    // Only add parallelism constraints if not using certain propagators
-    if (get_propagator_type() != PropagatorType::FORALL
-        && get_propagator_type() != PropagatorType::LAZY_FORALL
-        && get_propagator_type() != PropagatorType::HEURISTIC
-        && get_propagator_type() != PropagatorType::EXISTS) {
+    // Only add parallelism constraints if propagator doesn't manage them
+    if (!propagator_strategy_->manages_parallelism_constraints()) {
         solver_.add(*encoder_.encode_parallelism(timestep));
     }
 
@@ -251,20 +247,12 @@ Plan SequentialPlanner::search() {
 }
 
 
-void SequentialPlanner::set_propagator_strategy(PropagatorType type) {
-    propagator_strategy_ = PropagatorFactory::create_strategy(type, solver_, problem_, encoder_);
-}
-
-void SequentialPlanner::set_propagator_strategy(const std::string& strategy_name) {
-    propagator_strategy_ = PropagatorFactory::create_strategy(strategy_name, solver_, problem_, encoder_);
+void SequentialPlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) {
+    propagator_strategy_ = std::move(propagator);
 }
 
 std::string SequentialPlanner::get_propagator_strategy_name() const {
     return propagator_strategy_->get_name();
-}
-
-PropagatorType SequentialPlanner::get_propagator_type() const {
-    return propagator_strategy_->get_type();
 }
 
 } // namespace planmt

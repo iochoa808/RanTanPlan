@@ -12,37 +12,36 @@ import sys
 from importlib import metadata
 from typing import Any, Dict
 from unified_planning.engines.results import LogLevel
-from planmt.strategies import get_strategy_config, list_strategies
 
 
 def parse_arguments():
-    """Parse command line arguments - preset-only approach."""
-    strategies = list_strategies()
-    strategy_help = "\n".join([f"  {name:15} - {desc}" for name, desc in strategies.items()])
-    
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="planMT - A planning-as-satisfiability planner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"""
-Available strategies:
-{strategy_help}
-
+        epilog="""
 Examples:
-  %(prog)s -d domain.pddl -p problem.pddl --strategy sequential
-  %(prog)s -d domain.pddl -p problem.pddl --strategy forall-optimized --timeout 60
+  %(prog)s -d domain.pddl -p problem.pddl --strategy seq
+  %(prog)s -d domain.pddl -p problem.pddl --strategy forall-lazy --timeout 60
+  %(prog)s --list-strategies
+
+Use --list-strategies to see available strategies and their descriptions.
         """
     )
-    
+
     # Required arguments
-    parser.add_argument("-d", "--domain", type=str, required=True,
+    parser.add_argument("-d", "--domain", type=str,
                        help="Path to the PDDL domain file")
-    parser.add_argument("-p", "--problem", type=str, required=True, 
+    parser.add_argument("-p", "--problem", type=str,
                        help="Path to the PDDL problem file")
-    
-    # Strategy selection (required)
-    parser.add_argument("--strategy", type=str, required=True,
-                       choices=list(strategies.keys()),
+
+    # Strategy selection
+    parser.add_argument("--strategy", type=str,
                        help="Planning strategy to use")
+
+    # List strategies
+    parser.add_argument("--list-strategies", action="store_true",
+                       help="List available strategies and exit")
     
     # Optional global parameters
     parser.add_argument("--timeout", type=int, default=3600,
@@ -95,25 +94,16 @@ def solve_problem(problem, args):
     except ImportError as e:
         print(f"Error: Failed to import dependencies: {e}")
         return None
-    
-    # Get strategy configuration
-    strategy_config = get_strategy_config(args.strategy)
-    
-    # Build planner parameters (use object to satisfy type checker for mixed types)
+
+    # Build planner parameters with strategy name
     planner_params: Dict[str, object] = {
-        'parallelism': strategy_config.parallelism,
-        'propagator': strategy_config.propagator,
-        'encoder': strategy_config.encoder,
-        'detect_symmetries': strategy_config.detect_symmetries,
-        'no_action_removal': strategy_config.no_action_removal
+        'strategy': args.strategy,
     }
 
-    planner_params['interference_analysis'] = strategy_config.interference_analysis
-    
     if args.executable:
         planner_params['executable_path'] = args.executable
     if args.max_steps:
-        planner_params['max_steps'] = args.max_steps  
+        planner_params['max_steps'] = args.max_steps
     if args.stats_file:
         planner_params['stats_file'] = args.stats_file
     if args.no_persist_clauses:
@@ -132,13 +122,11 @@ def solve_problem(problem, args):
         planner_params['verbosity'] = "verbose"
     elif args.verbose >= 2:
         planner_params['verbosity'] = "debug"
-    
+
     # Show configuration info
     if not args.silent and args.verbose >= 1:
-        print(f"Strategy: {args.strategy} ({strategy_config.description})")
-        print(f"Configuration: {strategy_config.encoder}/{strategy_config.parallelism}/{strategy_config.propagator}"
-              f"/{strategy_config.interference_analysis}")
-    
+        print(f"Strategy: {args.strategy}")
+
     try:
         # Cast to Any to avoid static typing issues with UP engines
         PlannerClass: Any = OneshotPlanner
@@ -157,13 +145,38 @@ def solve_problem(problem, args):
 def main():
     """Main entry point."""
     args = parse_arguments()
-    
+
+    # Handle --list-strategies
+    if args.list_strategies:
+        # Call the C++ executable with --list-strategies
+        import planmt
+        executable_path = planmt.planner_wrapper.planMTPlanner(**{})._find_executable(None)
+        try:
+            import subprocess
+            # C++ planner requires dummy protobuf files as positional args
+            result = subprocess.run([executable_path, "/dev/null", "/dev/null", "--list-strategies"],
+                                  capture_output=True, text=True)
+            print(result.stdout)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error listing strategies: {e}")
+            sys.exit(1)
+
+    # Validate required arguments for solving
+    if not args.domain or not args.problem:
+        print("Error: --domain and --problem are required (or use --list-strategies)")
+        sys.exit(1)
+
+    if not args.strategy:
+        print("Error: --strategy is required")
+        sys.exit(1)
+
     # Validate files
     for file_path in [args.domain, args.problem]:
         if not os.path.exists(file_path):
             print(f"Error: File not found: {file_path}")
             sys.exit(1)
-    
+
     # Parse problem
     try:
         from unified_planning.io import PDDLReader
@@ -172,12 +185,12 @@ def main():
     except Exception as e:
         print(f"Error parsing PDDL files: {e}")
         sys.exit(1)
-    
+
     # Solve
     result = solve_problem(problem, args)
     if not result:
         sys.exit(1)
-    
+
     # Print result
     print(f"Status: {result.status}")
     if result.plan and hasattr(result.plan, 'actions'):
@@ -185,11 +198,11 @@ def main():
         for i, action in enumerate(result.plan.actions):
             params = ", ".join(map(str, action.actual_parameters))
             print(f"  {i+1}. {action.action.name}({params})")
-        
+
         if args.output_plan:
             with open(args.output_plan, 'w') as f:
                 for i, action in enumerate(result.plan.actions):
-                    params = ", ".join(map(str, action.actual_parameters)) 
+                    params = ", ".join(map(str, action.actual_parameters))
                     f.write(f"{i+1}. {action.action.name}({params})\n")
             print(f"Plan saved to: {args.output_plan}")
     else:

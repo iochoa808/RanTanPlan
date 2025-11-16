@@ -67,6 +67,7 @@ add_executable(planmt
     src/main.cpp
     src/config/config.cpp
     src/config/cli_parser.cpp
+    src/config/strategy_registry.cpp
     src/util/memory_tracker.cpp
     src/util/stats.cpp
     src/problem/real.cpp
@@ -90,18 +91,15 @@ add_executable(planmt
     src/encoders/chained_grounded_encoder.cpp
     src/encoders/r2e_grounded_encoder.cpp
     src/encoders/reified_grounded_encoder.cpp
-    src/encoders/encoder_factory.cpp
     src/encoders/parallelism/interference_analyzer.cpp
     src/encoders/parallelism/interference_analysis.cpp
     src/encoders/parallelism/eager_interference_analysis.cpp
     src/encoders/parallelism/eager_semantic_interference_analysis.cpp
     src/encoders/parallelism/lazy_interference_analysis.cpp
     src/encoders/parallelism/semantic_interference_analysis.cpp
-    src/encoders/parallelism/interference_analysis_factory.cpp
     src/encoders/parallelism/sequential_semantics.cpp
     src/encoders/parallelism/forall_semantics.cpp
     src/encoders/parallelism/exists_semantics.cpp
-    src/encoders/parallelism/parallelism_factory.cpp
     src/encoders/parallelism/graph.cpp
     src/encoders/z3_variable_factory.cpp
     src/planners/sequential.cpp
@@ -110,7 +108,6 @@ add_executable(planmt
     src/planners/propagators/lazy_forall_propagator.cpp
     src/planners/propagators/exists_propagator.cpp
     src/planners/propagators/decision_heuristic_propagator.cpp
-    src/planners/propagators/propagator_factory.cpp
     src/symmetries/smt_symmetry_checker.cpp
     src/arpg/arpg.cpp
     src/abstraction/achievers_analysis.cpp

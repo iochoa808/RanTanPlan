@@ -21,7 +21,7 @@ ExistsPropagator::ExistsPropagator(z3::solver& solver, const Problem& problem, c
     register_final();
     
     // Set Z3 option to persist clauses for user propagator based on config
-    solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
+    solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
 }
 
 void ExistsPropagator::push() {
@@ -98,10 +98,6 @@ void ExistsPropagator::register_timestep_variables(int timestep) {
             }
         }
     }
-}
-
-PropagatorType ExistsPropagator::get_type() const {
-    return PropagatorType::EXISTS;
 }
 
 void ExistsPropagator::cleanup() {

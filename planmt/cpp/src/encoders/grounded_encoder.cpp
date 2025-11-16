@@ -1,5 +1,4 @@
 #include "grounded_encoder.hpp"
-#include "parallelism/parallelism_factory.hpp"
 #include "parallelism/interference_analysis.hpp"
 #include "../util/stats.hpp"
 #include "../symmetries/smt_symmetry_checker.hpp"
@@ -17,9 +16,8 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
     layers_encoded_ = -1;
     build_epc_index();
     analyze_symmetries();
-    
-    // Initialize with sequential semantics by default
-    set_parallelism_strategy(ParallelismFactory::ParallelismType::SEQUENTIAL);
+
+    // Parallelism strategy will be set by the caller
 }
 
 // Helper function to convert expression to Z3 using visitor
@@ -341,14 +339,8 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_symmetries(int t) {
     return std::make_shared<z3::expr>(z3::mk_and(symmetry_constraints));
 }
 
-void GroundedEncoder::set_parallelism_strategy(ParallelismFactory::ParallelismType type) {
-    parallelism_strategy_ = ParallelismFactory::create_strategy(type);
-    // Initialize the strategy with problem context
-    parallelism_strategy_->initialize(problem_, ctx_, variable_factory_);
-}
-
-void GroundedEncoder::set_parallelism_strategy(const std::string& strategy_name) {
-    parallelism_strategy_ = ParallelismFactory::create_strategy(strategy_name);
+void GroundedEncoder::set_parallelism_strategy(std::unique_ptr<ParallelismStrategy> strategy) {
+    parallelism_strategy_ = std::move(strategy);
     // Initialize the strategy with problem context
     parallelism_strategy_->initialize(problem_, ctx_, variable_factory_);
 }

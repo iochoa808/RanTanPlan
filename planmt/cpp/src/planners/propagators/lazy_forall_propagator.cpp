@@ -17,7 +17,7 @@ LazyForallPropagator::LazyForallPropagator(z3::solver& solver, const Problem& pr
     register_final();
     
     // Set Z3 option to persist clauses for user propagator based on config
-    solver.set("smt.up.persist_clauses", Config::instance().propagators.persist_clauses);
+    solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
     
     // Clear any existing state
     active_actions_per_timestep_.clear();
@@ -135,10 +135,6 @@ void LazyForallPropagator::register_timestep_variables(int timestep) {
             }
         }
     }
-}
-
-PropagatorType LazyForallPropagator::get_type() const {
-    return PropagatorType::LAZY_FORALL;
 }
 
 void LazyForallPropagator::cleanup() {

@@ -1,5 +1,4 @@
 #include "exists_semantics.hpp"
-#include "interference_analysis_factory.hpp"
 #include "../../problem/action.hpp"
 #include "../../util/stats.hpp"
 #include <iostream>
@@ -10,11 +9,8 @@ void ExistsSemantics::initialize(const Problem& problem, z3::context& ctx, Z3Var
     problem_ = &problem;
     ctx_ = &ctx;
     variable_factory_ = &var_factory;
-    
-    // Create and initialize the interference analyzer using factory
-    interference_analyzer_ = InterferenceAnalysisFactory::create_from_config(problem);
-    
-    std::cout << "ExistsSemantics initialized with interference analysis" << std::endl;
+
+    std::cout << "ExistsSemantics initialized" << std::endl;
 }
 
 std::shared_ptr<z3::expr> ExistsSemantics::encode_parallelism(int timestep) {
