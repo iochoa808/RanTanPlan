@@ -185,6 +185,12 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
 
     LayerState initial_layer;
 
+    // IMPORTANT: Initialize ALL Boolean fluents to FALSE_ONLY (closed-world assumption)
+    // Only fluents explicitly set to true in the initial state will be TRUE_ONLY
+    for (int fluent_id : boolean_fluent_ids_) {
+        initial_layer.boolean_reachability[fluent_id] = BooleanReachability::FALSE_ONLY;
+    }
+
     // Process each assignment in the initial state
     for (const auto& assignment : problem_.initial_state()) {
         const Expression& fluent = assignment.fluent();
@@ -445,12 +451,12 @@ void NumericRelaxedPlanningGraph::apply_boolean_effect(
         is_negative_effect = true;
     }
 
-    // Apply delete-relaxation semantics based on current state and effect type
-    // State transitions (from header file):
-    // - FALSE_ONLY + positive effect → BOTH
-    // - FALSE_ONLY + negative effect → FALSE_ONLY (no change)
-    // - TRUE_ONLY + positive effect → TRUE_ONLY (no change)
-    // - TRUE_ONLY + negative effect → BOTH
+    // Apply ADL DELETE-RELAXATION semantics with 3-valued logic
+    // State transitions:
+    // - FALSE_ONLY + positive effect → BOTH (can now be true OR stay false)
+    // - FALSE_ONLY + negative effect → FALSE_ONLY (no change, already can only be false)
+    // - TRUE_ONLY + positive effect → TRUE_ONLY (no change, already can only be true)
+    // - TRUE_ONLY + negative effect → BOTH (can now be false OR stay true)
     // - BOTH + any effect → BOTH (absorbing state)
 
     if (current_state == BooleanReachability::BOTH) {
@@ -972,6 +978,17 @@ int NumericRelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
     }
 
     return min_layer;
+}
+
+// ============================================================================
+// QUERY METHODS - Actions
+// ============================================================================
+
+const std::vector<const Action*>& NumericRelaxedPlanningGraph::get_actions_in_layer(int layer) const {
+    if (layer >= 0 && layer < static_cast<int>(action_layers_.size())) {
+        return action_layers_[layer];
+    }
+    return empty_action_vector_;
 }
 
 // ============================================================================
