@@ -39,6 +39,8 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
         # allow disabling CNF normalization via planner params (default: enabled)
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
         self._no_action_removal = options.get('no_action_removal', False)
+        self._boolean_rpg = options.get('boolean_rpg', False)
+        self._numeric_rpg = options.get('numeric_rpg', False)
 
     def _find_executable(self, provided_path):
         """Find the planmt executable, trying various locations."""
@@ -250,6 +252,12 @@ class planMTPlanner(Engine, OneshotPlannerMixin):
 
             if self._no_action_removal:
                 command.append("--no-action-removal")
+
+            if self._boolean_rpg:
+                command.append("--boolean-rpg")
+
+            if self._numeric_rpg:
+                command.append("--numeric-rpg")
 
             print(f"Running planner: {' '.join(command)}")
 

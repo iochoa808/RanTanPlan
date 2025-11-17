@@ -2,7 +2,7 @@
 """
 planMT CLI - Command Line Interface for the planMT planning system.
 
-This CLI provides an interface to the planMT planner, which uses a planning-as-satisfiability 
+This CLI provides an interface to the planMT planner, which uses a planning-as-SMT 
 approach with a C++ backend and Unified Planning frontend.
 """
 
@@ -17,7 +17,7 @@ from unified_planning.engines.results import LogLevel
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="planMT - A planning-as-satisfiability planner",
+        description="planMT - A planning-as-SMT planner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -70,6 +70,10 @@ Use --list-strategies to see available strategies and their descriptions.
                        help="Disable CNF normalization of goals and preconditions")
     parser.add_argument("--no-action-removal", action="store_true",
                        help="Disable RPG-based action removal optimization")
+    parser.add_argument("--boolean-rpg", action="store_true",
+                       help="Use Boolean RPG for action removal (faster, less precise)")
+    parser.add_argument("--numeric-rpg", action="store_true",
+                       help="Use Numeric RPG for action removal (slower, more precise, default)")
     
     parser.add_argument(
         "--version",
@@ -114,6 +118,10 @@ def solve_problem(problem, args):
         planner_params['no_cnf_normalization'] = True
     if args.no_action_removal:
         planner_params['no_action_removal'] = True
+    if args.boolean_rpg:
+        planner_params['boolean_rpg'] = True
+    if args.numeric_rpg:
+        planner_params['numeric_rpg'] = True
 
     # Handle verbosity
     if args.silent:

@@ -219,155 +219,105 @@ int main(int argc, char* argv[]) {
         return export_formula_and_exit(planning_problem);
     }
 
-    // === RELAXED PLANNING GRAPH CHECK ===
-    // Create and build the RPG to check for unsolvability
-    planmt::RelaxedPlanningGraph rpg(planning_problem);
-    bool goals_reachable = rpg.build();
-
-    // If goals are not reachable in the relaxed planning graph, the problem is unsolvable
-    if (!goals_reachable) {
-        PlanGenerationResult result;
-        result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
-
-        auto* log_message = result.add_log_messages();
-        log_message->set_level(LogMessage_LogLevel_INFO);
-        log_message->set_message("Problem proven unsolvable: goals not reachable in relaxed planning graph");
-
-        return write_result_and_exit(result, argv[2]);
-    }
-
-    // Extract lower bound from RPG for starting timestep
-    int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
-
-    // Set the starting timestep from RPG lower bound in config
-    config.planner.start_timestep = rpg_lower_bound;
-
-    // === ACTION REMOVAL ===
+    // === GOAL REACHABILITY CHECK, ACTION REMOVAL, AND LOWER BOUND ===
     size_t total_actions = planning_problem.action_count();
 
-    if (planmt::Config::instance().global.enable_action_removal) {
-        if (config.global.use_numeric_rpg) {
-            // === Use Numeric RPG for action removal (more precise) ===
-            z3::context ctx;
+    if (!config.global.enable_action_removal) {
+        // Branch 1: No RPG - skip goal reachability check, no action removal, no lower bound
+        config.planner.start_timestep = 0;
 
-            if (config.is_info()) {
-                std::cout << "\n=== Building NumericRelaxedPlanningGraph ===" << std::endl;
-            }
+        if (config.is_info()) {
+            std::cout << "[Action Removal] Disabled - using all " << total_actions << " actions" << std::endl;
+            std::cout << "[Lower Bound] Starting from timestep 0 (no RPG lower bound)" << std::endl;
+        }
+    } else if (!config.global.use_numeric_rpg) {
+        // Branch 2: Boolean RPG - check goal reachability, compute lower bound, remove actions
+        planmt::RelaxedPlanningGraph rpg(planning_problem);
+        bool goals_reachable = rpg.build();
 
-            planmt::NumericRelaxedPlanningGraph numeric_rpg(planning_problem, ctx);
+        // If goals are not reachable in the relaxed planning graph, the problem is unsolvable
+        if (!goals_reachable) {
+            PlanGenerationResult result;
+            result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
 
-            if (config.is_verbose()) {
-                std::cout << "NumericRelaxedPlanningGraph created successfully" << std::endl;
-                std::cout << "Building numeric RPG..." << std::endl;
-            }
+            auto* log_message = result.add_log_messages();
+            log_message->set_level(LogMessage_LogLevel_INFO);
+            log_message->set_message("Problem proven unsolvable: goals not reachable in Boolean relaxed planning graph");
 
-            auto numeric_rpg_start = std::chrono::high_resolution_clock::now();
-            bool numeric_goals_reachable = numeric_rpg.build();
-            auto numeric_rpg_end = std::chrono::high_resolution_clock::now();
-            auto numeric_rpg_time = std::chrono::duration<double>(numeric_rpg_end - numeric_rpg_start).count();
+            return write_result_and_exit(result, argv[2]);
+        }
 
-            if (config.is_info()) {
-                std::cout << "Numeric RPG build completed in " << numeric_rpg_time << "s" << std::endl;
-                std::cout << "Goals reachable: " << (numeric_goals_reachable ? "YES" : "NO") << std::endl;
-                std::cout << "Number of layers: " << numeric_rpg.get_layer_count() << std::endl;
-            }
+        int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
+        config.planner.start_timestep = rpg_lower_bound;
 
-            // Perform comparison if in info mode
-            if (config.is_info()) {
-                auto boolean_removable = rpg.get_removable_actions();
-                auto numeric_removable = numeric_rpg.get_removable_actions();
+        size_t removed_actions = rpg.remove_unreachable_actions();
 
-                std::unordered_set<const planmt::Action*> boolean_set(boolean_removable.begin(), boolean_removable.end());
-                std::unordered_set<const planmt::Action*> numeric_set(numeric_removable.begin(), numeric_removable.end());
+        if (config.is_info()) {
+            std::cout << "[Lower Bound] Boolean RPG lower bound: " << rpg_lower_bound << " steps" << std::endl;
+            double percentage = (double)removed_actions / total_actions * 100.0;
+            std::cout << "[Action Removal] Removed " << removed_actions << "/" << total_actions
+                      << " unreachable actions using Boolean RPG (" << std::fixed << std::setprecision(1)
+                      << percentage << "%)" << std::endl;
+        }
+    } else {
+        // Branch 3: Numeric RPG only
+        z3::context ctx;
 
-                std::vector<const planmt::Action*> boolean_only;
-                std::vector<const planmt::Action*> numeric_only;
-                std::vector<const planmt::Action*> both_remove;
+        if (config.is_info()) {
+            std::cout << "\n=== Building NumericRelaxedPlanningGraph ===" << std::endl;
+        }
 
-                for (const auto* action : boolean_removable) {
-                    if (numeric_set.count(action)) {
-                        both_remove.push_back(action);
-                    } else {
-                        boolean_only.push_back(action);
-                    }
-                }
+        planmt::NumericRelaxedPlanningGraph numeric_rpg(planning_problem, ctx);
 
-                for (const auto* action : numeric_removable) {
-                    if (!boolean_set.count(action)) {
-                        numeric_only.push_back(action);
-                    }
-                }
+        if (config.is_verbose()) {
+            std::cout << "NumericRelaxedPlanningGraph created successfully" << std::endl;
+            std::cout << "Building numeric RPG..." << std::endl;
+        }
 
-                std::cout << "\n=== RPG Action Removal Comparison ===" << std::endl;
-                std::cout << "Total actions: " << total_actions << std::endl;
-                std::cout << "\nBoolean RPG: " << boolean_removable.size() << " unreachable ("
-                          << std::fixed << std::setprecision(1)
-                          << (double)boolean_removable.size() / total_actions * 100.0 << "%)" << std::endl;
-                std::cout << "Numeric RPG: " << numeric_removable.size() << " unreachable ("
-                          << std::fixed << std::setprecision(1)
-                          << (double)numeric_removable.size() / total_actions * 100.0 << "%)" << std::endl;
+        auto numeric_rpg_start = std::chrono::high_resolution_clock::now();
+        bool numeric_goals_reachable = numeric_rpg.build();
+        auto numeric_rpg_end = std::chrono::high_resolution_clock::now();
+        auto numeric_rpg_time = std::chrono::duration<double>(numeric_rpg_end - numeric_rpg_start).count();
 
-                std::cout << "\n--- Set Analysis ---" << std::endl;
-                std::cout << "Both identify as unreachable: " << both_remove.size() << " actions" << std::endl;
-                std::cout << "Boolean-only unreachable: " << boolean_only.size() << " actions" << std::endl;
-                std::cout << "Numeric-only unreachable: " << numeric_only.size() << " actions" << std::endl;
+        if (config.is_info()) {
+            std::cout << "Numeric RPG build completed in " << numeric_rpg_time << "s" << std::endl;
+            std::cout << "Goals reachable: " << (numeric_goals_reachable ? "YES" : "NO") << std::endl;
+            std::cout << "Number of layers: " << numeric_rpg.get_layer_count() << std::endl;
+        }
 
-                size_t both_reachable = total_actions - boolean_set.size() - numeric_only.size();
-                std::cout << "Both consider reachable: " << both_reachable << " actions" << std::endl;
+        // If goals are not reachable in the numeric relaxed planning graph, the problem is unsolvable
+        if (!numeric_goals_reachable) {
+            PlanGenerationResult result;
+            result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
 
-                if (boolean_only.size() > 0) {
-                    std::cout << "\n⚠️  WARNING: Numeric RPG does NOT subsume Boolean RPG!" << std::endl;
-                    std::cout << "    Boolean RPG identified " << boolean_only.size()
-                              << " unreachable action(s) that Numeric RPG considers reachable." << std::endl;
+            auto* log_message = result.add_log_messages();
+            log_message->set_level(LogMessage_LogLevel_INFO);
+            log_message->set_message("Problem proven unsolvable: goals not reachable in Numeric relaxed planning graph");
 
-                    if (config.is_verbose()) {
-                        std::cout << "\n    Boolean-only unreachable actions:" << std::endl;
-                        for (const auto* action : boolean_only) {
-                            std::cout << "      - " << action->name() << std::endl;
-                        }
-                    }
-                } else {
-                    std::cout << "\n✓ VERIFIED: Numeric RPG subsumes Boolean RPG" << std::endl;
-                    std::cout << "    All actions identified by Boolean RPG are also identified by Numeric RPG." << std::endl;
-                }
+            return write_result_and_exit(result, argv[2]);
+        }
 
-                if (numeric_only.size() > 0 && config.is_verbose()) {
-                    std::cout << "\n    Additional actions identified by Numeric RPG:" << std::endl;
-                    size_t display_limit = std::min(numeric_only.size(), size_t(10));
-                    for (size_t i = 0; i < display_limit; ++i) {
-                        std::cout << "      - " << numeric_only[i]->name() << std::endl;
-                    }
-                    if (numeric_only.size() > display_limit) {
-                        std::cout << "      ... and " << (numeric_only.size() - display_limit) << " more" << std::endl;
-                    }
-                }
-                std::cout << "======================================\n" << std::endl;
-            }
+        // Extract and set Numeric RPG lower bound
+        int numeric_rpg_lower_bound = numeric_rpg.get_minimum_steps_lower_bound();
+        config.planner.start_timestep = numeric_rpg_lower_bound;
 
-            // Perform actual removal using Numeric RPG
-            size_t removed_actions = numeric_rpg.remove_unreachable_actions();
+        if (config.is_info()) {
+            std::cout << "[Lower Bound] Numeric RPG lower bound: " << numeric_rpg_lower_bound << " steps" << std::endl;
+        }
 
-            if (config.is_info()) {
-                double percentage = (double)removed_actions / total_actions * 100.0;
-                std::cout << "[Action Removal] Removed " << removed_actions << "/" << total_actions
-                          << " unreachable actions (" << std::fixed << std::setprecision(1)
-                          << percentage << "%)" << std::endl;
-            }
+        // Perform actual removal using Numeric RPG
+        size_t removed_actions = numeric_rpg.remove_unreachable_actions();
 
-            if (config.is_verbose()) {
-                numeric_rpg.print_statistics();
-                std::cout << "=== End NumericRelaxedPlanningGraph ===\n" << std::endl;
-            }
-        } else {
-            // === Use Boolean RPG for action removal (faster, less precise) ===
-            size_t removed_actions = rpg.remove_unreachable_actions();
+        if (config.is_info()) {
+            double percentage = (double)removed_actions / total_actions * 100.0;
+            std::cout << "[Action Removal] Removed " << removed_actions << "/" << total_actions
+                      << " unreachable actions using Numeric RPG (" << std::fixed << std::setprecision(1)
+                      << percentage << "%)" << std::endl;
+        }
 
-            if (config.is_info()) {
-                double percentage = (double)removed_actions / total_actions * 100.0;
-                std::cout << "[Action Removal] Removed " << removed_actions << "/" << total_actions
-                          << " unreachable actions (Boolean RPG) (" << std::fixed << std::setprecision(1)
-                          << percentage << "%)" << std::endl;
-            }
+        if (config.is_verbose()) {
+            numeric_rpg.print_statistics();
+            std::cout << "=== End NumericRelaxedPlanningGraph ===\n" << std::endl;
         }
     }
 

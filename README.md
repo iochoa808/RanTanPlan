@@ -1,6 +1,6 @@
 # planMT
 
-An automated planning system that uses a planning-as-satisfiability approach. It combines a Python frontend with a C++ backend for SMT-based planning.
+An automated planning system that uses a planning-as-SMT approach. It combines a Python frontend with a C++ backend for SMT-based planning.
 
 Supports three parallelism strategies (sequential, forall, exists) with optimization configurations and interference analysis.
 
@@ -217,7 +217,7 @@ If you use planMT in your research, please cite:
 
 ```bibtex
 @software{planmt,
-  title={planMT: A Planning-as-Satisfiability Planner},
+  title={planMT: A Planning-as-SMT Planner},
   author={Joan Espasa Arxer},
   year={2025},
   url={https://github.com/pyPMT/planMT}
