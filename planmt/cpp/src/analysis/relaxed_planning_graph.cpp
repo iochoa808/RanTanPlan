@@ -12,7 +12,7 @@ const std::vector<const Action*> RelaxedPlanningGraph::empty_action_vector_;
 const std::unordered_set<int> RelaxedPlanningGraph::empty_condition_set_;
 
 RelaxedPlanningGraph::RelaxedPlanningGraph(Problem& problem)
-    : problem_(problem), early_termination_on_goals_(false), build_time_ms_(0.0) {
+    : problem_(problem), build_time_ms_(0.0) {
     extract_goal_conditions();
 }
 
@@ -31,24 +31,8 @@ bool RelaxedPlanningGraph::build() {
     reset();
     initialize_fact_layer();
 
-    // Check if goals are already achievable in the initial state (if early termination is enabled)
-    if (early_termination_on_goals_ && are_goals_achievable()) {
-        auto end_time = std::chrono::high_resolution_clock::now();
-        build_time_ms_ = std::chrono::duration<double, std::milli>(end_time - build_start_time_).count();
-
-        // Compact output
-        std::cout << "RPG built in " << static_cast<int>(build_time_ms_) << "ms" << std::endl;
-        std::cout << "Goals reachable: YES" << std::endl;
-        std::cout << "Total layers: " << fact_layers_.size() << std::endl;
-
-        if (config.is_debug()) {
-            print_debug_info();
-            print_reachability_analysis();
-        }
-
-        return true;
-    }
-
+    // Boolean RPG must always run to fixpoint for soundness
+    // (it uses syntactic relaxation which is less precise than numeric bounds)
     // Build layers until fixpoint (with safety limit)
     const int MAX_RPG_LAYERS = 100; // Prevent infinite expansion
     while (!is_fixpoint_reached() && fact_layers_.size() < MAX_RPG_LAYERS) {
@@ -72,10 +56,8 @@ bool RelaxedPlanningGraph::build() {
             add_effects_to_layer(*action, next_layer);
         }
 
-        // Check if goals are now achievable (if early termination is enabled)
-        if (early_termination_on_goals_ && are_goals_achievable()) {
-            break;
-        }
+        // Boolean RPG continues to fixpoint - no early termination
+        // (early termination is only sound for the more precise Numeric RPG)
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();

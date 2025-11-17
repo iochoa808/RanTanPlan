@@ -26,6 +26,8 @@ public:
         bool enable_action_removal = true;  // Enable RPG-based action removal optimization
         bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
         double epsilon = 1e-6;  // Numerical tolerance for floating-point comparisons
+        bool rpg_early_termination = true;  // Stop RPG construction when goals are reachable (sound for satisficing, may be unsound for optimal planning)
+        bool use_numeric_rpg = true;  // Use NumericRelaxedPlanningGraph (true) or RelaxedPlanningGraph (false) for action removal
     } global;
     
     struct Planner {

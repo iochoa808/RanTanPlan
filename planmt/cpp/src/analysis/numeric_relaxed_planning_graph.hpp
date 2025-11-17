@@ -274,12 +274,8 @@ private:
     // MEMBER VARIABLES - Configuration
     // ========================================================================
 
-    bool early_termination_on_goals_;
     int max_layers_;
     bool batch_action_applicability_;
-
-    // Epsilon for fixpoint detection (numerical tolerance)
-    static constexpr double FIXPOINT_EPSILON = 1e-6;
 
     // ========================================================================
     // MEMBER VARIABLES - Statistics

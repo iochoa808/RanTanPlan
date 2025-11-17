@@ -52,7 +52,6 @@ NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(Problem& problem, z3::c
       z3_optimizer_(std::make_unique<z3::optimize>(ctx)),
       variable_factory_(ctx),
       grounded_visitor_(ctx, &problem, &variable_factory_),
-      early_termination_on_goals_(true),
       max_layers_(Config::instance().planner.max_steps),  // Read from config
       batch_action_applicability_(false),  // Default: individual queries per action
       build_time_ms_(0.0),
@@ -334,7 +333,8 @@ bool NumericRelaxedPlanningGraph::build() {
         }
 
         // Early termination if goals are achievable (if enabled)
-        if (early_termination_on_goals_ && are_goals_achievable()) {
+        // Note: This is sound for satisficing planning but may be unsound for optimal planning
+        if (config.global.rpg_early_termination && are_goals_achievable()) {
             if (config.is_verbose()) {
                 std::cout << "  Goals achievable - early termination" << std::endl;
             }

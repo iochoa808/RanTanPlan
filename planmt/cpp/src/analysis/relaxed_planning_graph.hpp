@@ -19,15 +19,14 @@ namespace planmt {
  * Features:
  * - Syntactic achievability check for Boolean fluents
  * - Simplified numeric handling: any modification of a numeric variable enables any condition containing it
- * - Layer-by-layer construction until fixpoint is reached
- * - Configurable early termination when goals are achieved (default: enabled)
+ * - Layer-by-layer construction until fixpoint is reached (always runs to fixpoint for soundness)
  * - Independent from ARPG and current achievers analysis
  *
  * The relaxed planning graph ignores delete effects and negative interactions,
  * providing an optimistic view of what's achievable for heuristic computation.
  *
- * Early termination can be disabled using set_early_termination_on_goals(false)
- * for cases where a complete RPG analysis is needed regardless of goal achievability.
+ * Note: This Boolean RPG always runs to fixpoint (no early termination) for soundness.
+ * The more precise NumericRelaxedPlanningGraph can use early termination safely.
  */
 class RelaxedPlanningGraph {
 public:
@@ -95,19 +94,6 @@ public:
     void print_reachability_analysis() const;
 
     /**
-     * Configure whether to stop building the RPG when goals are achieved.
-     * @param enable If true, stop as soon as goals are achievable (default behavior)
-     *               If false, continue building until fixpoint for complete analysis
-     */
-    void set_early_termination_on_goals(bool enable) { early_termination_on_goals_ = enable; }
-
-    /**
-     * Get the current early termination setting.
-     * @return true if early termination is enabled
-     */
-    bool get_early_termination_on_goals() const { return early_termination_on_goals_; }
-
-    /**
      * Get the minimum number of steps (transitions) needed to achieve the goals.
      * This provides a lower bound for planning based on the RPG structure.
      * @return minimum steps needed, or -1 if goals are not achievable
@@ -149,9 +135,6 @@ private:
 
     // Goal tracking - we'll extract condition IDs during goal processing
     std::vector<int> goal_condition_ids_;                               // IDs of goal conditions
-
-    // Configuration options
-    bool early_termination_on_goals_;                                   // Stop building when goals are achieved (default: true)
 
     // Timing and statistics
     mutable std::chrono::high_resolution_clock::time_point build_start_time_;
