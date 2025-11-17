@@ -44,8 +44,8 @@ Use --list-strategies to see available strategies and their descriptions.
                        help="List available strategies and exit")
     
     # Optional global parameters
-    parser.add_argument("--timeout", type=int, default=3600,
-                       help="Timeout in seconds (default: 3600)")
+    parser.add_argument("--timeout", type=int, default=None,
+                       help="Timeout in seconds (default: None)")
     parser.add_argument("--max-steps", type=int,
                        help="Maximum planning steps")
     parser.add_argument("--executable", type=str,
