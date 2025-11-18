@@ -59,6 +59,9 @@ NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(Problem& problem, z3::c
       grounded_visitor_(ctx, &problem, &variable_factory_),
       max_layers_(Config::instance().planner.max_steps),  // Read from config
       batch_action_applicability_(false),  // Default: individual queries per action
+      enable_all_actions_reachable_termination_(true),  // For now we're only using the
+      // graph to compute goal reachability and action reachability. If at some point we
+      // want variable bounds, this would stop us maybe before the layer we want.
       build_time_ms_(0.0),
       total_smt_queries_(0),
       total_optimization_queries_(0),
@@ -311,6 +314,17 @@ bool NumericRelaxedPlanningGraph::build() {
         // Early termination if goals are achievable (if enabled)
         if (config.global.rpg_early_termination && are_goals_achievable()) {
             Logger::instance().verbose("Goals achievable - early termination at layer " + std::to_string(layer + 1));
+            break;
+        }
+
+        // Early termination if all actions reachable and goals achieved (if enabled)
+        if (enable_all_actions_reachable_termination_ && 
+            are_all_actions_reachable() && 
+            are_goals_achievable()) {
+            Logger::instance().verbose("All " + std::to_string(action_layers_.back().size()) + 
+                                      "/" + std::to_string(problem_.actions().size()) +
+                                      " actions reachable and goals achievable - early termination at layer " + 
+                                      std::to_string(layer + 1));
             break;
         }
     }
@@ -898,6 +912,15 @@ bool NumericRelaxedPlanningGraph::is_fixpoint_reached() const {
     const auto& curr_layer = layer_states_[layer_states_.size() - 1];
 
     return prev_layer == curr_layer;
+}
+
+bool NumericRelaxedPlanningGraph::are_all_actions_reachable() const {
+    // Due to monotonicity of relaxed planning graph, the last layer contains
+    // all actions that will ever be reachable (once applicable, always applicable)
+    if (action_layers_.empty()) {
+        return false;
+    }
+    return action_layers_.back().size() >= problem_.actions().size();
 }
 
 // ============================================================================

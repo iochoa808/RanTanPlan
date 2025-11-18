@@ -29,6 +29,13 @@
  * - Supports early termination on goal achievement
   */
 
+  // TODO: integrate ARPG to know when to stop. That is, the ARPG will tell us 
+  // which bounds are unbounded, and therefore if all things that change between
+  // two layers are unbounded, we can stop.
+
+  // TODO: Improve how action applicability is computed. Currently, we either do
+  // it one by one (many SMT calls), but we can do them in batch (one big SMT call)
+
 namespace planmt {
 
 class NumericRelaxedPlanningGraph {
@@ -166,7 +173,7 @@ public:
     int get_minimum_steps_lower_bound() const;
 
     // ========================================================================
-    // QUERY METHODS - Boolean Fluents
+    // QUERY METHODS - Fluents
     // ========================================================================
 
     /**
@@ -178,10 +185,6 @@ public:
      * @brief Get reachability status at final layer
      */
     BooleanReachability get_boolean_reachability(const Expression& fluent) const;
-
-    // ========================================================================
-    // QUERY METHODS - Numeric Fluents
-    // ========================================================================
 
     /**
      * @brief Get numeric bounds at specific layer
@@ -276,6 +279,7 @@ private:
 
     int max_layers_;
     bool batch_action_applicability_;
+    bool enable_all_actions_reachable_termination_;  // Enable early termination when all actions reachable + goals achieved
 
     // ========================================================================
     // MEMBER VARIABLES - Statistics
@@ -332,6 +336,12 @@ private:
      * - Numeric: all bounds unchanged
      */
     bool is_fixpoint_reached() const;
+
+    /**
+     * @brief Check if all actions are now reachable
+     * @return true if total actions reached equals total actions in problem
+     */
+    bool are_all_actions_reachable() const;
 
     // ========================================================================
     // PRIVATE METHODS - Action Applicability
