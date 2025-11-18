@@ -185,12 +185,6 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
 
     LayerState initial_layer;
 
-    // IMPORTANT: Initialize ALL Boolean fluents to FALSE_ONLY (closed-world assumption)
-    // Only fluents explicitly set to true in the initial state will be TRUE_ONLY
-    for (int fluent_id : boolean_fluent_ids_) {
-        initial_layer.boolean_reachability[fluent_id] = BooleanReachability::FALSE_ONLY;
-    }
-
     // Process each assignment in the initial state
     for (const auto& assignment : problem_.initial_state()) {
         const Expression& fluent = assignment.fluent();
@@ -339,7 +333,8 @@ bool NumericRelaxedPlanningGraph::build() {
         }
 
         // Early termination if goals are achievable (if enabled)
-        // Note: This is sound for satisficing planning but may be unsound for optimal planning
+        // Note: This is unsound for reachability analysis or optimal planning in general
+        // but can be useful if we want a lower bound on the plan length quickly.
         if (config.global.rpg_early_termination && are_goals_achievable()) {
             if (config.is_verbose()) {
                 std::cout << "  Goals achievable - early termination" << std::endl;

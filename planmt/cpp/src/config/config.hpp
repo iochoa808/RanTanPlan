@@ -26,8 +26,16 @@ public:
         bool enable_action_removal = true;  // Enable RPG-based action removal optimization
         bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
         double epsilon = 1e-6;  // Numerical tolerance for floating-point comparisons
-        bool rpg_early_termination = true;  // Stop RPG construction when goals are reachable (sound for satisficing, may be unsound for optimal planning)
+        // IMPORTANT: Early termination is UNSOUND for action removal with Numeric RPG!
+        // The relaxation uses interval bounds [lower, upper] which may contain values unreachable
+        // by actual execution. For example: if x=200 and we add 100, bounds become [200, 300],
+        // but intermediate values like 201 may be unreachable. This means actions applicable
+        // in later RPG layers (due to over-approximated bounds) might not be truly reachable,
+        // but we still need to discover them to avoid incorrect pruning. Therefore, we must
+        // build to fixpoint rather than stopping early when goals become achievable.
+        bool rpg_early_termination = false;  // Stop RPG construction when goals are reachable (DEFAULT: false - required for sound action removal)
         bool use_numeric_rpg = true;  // Use NumericRelaxedPlanningGraph (true) or RelaxedPlanningGraph (false) for action removal
+        bool compare_rpgs = false;  // Run RPG comparison tool to debug action removal differences
     } global;
     
     struct Planner {
