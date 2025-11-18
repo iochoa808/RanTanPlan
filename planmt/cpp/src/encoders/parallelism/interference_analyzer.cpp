@@ -1,12 +1,13 @@
 #include "interference_analyzer.hpp"
 #include "../../util/memory_tracker.hpp"
+#include "../../util/scoped_timer.hpp"
+#include "../../util/logger.hpp"
+#include "../../util/stats.hpp"
 #include "../../config/config.hpp"
 #include <iostream>
 #include <algorithm>
 #include <unordered_map>
 #include <fstream>
-#include <fstream> // For outputting the graph to a DOT file
-#include <chrono>
 
 namespace planmt {
 
@@ -16,7 +17,7 @@ InterferenceAnalyzer::InterferenceAnalyzer(const Problem& problem) {
 
 void InterferenceAnalyzer::initialize(const Problem& problem) {
     problem_ = &problem;
-    
+
     // Clear any existing data
     action_analysis_.clear();
     interference_graph_ = Graph();
@@ -29,37 +30,41 @@ void InterferenceAnalyzer::initialize(const Problem& problem) {
         action_analysis_[action] = analyze_action(action);
     }
 
-    // Report memory usage after action analysis
+    // Report action analysis completion
     double current_memory = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "InterferenceAnalyzer initialized with " << problem.actions().size() 
-              << " actions and indexed their preconditions and effects. "
-              << "Memory: " << current_memory << " MB" << std::endl;
-    // Print the action analysis results
+    Logger::instance().verbose("InterferenceAnalyzer initialized with " + std::to_string(problem.actions().size()) +
+                              " actions (memory: " + std::to_string(static_cast<int>(current_memory)) + "MB)");
+
     build_interference_graph();
-    // DEBUG
+    // DEBUG: Uncomment to see detailed analysis
     //print_action_analysis();
     //output_interference_graph_dot();
 }
 
 void InterferenceAnalyzer::build_interference_graph() {
     if (!problem_) {
-        std::cout << "Error: InterferenceAnalyzer not initialized with a problem" << std::endl;
+        Logger::instance().error("InterferenceAnalyzer not initialized with a problem");
         return;
     }
-    
-    std::cout << "Building interference graph..." << std::endl;
-    
-    auto start_time = std::chrono::high_resolution_clock::now();
+
+    ScopedTimer timer("interference.graph_build_time_ms");
+    double start_memory = MemoryTracker::instance().get_current_memory_mb();
+
     analyze_action_conflicts();
-    auto end_time = std::chrono::high_resolution_clock::now();
-    
-    auto duration = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-    
-    // Report memory usage after O(n²) graph building
-    double current_memory = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "Interference graph built with " << interference_graph_.num_nodes() 
-              << " nodes and " << interference_graph_.num_edges() << " edges. "
-              << "Time: " << duration.count() << "s, Memory: " << current_memory << " MB" << std::endl;
+
+    // Record stats
+    double memory_used = MemoryTracker::instance().get_current_memory_mb() - start_memory;
+    Stats::instance().set("interference.nodes", interference_graph_.num_nodes());
+    Stats::instance().set("interference.edges", interference_graph_.num_edges());
+    Stats::instance().set("interference.memory_mb", memory_used);
+
+    // Structured visual output
+    Logger::instance().component(VerbosityLevel::INFO, "Interference", {
+        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
+        {"nodes", std::to_string(interference_graph_.num_nodes())},
+        {"edges", std::to_string(interference_graph_.num_edges())},
+        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"}
+    });
 }
 
 void InterferenceAnalyzer::analyze_action_conflicts() {
@@ -320,11 +325,11 @@ std::vector<const Action*> InterferenceAnalyzer::topological_sort_actions(const 
 void InterferenceAnalyzer::output_interference_graph_dot(const std::string& filename) const {
     std::ofstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
+        Logger::instance().error("Could not open file " + filename + " for writing");
         return;
     }
-    
-    std::cout << "Writing interference graph to " << filename << std::endl;
+
+    Logger::instance().info("Writing interference graph to " + filename);
     
     file << "digraph InterferenceGraph {" << std::endl;
     file << "    rankdir=LR;" << std::endl;
@@ -352,8 +357,8 @@ void InterferenceAnalyzer::output_interference_graph_dot(const std::string& file
     
     file << "}" << std::endl;
     file.close();
-    
-    std::cout << "Interference graph successfully written to " << filename << std::endl;
+
+    Logger::instance().info("Interference graph successfully written to " + filename);
 }
 
 } // namespace planmt

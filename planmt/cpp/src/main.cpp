@@ -16,6 +16,7 @@
 #include "planners/formula_exporter.hpp"
 #include "util/memory_tracker.hpp"
 #include "util/stats.hpp"
+#include "util/logger.hpp"
 #include "symmetries/smt_symmetry_checker.hpp"
 #include "arpg/arpg.hpp"
 #include "abstraction/achievers_analysis.hpp"
@@ -28,12 +29,10 @@
 int write_result_and_exit(const PlanGenerationResult& result, const char* output_file) {
     std::fstream output(output_file, std::ios::out | std::ios::trunc | std::ios::binary);
     if (!output || !result.SerializeToOstream(&output)) {
-        std::cerr << "Error: Could not write result to file: " << output_file << std::endl;
+        planmt::Logger::instance().error("Could not write result to file: " + std::string(output_file));
         return 1;
     }
-    if (planmt::Config::instance().is_info()) {
-        std::cout << "C++ Planner: Successfully wrote result to: " << output_file << std::endl;
-    }
+    planmt::Logger::instance().info("Successfully wrote result to: " + std::string(output_file));
     google::protobuf::ShutdownProtobufLibrary();
     return 0;
 }
@@ -44,20 +43,19 @@ int export_formula_and_exit(const planmt::Problem& problem) {
 
     // Validate formula export parameters
     if (config.formula_export.timestep < 0) {
-        std::cerr << "Error: --formula-timestep must be specified with --export-formula" << std::endl;
+        planmt::Logger::instance().error("--formula-timestep must be specified with --export-formula");
         return 1;
     }
 
     if (config.formula_export.output_file.empty()) {
-        std::cerr << "Error: --formula-output must be specified with --export-formula" << std::endl;
+        planmt::Logger::instance().error("--formula-output must be specified with --export-formula");
         return 1;
     }
 
     // Only allow formula export with strategies that support it
     auto strategy = planmt::StrategyRegistry::create(config.planner.strategy);
     if (!strategy->supports_formula_export()) {
-        std::cerr << "Error: Formula export is not supported by strategy '"
-                  << strategy->get_name() << "'" << std::endl;
+        planmt::Logger::instance().error("Formula export is not supported by strategy '" + strategy->get_name() + "'");
         return 1;
     }
 
@@ -76,10 +74,8 @@ int export_formula_and_exit(const planmt::Problem& problem) {
         // Set parallelism strategy on encoder
         encoder->set_parallelism_strategy(std::move(parallelism));
 
-        if (config.is_info()) {
-            std::cout << "Exporting formula for timestep " << config.formula_export.timestep
-                      << " using strategy: " << encoder->get_parallelism_strategy_name() << std::endl;
-        }
+        planmt::Logger::instance().info("Exporting formula for timestep " + std::to_string(config.formula_export.timestep)
+                                       + " using strategy: " + encoder->get_parallelism_strategy_name());
 
         // Create formula exporter and generate formula
         planmt::FormulaExporter exporter(problem, *encoder, ctx);
@@ -88,19 +84,17 @@ int export_formula_and_exit(const planmt::Problem& problem) {
         // Output formula to file
         std::ofstream output_file(config.formula_export.output_file);
         if (!output_file) {
-            std::cerr << "Error: Could not open output file: " << config.formula_export.output_file << std::endl;
+            planmt::Logger::instance().error("Could not open output file: " + config.formula_export.output_file);
             return 1;
         }
         output_file << formula;
-        if (config.is_info()) {
-            std::cout << "Formula exported to: " << config.formula_export.output_file << std::endl;
-        }
+        planmt::Logger::instance().info("Formula exported to: " + config.formula_export.output_file);
 
         google::protobuf::ShutdownProtobufLibrary();
         return 0;
 
     } catch (const std::exception& e) {
-        std::cerr << "Error during formula export: " << e.what() << std::endl;
+        planmt::Logger::instance().error("Error during formula export: " + std::string(e.what()));
         google::protobuf::ShutdownProtobufLibrary();
         return 1;
     }
@@ -122,9 +116,7 @@ PlanGenerationResult solve_planning_problem(const planmt::Problem& problem) {
     // Create strategy
     auto strategy = planmt::StrategyRegistry::create(config.planner.strategy);
 
-    if (config.is_info()) {
-        std::cout << "Using strategy: " << strategy->get_name() << std::endl;
-    }
+    planmt::Logger::instance().info("Using strategy: " + strategy->get_name());
 
     // Create encoder, parallelism, and interference analyzer using strategy
     auto encoder = strategy->create_encoder(problem, ctx);
@@ -190,14 +182,17 @@ int main(int argc, char* argv[]) {
         // Initialize configuration first
         planmt::Config::instance().initialize(argc, argv);
         auto& config = planmt::Config::instance();
-        
+
+        // Initialize logger with config
+        planmt::Logger::instance().set_config(&config);
+
         if (argc < 3) {
-            std::cerr << "Usage: " << argv[0] << " <input_problem.pb> <output_solution.pb> [OPTIONS]" << std::endl;
-            std::cerr << "Use --help for detailed options" << std::endl;
+            planmt::Logger::instance().error("Usage: " + std::string(argv[0]) + " <input_problem.pb> <output_solution.pb> [OPTIONS]");
+            planmt::Logger::instance().error("Use --help for detailed options");
             return 1;
         }
     } catch (const std::exception& e) {
-        std::cerr << "Configuration error: " << e.what() << std::endl;
+        planmt::Logger::instance().error("Configuration error: " + std::string(e.what()));
         return 1;
     }
 
@@ -205,7 +200,7 @@ int main(int argc, char* argv[]) {
     Problem problem_msg;
     std::fstream input(argv[1], std::ios::in | std::ios::binary);
     if (!input || !problem_msg.ParseFromIstream(&input)) {
-        std::cerr << "Error: Could not open or parse problem file: " << argv[1] << std::endl;
+        planmt::Logger::instance().error("Could not open or parse problem file: " + std::string(argv[1]));
         return 1;
     }
 
@@ -226,10 +221,8 @@ int main(int argc, char* argv[]) {
         // Branch 1: No RPG - skip goal reachability check, no action removal, no lower bound
         config.planner.start_timestep = 0;
 
-        if (config.is_info()) {
-            std::cout << "[Action Removal] Disabled - using all " << total_actions << " actions" << std::endl;
-            std::cout << "[Lower Bound] Starting from timestep 0 (no RPG lower bound)" << std::endl;
-        }
+        planmt::Logger::instance().info("[Action Removal] Disabled - using all " + std::to_string(total_actions) + " actions");
+        planmt::Logger::instance().info("[Lower Bound] Starting from timestep 0 (no RPG lower bound)");
     } else if (!config.global.use_numeric_rpg) {
         // Branch 2: Boolean RPG - check goal reachability, compute lower bound, remove actions
         planmt::RelaxedPlanningGraph rpg(planning_problem);
@@ -252,38 +245,21 @@ int main(int argc, char* argv[]) {
 
         size_t removed_actions = rpg.remove_unreachable_actions();
 
-        if (config.is_info()) {
-            std::cout << "[Lower Bound] Boolean RPG lower bound: " << rpg_lower_bound << " steps" << std::endl;
-            double percentage = (double)removed_actions / total_actions * 100.0;
-            std::cout << "[Action Removal] Removed " << removed_actions << "/" << total_actions
-                      << " unreachable actions using Boolean RPG (" << std::fixed << std::setprecision(1)
-                      << percentage << "%)" << std::endl;
-        }
+        std::ostringstream lower_bound_msg, action_removal_msg;
+        lower_bound_msg << "[Lower Bound] Boolean RPG lower bound: " << rpg_lower_bound << " steps";
+        planmt::Logger::instance().info(lower_bound_msg.str());
+
+        double percentage = (double)removed_actions / total_actions * 100.0;
+        action_removal_msg << "[Action Removal] Removed " << removed_actions << "/" << total_actions
+                          << " unreachable actions using Boolean RPG (" << std::fixed << std::setprecision(1)
+                          << percentage << "%)";
+        planmt::Logger::instance().info(action_removal_msg.str());
     } else {
         // Branch 3: Numeric RPG only
         z3::context ctx;
 
-        if (config.is_info()) {
-            std::cout << "\n=== Building NumericRelaxedPlanningGraph ===" << std::endl;
-        }
-
         planmt::NumericRelaxedPlanningGraph numeric_rpg(planning_problem, ctx);
-
-        if (config.is_verbose()) {
-            std::cout << "NumericRelaxedPlanningGraph created successfully" << std::endl;
-            std::cout << "Building numeric RPG..." << std::endl;
-        }
-
-        auto numeric_rpg_start = std::chrono::high_resolution_clock::now();
         bool numeric_goals_reachable = numeric_rpg.build();
-        auto numeric_rpg_end = std::chrono::high_resolution_clock::now();
-        auto numeric_rpg_time = std::chrono::duration<double>(numeric_rpg_end - numeric_rpg_start).count();
-
-        if (config.is_info()) {
-            std::cout << "Numeric RPG build completed in " << numeric_rpg_time << "s" << std::endl;
-            std::cout << "Goals reachable: " << (numeric_goals_reachable ? "YES" : "NO") << std::endl;
-            std::cout << "Number of layers: " << numeric_rpg.get_layer_count() << std::endl;
-        }
 
         // If goals are not reachable in the numeric relaxed planning graph, the problem is unsolvable
         if (!numeric_goals_reachable) {
@@ -301,24 +277,19 @@ int main(int argc, char* argv[]) {
         int numeric_rpg_lower_bound = numeric_rpg.get_minimum_steps_lower_bound();
         config.planner.start_timestep = numeric_rpg_lower_bound;
 
-        if (config.is_info()) {
-            std::cout << "[Lower Bound] Numeric RPG lower bound: " << numeric_rpg_lower_bound << " steps" << std::endl;
-        }
+        std::ostringstream numeric_lower_bound_msg;
+        numeric_lower_bound_msg << "[Lower Bound] Numeric RPG lower bound: " << numeric_rpg_lower_bound << " steps";
+        planmt::Logger::instance().info(numeric_lower_bound_msg.str());
 
         // Perform actual removal using Numeric RPG
         size_t removed_actions = numeric_rpg.remove_unreachable_actions();
 
-        if (config.is_info()) {
-            double percentage = (double)removed_actions / total_actions * 100.0;
-            std::cout << "[Action Removal] Removed " << removed_actions << "/" << total_actions
-                      << " unreachable actions using Numeric RPG (" << std::fixed << std::setprecision(1)
-                      << percentage << "%)" << std::endl;
-        }
-
-        if (config.is_verbose()) {
-            numeric_rpg.print_statistics();
-            std::cout << "=== End NumericRelaxedPlanningGraph ===\n" << std::endl;
-        }
+        std::ostringstream numeric_action_removal_msg;
+        double percentage = (double)removed_actions / total_actions * 100.0;
+        numeric_action_removal_msg << "[Action Removal] Removed " << removed_actions << "/" << total_actions
+                                   << " unreachable actions using Numeric RPG (" << std::fixed << std::setprecision(1)
+                                   << percentage << "%)";
+        planmt::Logger::instance().info(numeric_action_removal_msg.str());
     }
 
     // Solve the planning problem using configuration

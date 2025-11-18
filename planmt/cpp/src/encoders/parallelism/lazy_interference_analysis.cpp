@@ -1,5 +1,6 @@
 #include "lazy_interference_analysis.hpp"
 #include "../../util/memory_tracker.hpp"
+#include "../../util/logger.hpp"
 #include "../../config/config.hpp"
 #include <iostream>
 #include <algorithm>
@@ -15,19 +16,18 @@ LazyInterferenceAnalysis::LazyInterferenceAnalysis(const Problem& problem) {
 
 void LazyInterferenceAnalysis::initialize(const Problem& problem) {
     problem_ = &problem;
-    
+
     // Clear any existing data
     action_analysis_.clear();
     interference_cache_.clear();
-    
+
     // Setup common functionality using base class methods
     analyze_all_actions();
 
-    // Report memory usage after action analysis (but without graph building)
+    // Report initialization completion (lazy analysis doesn't pre-build graph)
     double current_memory = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "LazyInterferenceAnalysis initialized with " << problem.actions().size() 
-              << " actions and indexed their preconditions and effects. "
-              << "Memory: " << current_memory << " MB" << std::endl;
+    Logger::instance().verbose("LazyInterferenceAnalysis initialized with " + std::to_string(problem.actions().size()) +
+                              " actions (memory: " + std::to_string(static_cast<int>(current_memory)) + "MB)");
 }
 
 bool LazyInterferenceAnalysis::has_interference(const Action& a1, const Action& a2) const {

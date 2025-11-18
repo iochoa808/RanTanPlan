@@ -1,22 +1,21 @@
 #include "smt_symmetry_checker.hpp"
 #include "../problem/visitors/expression_visitor.hpp"
 #include "../util/memory_tracker.hpp"
+#include "../util/scoped_timer.hpp"
+#include "../util/logger.hpp"
+#include "../util/stats.hpp"
 #include "../config/config.hpp"
 #include <iostream>
 #include <algorithm>
 #include <set>
 #include <unordered_set>
-#include <chrono>
 
 namespace planmt {
 
 SMTSymmetryChecker::SMTSymmetryChecker(const Problem* problem, z3::context& ctx)
     : problem_(problem), context_(ctx), symbol_table_(), visitor_(ctx, symbol_table_, problem) {
-    auto& config = Config::instance();
-    if (config.is_info()) {
-        double current_memory = MemoryTracker::instance().get_current_memory_mb();
-        std::cout << "[Symmetry] Starting symmetry detection, memory=" << current_memory << "MB" << std::endl;
-    }
+    double current_memory = MemoryTracker::instance().get_current_memory_mb();
+    Logger::instance().info("Starting symmetry detection (memory: " + std::to_string(static_cast<int>(current_memory)) + "MB)");
 }
 
 std::string ActionSwap::to_string() const {
@@ -25,62 +24,68 @@ std::string ActionSwap::to_string() const {
 }
 
 std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
-    auto& config = Config::instance();
-    auto start_time = std::chrono::high_resolution_clock::now();
-    
+    ScopedTimer timer("symmetry.detection_time_ms");
+    double start_memory = MemoryTracker::instance().get_current_memory_mb();
+
     std::vector<ObjectSwap> detected_swaps;
-    
+
     // Clear previous results
     detected_symmetries_.clear();
-    
+
     // Group objects by type - only objects of same type can be symmetric
     auto objects_by_type = get_objects_by_type();
-    
-    
+
+
     // For each type with multiple objects, check for symmetries using SMT
     for (const auto& [type_name, objects] : objects_by_type) {
         if (objects.size() < 2) {
             continue; // Need at least 2 objects to have symmetry
         }
-        
-        
+
+
         // Check all pairs of objects of this type using SMT
         for (size_t i = 0; i < objects.size(); i++) {
             for (size_t j = i + 1; j < objects.size(); j++) {
                 const std::string& obj1_name = objects[i]->name();
                 const std::string& obj2_name = objects[j]->name();
-                
+
                 if (are_objects_symmetric(obj1_name, obj2_name)) {
                     ObjectSwap swap{obj1_name, obj2_name, type_name};
                     detected_swaps.push_back(swap);
-                    
+
                     // Get and store the variable pairs and action pairs
                     auto variable_pairs = get_symmetric_variable_pairs(obj1_name, obj2_name);
                     auto action_pairs = get_symmetric_action_pairs(obj1_name, obj2_name);
                     detected_symmetries_.emplace_back(swap, variable_pairs, action_pairs);
-                    
-                } 
+
+                }
             }
         }
     }
-    
-    if (config.is_debug()) {
-        std::cout << "Detected " << detected_symmetries_.size() << " symmetric object pairs:" << std::endl;
+
+    // Debug output: detailed symmetry information
+    if (detected_symmetries_.size() > 0) {
+        std::string debug_msg = "Detected " + std::to_string(detected_symmetries_.size()) + " symmetric object pairs:";
         for (const auto& symmetry : detected_symmetries_) {
-            std::cout << "  " << symmetry.object_swap.to_string() << " -> " << symmetry.variable_pairs.size() 
-                      << " variable pairs, " << symmetry.action_pairs.size() << " action pairs" << std::endl;
+            debug_msg += "\n  " + symmetry.object_swap.to_string() + " -> " +
+                        std::to_string(symmetry.variable_pairs.size()) + " variable pairs, " +
+                        std::to_string(symmetry.action_pairs.size()) + " action pairs";
         }
+        Logger::instance().debug(debug_msg);
     }
-    
-    // Print timing and memory info for completion
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto total_time = std::chrono::duration<double>(end_time - start_time).count();
-    if (config.is_info()) {
-        double current_memory = MemoryTracker::instance().get_current_memory_mb();
-        std::cout << "[Symmetry] detection took: time=" << total_time << "s, memory=" << current_memory << "MB";
-        std::cout << std::endl;
-    }
-    
+
+    // Record stats
+    double memory_used = MemoryTracker::instance().get_current_memory_mb() - start_memory;
+    Stats::instance().set("symmetry.count", detected_symmetries_.size());
+    Stats::instance().set("symmetry.memory_mb", memory_used);
+
+    // Structured visual output
+    Logger::instance().component(VerbosityLevel::INFO, "Symmetry", {
+        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
+        {"detected", std::to_string(detected_symmetries_.size())},
+        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"}
+    });
+
     return detected_swaps;
 }
 

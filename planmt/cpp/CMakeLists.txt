@@ -70,6 +70,8 @@ add_executable(planmt
     src/config/strategy_registry.cpp
     src/util/memory_tracker.cpp
     src/util/stats.cpp
+    src/util/scoped_timer.cpp
+    src/util/logger.cpp
     src/problem/real.cpp
     src/problem/atom.cpp
     src/problem/parameter.cpp

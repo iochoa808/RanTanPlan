@@ -1,9 +1,13 @@
 #include "arpg.hpp"
 #include "../config/config.hpp"
 #include "../util/memory_tracker.hpp"
+#include "../util/scoped_timer.hpp"
+#include "../util/logger.hpp"
+#include "../util/stats.hpp"
 #include <iostream>
 #include <algorithm>
 #include <chrono>
+#include <sstream>
 #include <limits>
 
 namespace planmt {
@@ -75,17 +79,15 @@ std::string Supporter::to_string() const {
 // ARPG class implementation
 ARPG::ARPG(const Problem& problem)
     : problem_(problem), goal_reached_(false), iteration_count_(0) {
-    auto& config = Config::instance();
-    if (config.is_info()) {
-        double current_memory = MemoryTracker::instance().get_current_memory_mb();
-        std::cout << "[ARPG] Starting, memory=" << current_memory << "MB" << std::endl;
-    }
+    double current_memory = MemoryTracker::instance().get_current_memory_mb();
+    Logger::instance().debug("[ARPG] Starting, memory=" + std::to_string(static_cast<int>(current_memory)) + "MB");
     create_supporters();
 }
 
 bool ARPG::construct_graph() {
     auto& config = Config::instance();
-    auto start_time = std::chrono::high_resolution_clock::now();
+    ScopedTimer timer("arpg.build_time_ms");
+    double start_memory = MemoryTracker::instance().get_current_memory_mb();
 
     // Initialize with the initial relaxed state
     current_state_ = create_initial_state();
@@ -105,7 +107,7 @@ bool ARPG::construct_graph() {
         // Check if goal is satisfied
         if (check_goal_satisfaction()) {
             goal_reached_ = true;
-            std::cout << "[ARPG] reached goal at iteration " << iteration_count_ << std::endl;
+            Logger::instance().debug("[ARPG] reached goal at iteration " + std::to_string(iteration_count_));
             break;
         }
 
@@ -114,7 +116,7 @@ bool ARPG::construct_graph() {
 
         // If no new supporters, terminate
         if (applicable.empty()) {
-            std::cout << "[ARPG] No more applicable supporters at iteration " << iteration_count_ << std::endl;
+            Logger::instance().debug("[ARPG] No more applicable supporters at iteration " + std::to_string(iteration_count_));
             break;
         }
 
@@ -132,16 +134,22 @@ bool ARPG::construct_graph() {
         }
     }
 
-    //print_construction_steps();
+    double end_memory = MemoryTracker::instance().get_current_memory_mb();
+    double memory_used = end_memory - start_memory;
 
-    // Print timing and memory info
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto total_time = std::chrono::duration<double>(end_time - start_time).count();
-    if (config.is_info()) {
-        double current_memory = MemoryTracker::instance().get_current_memory_mb();
-        std::cout << "[ARPG] construction took: time=" << total_time << "s, memory=" << current_memory << "MB";
-        std::cout << ", iterations=" << iteration_count_ << std::endl;
-    }
+    // Record to Stats
+    Stats::instance().set("arpg.iterations", iteration_count_);
+    Stats::instance().set("arpg.supporters_created", supporters_.size());
+    Stats::instance().set("arpg.memory_mb", memory_used);
+    Stats::instance().set("arpg.goal_reached", goal_reached_ ? 1.0 : 0.0);
+
+    // Structured visual output
+    Logger::instance().component(VerbosityLevel::INFO, "ARPG", {
+        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
+        {"iterations", std::to_string(iteration_count_)},
+        {"supporters", std::to_string(supporters_.size())},
+        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"}
+    });
 
     return goal_reached_;
 }
@@ -159,8 +167,8 @@ void ARPG::create_supporters() {
         }
     }
 
-    std::cout << "[ARPG] Created " << supporters_.size() << " supporters from "
-              << problem_.actions().size() << " actions" << std::endl;
+    Logger::instance().debug("[ARPG] Created " + std::to_string(supporters_.size()) +
+                            " supporters from " + std::to_string(problem_.actions().size()) + " actions");
 }
 
 std::vector<size_t> ARPG::find_applicable_supporters() const {

@@ -1,5 +1,8 @@
 #include "eager_semantic_interference_analysis.hpp"
 #include "../../util/memory_tracker.hpp"
+#include "../../util/scoped_timer.hpp"
+#include "../../util/logger.hpp"
+#include "../../util/stats.hpp"
 #include "../../config/config.hpp"
 #include <iostream>
 #include <algorithm>
@@ -7,7 +10,6 @@
 #include <queue>
 #include <unordered_set>
 #include <fstream>
-#include <chrono>
 
 namespace planmt {
 
@@ -38,11 +40,10 @@ void EagerSemanticInterferenceAnalysis::initialize(const Problem& problem) {
     z3_variable_factory_ = std::make_unique<Z3VariableFactory>(*z3_context_);
     grounded_visitor_ = std::make_unique<GroundedEncodingVisitor>(*z3_context_, problem_, z3_variable_factory_.get());
 
-    // Report memory usage after action analysis and Z3 initialization
+    // Report initialization completion
     double current_memory = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "EagerSemanticInterferenceAnalysis initialized with " << problem.actions().size()
-              << " actions and Z3 infrastructure. "
-              << "Memory: " << current_memory << " MB" << std::endl;
+    Logger::instance().verbose("EagerSemanticInterferenceAnalysis initialized with " + std::to_string(problem.actions().size()) +
+                              " actions and Z3 infrastructure (memory: " + std::to_string(static_cast<int>(current_memory)) + "MB)");
 
     // Build interference graph using semantic analysis
     build_interference_graph();
@@ -50,33 +51,38 @@ void EagerSemanticInterferenceAnalysis::initialize(const Problem& problem) {
 
 void EagerSemanticInterferenceAnalysis::build_interference_graph() {
     if (!problem_) {
-        std::cout << "Error: EagerSemanticInterferenceAnalysis not initialized with a problem" << std::endl;
+        Logger::instance().error("EagerSemanticInterferenceAnalysis not initialized with a problem");
         return;
     }
 
-    std::cout << "Building semantic interference graph..." << std::endl;
+    ScopedTimer timer("interference.semantic.build_time_ms");
+    double start_memory = MemoryTracker::instance().get_current_memory_mb();
 
-    auto start_time = std::chrono::high_resolution_clock::now();
     analyze_action_conflicts();
-    auto end_time = std::chrono::high_resolution_clock::now();
 
-    auto duration = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+    // Record stats
+    double memory_used = MemoryTracker::instance().get_current_memory_mb() - start_memory;
+    Stats::instance().set("interference.semantic.nodes", interference_graph_.num_nodes());
+    Stats::instance().set("interference.semantic.edges", interference_graph_.num_edges());
+    Stats::instance().set("interference.semantic.memory_mb", memory_used);
 
-    // Report memory usage after O(n²) semantic graph building
-    double current_memory = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "Semantic interference graph built with " << interference_graph_.num_nodes()
-              << " nodes and " << interference_graph_.num_edges() << " edges. "
-              << "Time: " << duration.count() << "s, Memory: " << current_memory << " MB" << std::endl;
+    // Structured visual output
+    Logger::instance().component(VerbosityLevel::INFO, "Interference.S", {
+        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
+        {"nodes", std::to_string(interference_graph_.num_nodes())},
+        {"edges", std::to_string(interference_graph_.num_edges())},
+        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"}
+    });
 
     // Dispose of Z3 infrastructure to minimize runtime memory footprint
-    std::cout << "Disposing of Z3 infrastructure..." << std::endl;
+    Logger::instance().verbose("Disposing of Z3 infrastructure");
     grounded_visitor_.reset();
     z3_variable_factory_.reset();
     z3_solver_.reset();
     z3_context_.reset();
 
     double memory_after_cleanup = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "Z3 infrastructure disposed. Memory: " << memory_after_cleanup << " MB" << std::endl;
+    Logger::instance().verbose("Z3 infrastructure disposed (memory: " + std::to_string(static_cast<int>(memory_after_cleanup)) + "MB)");
 }
 
 void EagerSemanticInterferenceAnalysis::analyze_action_conflicts() {
@@ -414,11 +420,11 @@ const std::vector<int>& EagerSemanticInterferenceAnalysis::get_neighbours(int no
 void EagerSemanticInterferenceAnalysis::output_interference_graph_dot(const std::string& filename) const {
     std::ofstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
+        Logger::instance().error("Could not open file " + filename + " for writing");
         return;
     }
 
-    std::cout << "Writing semantic interference graph to " << filename << std::endl;
+    Logger::instance().info("Writing semantic interference graph to " + filename);
 
     file << "digraph SemanticInterferenceGraph {" << std::endl;
     file << "    rankdir=LR;" << std::endl;
@@ -445,7 +451,7 @@ void EagerSemanticInterferenceAnalysis::output_interference_graph_dot(const std:
     file << "}" << std::endl;
     file.close();
 
-    std::cout << "Semantic interference graph successfully written to " << filename << std::endl;
+    Logger::instance().info("Semantic interference graph successfully written to " + filename);
 }
 
 } // namespace planmt

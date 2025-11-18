@@ -1,8 +1,13 @@
 #include "numeric_relaxed_planning_graph.hpp"
 #include "../config/config.hpp"
+#include "../util/memory_tracker.hpp"
+#include "../util/scoped_timer.hpp"
+#include "../util/logger.hpp"
+#include "../util/stats.hpp"
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <sstream>
 
 namespace planmt {
 
@@ -65,15 +70,12 @@ NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(Problem& problem, z3::c
     // Classify fluents into Boolean vs numeric
     classify_fluents();
 
-    auto& config = Config::instance();
-    if (config.is_debug()) {
-        std::cout << "NumericRelaxedPlanningGraph initialized:" << std::endl;
-        std::cout << "  - Total fluents: " << problem_.grounded_fluents().size() << std::endl;
-        std::cout << "  - Boolean fluents: " << boolean_fluent_ids_.size() << std::endl;
-        std::cout << "  - Numeric fluents: " << numeric_fluent_ids_.size() << std::endl;
-        std::cout << "  - Total actions: " << problem_.actions().size() << std::endl;
-        std::cout << "  - Max layers: " << max_layers_ << std::endl;
-    }
+    Logger::instance().debug("NumericRelaxedPlanningGraph initialized:");
+    Logger::instance().debug("  - Total fluents: " + std::to_string(problem_.grounded_fluents().size()));
+    Logger::instance().debug("  - Boolean fluents: " + std::to_string(boolean_fluent_ids_.size()));
+    Logger::instance().debug("  - Numeric fluents: " + std::to_string(numeric_fluent_ids_.size()));
+    Logger::instance().debug("  - Total actions: " + std::to_string(problem_.actions().size()));
+    Logger::instance().debug("  - Max layers: " + std::to_string(max_layers_));
 }
 
 // ============================================================================
@@ -149,15 +151,12 @@ void NumericRelaxedPlanningGraph::build_epc_index() {
         }
     }
 
-    auto& config = Config::instance();
-    if (config.is_debug()) {
-        std::cout << "EPC index built: " << epc_index_.size() << " fluents indexed" << std::endl;
-        size_t total_effects = 0;
-        for (const auto& [fluent, effects] : epc_index_) {
-            total_effects += effects.size();
-        }
-        std::cout << "  Total effect entries: " << total_effects << std::endl;
+    Logger::instance().debug("EPC index built: " + std::to_string(epc_index_.size()) + " fluents indexed");
+    size_t total_effects = 0;
+    for (const auto& [fluent, effects] : epc_index_) {
+        total_effects += effects.size();
     }
+    Logger::instance().debug("  Total effect entries: " + std::to_string(total_effects));
 }
 
 void NumericRelaxedPlanningGraph::classify_fluents() {
@@ -232,12 +231,9 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
     layer_states_.push_back(std::move(initial_layer));
     action_layers_.push_back(std::vector<const Action*>());  // No actions at layer 0
 
-    auto& config = Config::instance();
-    if (config.is_debug()) {
-        std::cout << "Layer 0 initialized:" << std::endl;
-        std::cout << "  - Boolean fluents: " << layer_states_[0].boolean_reachability.size() << std::endl;
-        std::cout << "  - Numeric fluents: " << layer_states_[0].numeric_bounds.size() << std::endl;
-    }
+    Logger::instance().debug("Layer 0 initialized:");
+    Logger::instance().debug("  - Boolean fluents: " + std::to_string(layer_states_[0].boolean_reachability.size()));
+    Logger::instance().debug("  - Numeric fluents: " + std::to_string(layer_states_[0].numeric_bounds.size()));
 }
 
 // ============================================================================
@@ -246,43 +242,25 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
 
 bool NumericRelaxedPlanningGraph::build() {
     auto& config = Config::instance();
-    auto start_time = std::chrono::high_resolution_clock::now();
+    ScopedTimer timer("rpg.numeric.build_time_ms");
+    double start_memory = MemoryTracker::instance().get_current_memory_mb();
 
     // Initialize layer 0 from initial state
     initialize_layer_0();
 
-    if (config.is_verbose()) {
-        std::cout << "NumericRelaxedPlanningGraph::build() - Starting layer expansion" << std::endl;
-    }
+    Logger::instance().verbose("NumericRelaxedPlanningGraph::build() - Starting layer expansion");
 
     // Debug: Print initial layer (layer 0)
-    if (config.is_debug()) {
-        print_layer_summary(0);
-    }
+    print_layer_summary(0);
 
     // Layer-by-layer construction until fixpoint or max_layers
     for (int layer = 0; layer < max_layers_; ++layer) {
-        if (config.is_verbose()) {
-            std::cout << "\n--- Building layer " << (layer + 1) << " ---" << std::endl;
-        }
-
         // Compute applicable actions using SMT-based checking
         std::vector<const Action*> applicable_actions = compute_applicable_actions(layer);
 
-        // Debug: Print action applicability
-        //if (config.is_debug()) {
-        //    print_action_applicability(layer, applicable_actions);
-        //}
-
-        if (config.is_verbose()) {
-            std::cout << "  Found " << applicable_actions.size() << " applicable actions" << std::endl;
-        }
-
         // If no actions are applicable and we've already built at least one layer, we're done
         if (applicable_actions.empty() && layer > 0) {
-            if (config.is_verbose()) {
-                std::cout << "  No applicable actions - fixpoint reached" << std::endl;
-            }
+            Logger::instance().verbose("Fixpoint reached at layer " + std::to_string(layer));
             break;
         }
 
@@ -299,61 +277,87 @@ bool NumericRelaxedPlanningGraph::build() {
         compute_numeric_bounds(applicable_actions, layer, layer + 1);
 
         // Debug: Print layer summary and delta
-        if (config.is_debug()) {
-            //print_layer_summary(layer + 1);
-            print_layer_delta(layer, layer + 1);
+        print_layer_delta(layer, layer + 1);
+
+        // Compact layer output
+        const auto& new_layer = layer_states_[layer + 1];
+
+        // Count Boolean fluent states
+        int false_only_count = 0;
+        int true_only_count = 0;
+        int both_count = 0;
+        for (const auto& [fluent_id, reach] : new_layer.boolean_reachability) {
+            if (reach == BooleanReachability::FALSE_ONLY) false_only_count++;
+            else if (reach == BooleanReachability::TRUE_ONLY) true_only_count++;
+            else if (reach == BooleanReachability::BOTH) both_count++;
         }
 
-        if (config.is_verbose()) {
-            const auto& new_layer = layer_states_[layer + 1];
-            std::cout << "  Layer " << (layer + 1) << " created with:" << std::endl;
-            std::cout << "    Boolean fluents: " << new_layer.boolean_reachability.size() << std::endl;
-            std::cout << "    Numeric fluents: " << new_layer.numeric_bounds.size() << std::endl;
+        std::ostringstream component_name, bool_states;
+        component_name << "RPG.N L" << (layer + 1);
+        bool_states << "F:" << false_only_count << "/T:" << true_only_count << "/B:" << both_count;
 
-            // Count how many Boolean fluents are in each state
-            int false_only_count = 0;
-            int true_only_count = 0;
-            int both_count = 0;
-            for (const auto& [fluent_id, reach] : new_layer.boolean_reachability) {
-                if (reach == BooleanReachability::FALSE_ONLY) false_only_count++;
-                else if (reach == BooleanReachability::TRUE_ONLY) true_only_count++;
-                else if (reach == BooleanReachability::BOTH) both_count++;
-            }
-            std::cout << "    Boolean states: FALSE_ONLY=" << false_only_count
-                      << ", TRUE_ONLY=" << true_only_count
-                      << ", BOTH=" << both_count << std::endl;
-        }
+        Logger::instance().component(VerbosityLevel::VERBOSE, component_name.str(), {
+            {"actions", std::to_string(applicable_actions.size())},
+            {"bool", std::to_string(new_layer.boolean_reachability.size()) + " (" + bool_states.str() + ")"},
+            {"num", std::to_string(new_layer.numeric_bounds.size())}
+        });
 
         // Check for fixpoint
         if (is_fixpoint_reached()) {
-            if (config.is_verbose()) {
-                std::cout << "  Fixpoint reached - terminating layer expansion" << std::endl;
-            }
+            Logger::instance().verbose("Fixpoint reached - terminating layer expansion");
             break;
         }
 
         // Early termination if goals are achievable (if enabled)
-        // Note: This is unsound for reachability analysis or optimal planning in general
-        // but can be useful if we want a lower bound on the plan length quickly.
         if (config.global.rpg_early_termination && are_goals_achievable()) {
-            if (config.is_verbose()) {
-                std::cout << "  Goals achievable - early termination" << std::endl;
-            }
+            Logger::instance().verbose("Goals achievable - early termination at layer " + std::to_string(layer + 1));
             break;
         }
     }
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    build_time_ms_ = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+    build_time_ms_ = timer.elapsed_ms();
+    double end_memory = MemoryTracker::instance().get_current_memory_mb();
+    double memory_used = end_memory - start_memory;
 
-    if (config.is_verbose()) {
-        std::cout << "\nNumericRelaxedPlanningGraph::build() - Completed" << std::endl;
-        std::cout << "  Total layers: " << layer_states_.size() << std::endl;
-        std::cout << "  Build time: " << build_time_ms_ << " ms" << std::endl;
+    bool goals_reachable = are_goals_achievable();
+
+    // Count reachable actions
+    int total_actions = problem_.actions().size();
+    std::unordered_set<const Action*> reachable_action_set;
+    for (const auto& layer_actions : action_layers_) {
+        for (const Action* action : layer_actions) {
+            reachable_action_set.insert(action);
+        }
     }
+    int reachable_actions = reachable_action_set.size();
+    int removed_actions = total_actions - reachable_actions;
 
-    // Check if goals are achievable in the final layer
-    return are_goals_achievable();
+    // Record to Stats
+    Stats::instance().set("rpg.numeric.total_layers", layer_states_.size());
+    Stats::instance().set("rpg.numeric.smt_queries", total_smt_queries_);
+    Stats::instance().set("rpg.numeric.optimization_queries", total_optimization_queries_);
+    Stats::instance().set("rpg.numeric.applicability_checks", total_applicability_checks_);
+    Stats::instance().set("rpg.numeric.total_actions", total_actions);
+    Stats::instance().set("rpg.numeric.reachable_actions", reachable_actions);
+    Stats::instance().set("rpg.numeric.removed_actions", removed_actions);
+    Stats::instance().set("rpg.numeric.memory_mb", memory_used);
+    Stats::instance().set("rpg.numeric.goals_reachable", goals_reachable ? 1.0 : 0.0);
+
+    // Structured visual output
+    std::ostringstream actions_str;
+    actions_str << total_actions << " (" << reachable_actions << " reachable, " << removed_actions << " removed)";
+
+    Logger::instance().component(VerbosityLevel::INFO, "RPG.Numeric", {
+        {"time", std::to_string(static_cast<int>(build_time_ms_)) + "ms"},
+        {"layers", std::to_string(layer_states_.size())},
+        {"actions", actions_str.str()},
+        {"SMT queries", std::to_string(total_smt_queries_)},
+        {"optimization", std::to_string(total_optimization_queries_)},
+        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"},
+        {"goals", goals_reachable ? "REACHABLE" : "UNREACHABLE"}
+    });
+
+    return goals_reachable;
 }
 
 // ============================================================================
@@ -415,10 +419,7 @@ void NumericRelaxedPlanningGraph::propagate_boolean_effects(
         next_state.boolean_reachability[fluent_id] = new_state;
     }
 
-    if (config.is_debug()) {
-        std::cout << "  Boolean effects propagated for " << boolean_fluent_ids_.size()
-                  << " fluents" << std::endl;
-    }
+    Logger::instance().debug("  Boolean effects propagated for " + std::to_string(boolean_fluent_ids_.size()) + " fluents");
 }
 
 void NumericRelaxedPlanningGraph::apply_boolean_effect(
@@ -500,10 +501,7 @@ void NumericRelaxedPlanningGraph::compute_numeric_bounds(
         next_state.numeric_bounds[fluent_id] = new_bounds;
     }
 
-    if (config.is_debug()) {
-        std::cout << "  Numeric bounds computed for " << numeric_fluent_ids_.size()
-                  << " fluents" << std::endl;
-    }
+    Logger::instance().debug("  Numeric bounds computed for " + std::to_string(numeric_fluent_ids_.size()) + " fluents");
 }
 
 NumericRelaxedPlanningGraph::NumericBounds NumericRelaxedPlanningGraph::compute_single_variable_bounds(
@@ -659,10 +657,8 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
         }
     }
 
-    if (config.is_debug()) {
-        std::cout << "  Found " << applicable_actions.size() << " applicable actions at layer "
-                  << layer << " (individual queries)" << std::endl;
-    }
+    Logger::instance().debug("  Found " + std::to_string(applicable_actions.size()) +
+                            " applicable actions at layer " + std::to_string(layer) + " (individual queries)");
 
     return applicable_actions;
 }
@@ -712,10 +708,8 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
         }
     }
 
-    if (config.is_debug()) {
-        std::cout << "  Found " << applicable_actions.size() << " applicable actions at layer "
-                  << layer << " (batch query)" << std::endl;
-    }
+    Logger::instance().debug("  Found " + std::to_string(applicable_actions.size()) +
+                            " applicable actions at layer " + std::to_string(layer) + " (batch query)");
 
     return applicable_actions;
 }

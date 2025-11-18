@@ -5,11 +5,11 @@
 #include "propagators/null_propagator.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/stats.hpp"
+#include "../util/logger.hpp"
 #include <fstream>
 #include <iostream>
 #include <chrono>
 #include <unordered_map>
-#include <iomanip>
 
 namespace planmt {
 
@@ -35,7 +35,7 @@ void SequentialPlanner::debug_output_constraints() {
         smt2_file << solver_.to_smt2() << std::endl;
         smt2_file.close();
     } else {
-        std::cerr << "Error: Could not open output.smt2 for writing" << std::endl;
+        Logger::instance().error("Could not open output.smt2 for writing");
     }
 }
 
@@ -84,13 +84,11 @@ Plan SequentialPlanner::search() {
 
     int start_timestep = std::max(0, config.planner.start_timestep);
 
-    if (config.is_info()) {
-        std::cout << "Starting search with propagator: " << propagator_strategy_->get_name();
-        if (start_timestep > 0) {
-            std::cout << " from timestep " << start_timestep;
-        }
-        std::cout << std::endl;
+    std::string search_msg = "Starting search with propagator: " + propagator_strategy_->get_name();
+    if (start_timestep > 0) {
+        search_msg += " from timestep " + std::to_string(start_timestep);
     }
+    Logger::instance().info(search_msg);
     
     // Reset solution found flag and statistics
     solution_found_ = false;
@@ -116,9 +114,7 @@ Plan SequentialPlanner::search() {
         auto current_time = std::chrono::high_resolution_clock::now();
         auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
         if (elapsed_seconds >= config.global.timeout) {
-            if (config.is_info()) {
-                std::cout << "\n*** TIMEOUT reached after " << elapsed_seconds << "s ***" << std::endl;
-            }
+            Logger::instance().info("\n*** TIMEOUT reached after " + std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
             break;
         }
         auto step_start = std::chrono::high_resolution_clock::now();
@@ -146,10 +142,6 @@ Plan SequentialPlanner::search() {
         auto formula_end = std::chrono::high_resolution_clock::now();
         auto formula_time = std::chrono::duration<double>(formula_end - formula_start).count();
 
-        if (config.is_info()) {
-            std::cout << "T" << timestep;
-        }
-
         //debug_output_constraints(); // Output initial constraints
 
         // Time solving
@@ -157,34 +149,35 @@ Plan SequentialPlanner::search() {
         z3::check_result result = solver_.check(assumptions);
         auto solve_end = std::chrono::high_resolution_clock::now();
         auto solve_time = std::chrono::duration<double>(solve_end - solve_start).count();
-        
+
         auto step_end = std::chrono::high_resolution_clock::now();
         auto step_time = std::chrono::duration<double>(step_end - step_start).count();
 
         total_time += step_time; // Accumulate total time
-        
+
         // Collect basic statistics
         stats.add("planner.timesteps_explored");
         stats.add("planner.formula_time", formula_time);
         stats.add("planner.solve_time", solve_time);
         stats.add("planner.total_time", step_time);
-        
-        // Print timing in compact format at INFO level
-        if (config.is_info()) {
-            double current_memory = MemoryTracker::instance().get_current_memory_mb();
-            std::cout << " timing: formula=" << formula_time << "s, solve=" << solve_time << "s, step=" << step_time << "s";
-            std::cout << ", memory=" << current_memory << "MB";
-            std::cout << std::endl;
-        }
+
+        // Print timestep solving metrics in structured format
+        double current_memory = MemoryTracker::instance().get_current_memory_mb();
+
+        Logger::instance().timestep_solving(VerbosityLevel::INFO, timestep, {
+            {"formula", std::to_string(formula_time) + "s"},
+            {"solve", std::to_string(solve_time) + "s"},
+            {"step", std::to_string(step_time) + "s"},
+            {"mem", std::to_string(static_cast<int>(current_memory)) + "MB"}
+        });
         
         if (result == z3::sat) {
-            if (config.is_info()) {
-                std::cout << "\n*** PLAN FOUND at timestep " << timestep << " (total time: " << total_time << "s) ***" << std::endl;
-            }
-            
+            Logger::instance().info("\n*** PLAN FOUND at timestep " + std::to_string(timestep) +
+                                   " (total time: " + std::to_string(total_time) + "s) ***");
+
             // Mark that we found a solution
             solution_found_ = true;
-            
+
             // Get and output the model to a file
             z3::model model = solver_.get_model();
             /*std::ofstream model_file("plan_model.txt");
@@ -192,32 +185,29 @@ Plan SequentialPlanner::search() {
                 model_file << "Plan found at timestep " << timestep << std::endl;
                 model_file << model << std::endl;
                 model_file.close();
-                std::cout << "Model saved to plan_model.txt" << std::endl;
+                Logger::instance().info("Model saved to plan_model.txt");
             }*/
-            
+
             try {
                 // Extract plan from model using encoder
                 Plan plan = encoder_.extract_plan(model, timestep);
                 //if (config.is_debug()) {
-                //    std::cout << plan.to_string() << std::endl;
+                //    Logger::instance().debug(plan.to_string());
                 //}
-                
+
                 // Record successful solve
                 stats.set("planner.plan_length", plan.length());
                 stats.set("planner.solution_timestep", timestep);
                 collect_statistics();
-                
+
                 // Clean up propagator before returning
                 propagator_strategy_->cleanup();
                 return plan; // Return the extracted plan
-                
+
             } catch (const std::exception& e) {
-                if (config.is_info()) {
-                    std::cout << "ERROR during plan extraction: " << e.what() << std::endl;
-                }
-                if (config.is_info()) {
-                    std::cout << "Returning empty plan." << std::endl;
-                }
+                Logger::instance().error("ERROR during plan extraction: " + std::string(e.what()));
+                Logger::instance().info("Returning empty plan.");
+
                 // Collect statistics even on error
                 collect_statistics();
                 propagator_strategy_->cleanup();
@@ -227,16 +217,12 @@ Plan SequentialPlanner::search() {
         } else if (result == z3::unsat) {
             // let's try next iteration
         } else {
-            if (config.is_info()) {
-                std::cout << "Solver returned unknown result at timestep " << timestep << std::endl;
-            }
+            Logger::instance().info("Solver returned unknown result at timestep " + std::to_string(timestep));
         }
     }
-    
-    if (config.is_info()) {
-        std::cout << "\n*** NO PLAN FOUND within " << config.planner.max_steps << " timesteps, aborting ***" << std::endl;
-        std::cout << "No plan found within " << config.planner.max_steps << " timesteps." << std::endl;
-    }
+
+    Logger::instance().info("\n*** NO PLAN FOUND within " + std::to_string(config.planner.max_steps) + " timesteps, aborting ***");
+    Logger::instance().info("No plan found within " + std::to_string(config.planner.max_steps) + " timesteps.");
     
     // Collect statistics after unsuccessful search
     collect_statistics();

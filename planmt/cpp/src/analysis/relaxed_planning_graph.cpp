@@ -1,9 +1,13 @@
 #include "relaxed_planning_graph.hpp"
 #include "../config/config.hpp"
 #include "../util/memory_tracker.hpp"
+#include "../util/scoped_timer.hpp"
+#include "../util/logger.hpp"
+#include "../util/stats.hpp"
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include <sstream>
 
 namespace planmt {
 
@@ -25,7 +29,7 @@ void RelaxedPlanningGraph::reset() {
 
 bool RelaxedPlanningGraph::build() {
     auto& config = Config::instance();
-    build_start_time_ = std::chrono::high_resolution_clock::now();
+    ScopedTimer timer("rpg.boolean.build_time_ms");
     double start_memory = MemoryTracker::instance().get_current_memory_mb();
 
     reset();
@@ -60,27 +64,45 @@ bool RelaxedPlanningGraph::build() {
         // (early termination is only sound for the more precise Numeric RPG)
     }
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    build_time_ms_ = std::chrono::duration<double, std::milli>(end_time - build_start_time_).count();
+    build_time_ms_ = timer.elapsed_ms();
     double end_memory = MemoryTracker::instance().get_current_memory_mb();
+    double memory_used = end_memory - start_memory;
 
     bool goals_reachable = are_goals_achievable();
 
-    // Output the result
-    std::cout << "RPG built in " << static_cast<int>(build_time_ms_) << "ms" << std::endl;
-    std::cout << "Goals reachable: " << (goals_reachable ? "YES" : "NO") << std::endl;
-    std::cout << "Total layers: " << fact_layers_.size() << std::endl;
-
-    if (config.is_info()) {
-        std::cout << "[RPG] construction took: time=" << (build_time_ms_ / 1000.0) << "s"
-                  << ", memory=" << end_memory << "MB"
-                  << ", layers=" << fact_layers_.size() << std::endl;
+    // Count reachable actions
+    int total_actions = problem_.action_count();
+    std::unordered_set<const Action*> reachable_action_set;
+    for (const auto& layer : action_layers_) {
+        for (const Action* action : layer) {
+            reachable_action_set.insert(action);
+        }
     }
+    int reachable_actions = reachable_action_set.size();
+    int removed_actions = total_actions - reachable_actions;
 
-    if (config.is_debug()) {
-        print_debug_info();
-        print_reachability_analysis();
-    }
+    // Record to Stats
+    Stats::instance().set("rpg.boolean.total_layers", fact_layers_.size());
+    Stats::instance().set("rpg.boolean.total_actions", total_actions);
+    Stats::instance().set("rpg.boolean.reachable_actions", reachable_actions);
+    Stats::instance().set("rpg.boolean.removed_actions", removed_actions);
+    Stats::instance().set("rpg.boolean.memory_mb", memory_used);
+    Stats::instance().set("rpg.boolean.goals_reachable", goals_reachable ? 1.0 : 0.0);
+
+    // Structured visual output
+    std::ostringstream actions_str;
+    actions_str << total_actions << " (" << reachable_actions << " reachable, " << removed_actions << " removed)";
+
+    Logger::instance().component(VerbosityLevel::INFO, "RPG.Boolean", {
+        {"time", std::to_string(static_cast<int>(build_time_ms_)) + "ms"},
+        {"layers", std::to_string(fact_layers_.size())},
+        {"actions", actions_str.str()},
+        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"},
+        {"goals", goals_reachable ? "REACHABLE" : "UNREACHABLE"}
+    });
+
+    //print_debug_info();
+    //print_reachability_analysis();
 
     return goals_reachable;
 }
