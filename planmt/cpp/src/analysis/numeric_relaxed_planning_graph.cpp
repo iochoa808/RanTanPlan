@@ -279,8 +279,10 @@ bool NumericRelaxedPlanningGraph::build() {
         // Compute numeric bounds
         compute_numeric_bounds(applicable_actions, layer, layer + 1);
 
-        // Debug: Print layer summary and delta
-        print_layer_delta(layer, layer + 1);
+        // Debug: Print layer summary and delta (only in debug mode)
+        if (Config::instance().global.verbosity >= VerbosityLevel::DEBUG) {
+            print_layer_delta(layer, layer + 1);
+        }
 
         // Compact layer output
         const auto& new_layer = layer_states_[layer + 1];
