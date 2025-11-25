@@ -31,11 +31,11 @@ def find_test_instances():
     return sorted(instances, key=lambda x: x['name'])
 
 def run_rpg_reachability_analysis(domain_path, problem_path):
-    """Run planMT with modified RPG to get reachability analysis."""
+    """Run RantanPlan with modified RPG to get reachability analysis."""
     try:
         # Use seq strategy for RPG analysis with debug output
         cmd = [
-            "planmt",
+            "rantanplan",
             "-d", domain_path,
             "-p", problem_path,
             "--strategy", "seq",

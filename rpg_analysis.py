@@ -30,11 +30,11 @@ def find_test_instances():
     return sorted(instances, key=lambda x: x['name'])
 
 def run_rpg_analysis(domain_path, problem_path):
-    """Run planMT to get RPG analysis without solving."""
+    """Run RantanPlan to get RPG analysis without solving."""
     try:
         # Use seq strategy as it's simplest and fastest for RPG analysis
         cmd = [
-            "planmt",
+            "rantanplan",
             "-d", domain_path,
             "-p", problem_path,
             "--strategy", "seq",

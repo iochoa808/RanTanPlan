@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive benchmarking script for the planMT planning system.
+Comprehensive benchmarking script for the RantanPlan planning system.
 
 This script runs systematic performance comparisons across multiple PDDL domains
 and instances using different parallelism semantics, propagators, and interference
@@ -22,14 +22,14 @@ import subprocess
 import csv
 from pathlib import Path
 from collections import defaultdict
-from planmt.planner_wrapper import planMTPlanner
+from rantanplan.planner_wrapper import RantanPlanPlanner
 
 # --- Benchmark Configuration ---
 
 # Get available strategies from C++ planner
 def get_available_strategies():
     """Query the C++ planner for available strategies."""
-    planner = planMTPlanner()
+    planner = RantanPlanPlanner()
     result = subprocess.run(
         [planner.executable_path, "/dev/null", "/dev/null", "--list-strategies"],
         capture_output=True, text=True, check=True

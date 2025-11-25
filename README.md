@@ -1,4 +1,4 @@
-# planMT
+# RantanPlan
 
 An automated planning system that uses a planning-as-SMT approach. It combines a Python frontend with a C++ backend for SMT-based planning.
 
@@ -8,15 +8,15 @@ Supports three parallelism strategies (sequential, forall, exists) with optimiza
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         planMT Package                          │
+│                         RantanPlan Package                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────────┐              ┌─────────────────────────┐   │
 │  │   CLI Interface │              │   Library Interface     │   │
-│  │   (planmt cmd)  │              │   (Unified Planning)    │   │
+│  │   (rantanplan cmd)  │              │   (Unified Planning)    │   │
 │  │                 │              │                         │   │
 │  │• argparse       │              │ • UP Engine Plugin      │   │
-│  │• File validation│              │ • planMTPlanner class   │   │
+│  │• File validation│              │ • RantanPlanPlanner class   │   │
 │  │• Result format  │              │ • Auto-discovery        │   │
 │  └─────────┬───────┘              └─────────┬───────────────┘   │
 │            │                                │                   │
@@ -34,12 +34,12 @@ Supports three parallelism strategies (sequential, forall, exists) with optimiza
 │                   │ protobuf                                    │
 │                   ▼                                             │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │              C++ planMT Engine                          │    │
+│  │              C++ RantanPlan Engine                          │    │
 │  │                                                         │    │
 │  │ • SMT-based planning                                    │    │
 │  │ • PDDL parsing                                          │    │
 │  │ • Optimization                                          │    │
-│  │ • Executable: planmt/bin/planmt                         │    │
+│  │ • Executable: rantanplan/bin/rantanplan                         │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -67,7 +67,7 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
 - Object symmetry detection and breaking
 - Unified Planning library integration
 
-**Note:** planMT does not support PDDL delete-then-set effect semantics. Actions that both delete and add the same fluent will be treated as contradictory and may cause planning failures.
+**Note:** RantanPlan does not support PDDL delete-then-set effect semantics. Actions that both delete and add the same fluent will be treated as contradictory and may cause planning failures.
 
 ## Installation
 
@@ -85,8 +85,8 @@ Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/pyPMT/planMT.git
-   cd planMT
+   git clone https://github.com/pyPMT/RantanPlan.git
+   cd RantanPlan
    ```
 
 2. Create and activate a virtual environment:
@@ -109,25 +109,25 @@ Basic usage:
 
 ```bash
 # Basic usage with sequential strategy
-planmt -d pddl/test/zenotravel/domain.pddl -p pddl/test/zenotravel/problem.pddl --strategy sequential
+rantanplan -d pddl/test/zenotravel/domain.pddl -p pddl/test/zenotravel/problem.pddl --strategy sequential
 
 # Use optimized forall strategy with timeout
-planmt -d domain.pddl -p problem.pddl --strategy forall-optimized --timeout 120
+rantanplan -d domain.pddl -p problem.pddl --strategy forall-optimized --timeout 120
 
 # Semantic interference analysis with chained encoding
-planmt -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chained
+rantanplan -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chained
 
 # R2E semantics for built-in parallelism
-planmt -d domain.pddl -p problem.pddl --strategy r2e
+rantanplan -d domain.pddl -p problem.pddl --strategy r2e
 
 # Enable symmetry detection
-planmt -d domain.pddl -p problem.pddl --strategy forall-optimized --detect-symmetries
+rantanplan -d domain.pddl -p problem.pddl --strategy forall-optimized --detect-symmetries
 
 # Save plan to file
-planmt -d domain.pddl -p problem.pddl --strategy exists-optimized-semantic --output-plan solution.txt
+rantanplan -d domain.pddl -p problem.pddl --strategy exists-optimized-semantic --output-plan solution.txt
 
 # Show help
-planmt --help
+rantanplan --help
 ```
 
 #### Available Strategies
@@ -161,8 +161,8 @@ from unified_planning.shortcuts import *
 problem = Problem()
 # ... define your problem ...
 
-# planMT is automatically available as an engine
-with OneshotPlanner(name='planMT') as planner:
+# RantanPlan is automatically available as an engine
+with OneshotPlanner(name='RantanPlan') as planner:
     result = planner.solve(problem)
     if result.status == up.engines.PlanGenerationResultStatus.SOLVED_SATISFICING:
         print(f"Found plan: {result.plan}")
@@ -171,10 +171,10 @@ with OneshotPlanner(name='planMT') as planner:
 ### Direct Library Usage
 
 ```python
-from planmt.planner_wrapper import planMTPlanner
+from rantanplan.planner_wrapper import RantanPlanPlanner
 
 # Create planner instance
-planner = planMTPlanner()
+planner = RantanPlanPlanner()
 
 # Solve a problem
 result = planner.solve(problem)
@@ -213,13 +213,13 @@ python build.py --build-type debug
 
 ## Citation
 
-If you use planMT in your research, please cite:
+If you use RantanPlan in your research, please cite:
 
 ```bibtex
-@software{planmt,
-  title={planMT: A Planning-as-SMT Planner},
+@software{rantanplan,
+  title={RantanPlan: A Planning-as-SMT Planner},
   author={Joan Espasa Arxer},
   year={2025},
-  url={https://github.com/pyPMT/planMT}
+  url={https://github.com/pyPMT/RantanPlan}
 }
 ```

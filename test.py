@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Comprehensive test script for the planMT planning system.
+Comprehensive test script for the RantanPlan planning system.
 
 This script discovers all PDDL problems in the `pddl/` directory and runs the
-planMT planner against them with all available strategies. It then validates
+RantanPlan planner against them with all available strategies. It then validates
 the resulting plans to ensure correctness.
 
 Strategies are defined in the C++ backend and automatically discovered at runtime.
@@ -19,7 +19,7 @@ from unified_planning.engines.results import PlanGenerationResultStatus
 from unified_planning.engines import ValidationResultStatus
 
 # Import the planner wrapper
-from planmt.planner_wrapper import planMTPlanner
+from rantanplan.planner_wrapper import RantanPlanPlanner
 import subprocess
 
 # --- Test Configuration ---
@@ -35,7 +35,7 @@ QUICK_TEST_DIRS = [
 # Get available strategies from C++ planner
 def get_available_strategies():
     """Query the C++ planner for available strategies."""
-    planner = planMTPlanner()
+    planner = RantanPlanPlanner()
     result = subprocess.run(
         [planner.executable_path, "/dev/null", "/dev/null", "--list-strategies"],
         capture_output=True, text=True, check=True
@@ -136,7 +136,7 @@ def run_test(problem_name, domain_file, problem_file, strategy_name, verbose=Fal
         else:
             planner_params['verbosity'] = 'silent'  # Suppress output
 
-        with OneshotPlanner(name='planMT', params=planner_params) as planner:
+        with OneshotPlanner(name='RantanPlan', params=planner_params) as planner:
             result = planner.solve(problem, timeout=60)
 
             # 3. Check the result status
@@ -166,7 +166,7 @@ def run_test(problem_name, domain_file, problem_file, strategy_name, verbose=Fal
 
 def main():
     """Main entry point for the test script."""
-    parser = argparse.ArgumentParser(description="Test script for the planMT planner.")
+    parser = argparse.ArgumentParser(description="Test script for the RantanPlan planner.")
     parser.add_argument(
         "--quick",
         action="store_true",
@@ -179,7 +179,7 @@ def main():
     )
     args = parser.parse_args()
 
-    print_header("--- Starting planMT Test Suite ---")
+    print_header("--- Starting RantanPlan Test Suite ---")
     if args.quick:
         print_info("Running in --quick mode. Using a subset of problems.")
 
@@ -216,7 +216,7 @@ def main():
 
 
 if __name__ == "__main__":
-    # Ensure the planmt module is in the Python path
+    # Ensure the rantanplan module is in the Python path
     # This allows running the script from the root directory
     sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
     main()

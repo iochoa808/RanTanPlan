@@ -7,14 +7,14 @@ import z3
 
 build_parameters = {
     "CMAKE_BUILD_TYPE": "release",
-    "OUTPUT_DIR": os.path.join(os.path.dirname(__file__), "planmt", "bin"),
+    "OUTPUT_DIR": os.path.join(os.path.dirname(__file__), "rantanplan", "bin"),
     # the include and lib dirs for Z3. Note we are using the Z3 installed via the python packaging
     "Z3_INCLUDE_DIR": os.path.join(os.path.dirname(z3.__file__), "include"),
     "Z3_LIB_DIR": os.path.join(os.path.dirname(z3.__file__), "lib"),
 }
 
 def build_ext(make_clean=False):
-    build_dir = os.path.join(os.path.dirname(__file__), "planmt", "cpp", "build")
+    build_dir = os.path.join(os.path.dirname(__file__), "rantanplan", "cpp", "build")
     
     # Clear the build directory if requested
     if make_clean and os.path.exists(build_dir):
