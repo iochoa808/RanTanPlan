@@ -57,7 +57,7 @@ rantanplan -d domain.pddl -p problem.pddl --strategy r2e --output-plan solution.
 | `exists-lazy` | ∃-step | Lazy syntactic | Grounded | With cycle detection |
 | `exists-lazy-semantic` | ∃-step | Lazy semantic | Grounded | Advanced |
 | `exists-lazy-semantic-chain` | ∃-step | Lazy semantic | Chained | Best for ∃-step |
-| `r2e` | R2∃-step | Declaration order | R2E | Novel encoding |
+| `r2e` | R2∃-step | ARPG-based order | R2E | Novel encoding |
 | `dec` | ∃-step | Lazy semantic | Chained | With heuristics |
 
 ### Python API
@@ -119,10 +119,14 @@ python test.py -v            # Verbose output
 If you use RantanPlan in your research, please cite:
 
 ```bibtex
-@software{rantanplan,
-  title={RantanPlan: A Planning-as-SMT Planner},
-  author={Joan Espasa Arxer},
-  year={2025},
-  url={https://github.com/pyPMT/RantanPlan}
+@article{Bofill_Espasa_Villaret_2016,
+  title={The RANTANPLAN planner: system description},
+  volume={31},
+  DOI={10.1017/S0269888916000229},
+  number={5},
+  journal={The Knowledge Engineering Review},
+  author={Bofill, Miquel and Espasa, Joan and Villaret, Mateu},
+  year={2016},
+  pages={452–464}
 }
 ```
