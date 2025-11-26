@@ -34,13 +34,13 @@ public:
         // but we still need to discover them to avoid incorrect pruning. Therefore, we must
         // build to fixpoint rather than stopping early when goals become achievable.
         bool rpg_early_termination = false;  // Stop RPG construction when goals are reachable (DEFAULT: false - required for sound action removal)
-        bool use_numeric_rpg = true;  // Use NumericRelaxedPlanningGraph (true) or RelaxedPlanningGraph (false) for action removal
+        bool use_numeric_rpg = false;  // Use NumericRelaxedPlanningGraph (true) or RelaxedPlanningGraph (false) for action removal
         bool compare_rpgs = false;  // Run RPG comparison tool to debug action removal differences
     } global;
     
     struct Planner {
         std::string strategy = "seq";  // Strategy name (replaces parallelism_strategy, encoder, propagator, interference)
-        int max_steps = 100;
+        int max_steps = 500;
         int start_timestep = 0;  // Starting timestep for search (can be set by RPG lower bound)
     } planner;
     
