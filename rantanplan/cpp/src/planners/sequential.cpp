@@ -31,7 +31,7 @@ void SequentialPlanner::debug_output_constraints() {
     // Output current constraints from the solver to SMT2 file
     std::ofstream smt2_file("output.smt2");
     if (smt2_file.is_open()) {
-        smt2_file << ";; Current solver constraints from planMT" << std::endl;
+        smt2_file << ";; Current solver constraints from RantanPlan" << std::endl;
         smt2_file << solver_.to_smt2() << std::endl;
         smt2_file.close();
     } else {

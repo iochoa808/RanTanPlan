@@ -142,7 +142,7 @@ private:
     std::unordered_map<std::string, std::vector<const Object*>> get_objects_by_type() const;
     
     /**
-     * @brief Convert a planMT Expression to Z3 using the lifted encoding visitor
+     * @brief Convert a RantanPlan Expression to Z3 using the lifted encoding visitor
      * @param expr The expression to convert
      * @return Z3 expression, or nullopt if conversion failed
      */

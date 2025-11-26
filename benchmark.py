@@ -186,9 +186,9 @@ def generate_job_commands(instances_by_domain, strategy_names, timeout, verbose=
                 # Use simpler job_id format for easier parsing
                 current_job_id = f"{domain_name}_{instance_name}_{config_name}_{job_id}"
                 
-                # Build planmt command
+                # Build rantanplan command
                 cmd = [
-                    "planmt",
+                    "rantanplan",
                     "-d", str(domain_file),
                     "-p", str(problem_file),
                     "--strategy", strategy_name,
@@ -234,7 +234,7 @@ def run_parallel_benchmark(commands, jobs, results_dir, timeout=60):
         if jobs > 0:
             parallel_cmd.extend(["--jobs", str(jobs)])
         parallel_cmd.extend(["--joblog", str(results_path / "parallel.log")])
-        # Add timeout as safety net (slightly longer than planmt timeout)
+        # Add timeout as safety net (slightly longer than rantanplan timeout)
         parallel_cmd.extend(["--timeout", str(timeout + 10)])  # +10s buffer
         parallel_cmd.extend(["-a", jobs_file])  # Use -a to read from file
         
@@ -460,7 +460,7 @@ def print_summary_table(results, strategy_names):
 
 def main():
     """Main entry point for the benchmark script."""
-    parser = argparse.ArgumentParser(description="Benchmark script for the planMT planner.")
+    parser = argparse.ArgumentParser(description="Benchmark script for the RantanPlan planner.")
     parser.add_argument(
         "pddl_dir",
         help="Directory containing PDDL domains and problems to benchmark"
@@ -513,7 +513,7 @@ def main():
         else:
             print_warning(f"Skipping unknown strategy '{strategy_name}' (not in available strategies)")
     
-    print_header("--- Starting planMT Benchmark Suite ---")
+    print_header("--- Starting RantanPlan Benchmark Suite ---")
     print_info(f"PDDL directory: {args.pddl_dir}")
     print_info(f"Timeout per run: {args.timeout}s")
     print_info(f"Parallel jobs: {args.jobs if args.jobs > 0 else 'auto'}")
@@ -553,6 +553,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # Ensure the planmt module is in the Python path
+    # Ensure the rantanplan module is in the Python path
     sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
     main()

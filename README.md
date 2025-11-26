@@ -1,214 +1,117 @@
 # RantanPlan
 
-An automated planning system that uses a planning-as-SMT approach. It combines a Python frontend with a C++ backend for SMT-based planning.
+A SAT/SMT-based automated planner with parallel action semantics. Combines a Python frontend with a high-performance C++ backend using Z3.
 
-Supports three parallelism strategies (sequential, forall, exists) with optimization configurations and interference analysis.
+## Key Features
+
+- **Three parallelism semantics**: Sequential, ∀-step (forall), ∃-step (exists)
+- **Multiple encoding strategies**: Grounded, chained, R2∃-step
+- **Interference analysis**: Syntactic (eager/lazy) and semantic
+- **Symmetry breaking**: Object symmetry detection
+- **Unified Planning integration**: Plug-and-play with UP framework
+
+**Limitation**: Does not support PDDL actions that both delete and add the same fluent.
+
+## Installation
+
+**Prerequisites**: Python 3.8+, CMake, protobuf libraries (`brew install protobuf` or `apt-get install libprotobuf-dev protobuf-compiler`)
+
+```bash
+git clone https://github.com/pyPMT/RantanPlan.git
+cd RantanPlan
+python -m venv .venv
+source .venv/bin/activate  # Always activate before build/run
+pip install -e .
+python build.py
+```
+
+## Usage
+
+### Command Line
+
+```bash
+# Sequential planning
+rantanplan -d domain.pddl -p problem.pddl --strategy seq
+
+# Forall-step with lazy semantic interference and chaining
+rantanplan -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chain --timeout 120
+
+# Exists-step with decision heuristics
+rantanplan -d domain.pddl -p problem.pddl --strategy dec --detect-symmetries
+
+# R2E semantics (declaration-order parallelism)
+rantanplan -d domain.pddl -p problem.pddl --strategy r2e --output-plan solution.txt
+```
+
+### Available Strategies
+
+| Strategy | Parallelism | Interference | Encoding | Notes |
+|----------|-------------|--------------|----------|-------|
+| `seq` | Sequential | N/A | Grounded | Classic planning |
+| `forall` | ∀-step | Eager syntactic | Grounded | Basic parallel |
+| `forall-prop` | ∀-step | Eager + propagator | Grounded | Optimized |
+| `forall-lazy` | ∀-step | Lazy syntactic | Grounded | On-demand |
+| `forall-lazy-semantic` | ∀-step | Lazy semantic | Grounded | Advanced |
+| `forall-lazy-semantic-chain` | ∀-step | Lazy semantic | Chained | Best for ∀-step |
+| `exists` | ∃-step | Eager syntactic | Grounded | Basic parallel |
+| `exists-lazy` | ∃-step | Lazy syntactic | Grounded | With cycle detection |
+| `exists-lazy-semantic` | ∃-step | Lazy semantic | Grounded | Advanced |
+| `exists-lazy-semantic-chain` | ∃-step | Lazy semantic | Chained | Best for ∃-step |
+| `r2e` | R2∃-step | Declaration order | R2E | Novel encoding |
+| `dec` | ∃-step | Lazy semantic | Chained | With heuristics |
+
+### Python API
+
+```python
+from unified_planning.shortcuts import *
+
+problem = Problem()
+# ... define problem ...
+
+# Unified Planning integration (auto-discovered)
+with OneshotPlanner(name='RantanPlan') as planner:
+    result = planner.solve(problem)
+    print(result.plan)
+
+# Or use directly
+from rantanplan.planner_wrapper import RantanPlanPlanner
+planner = RantanPlanPlanner(strategy='forall-lazy-semantic-chain')
+result = planner.solve(problem)
+```
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         RantanPlan Package                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────┐              ┌─────────────────────────┐   │
-│  │   CLI Interface │              │   Library Interface     │   │
-│  │   (rantanplan cmd)  │              │   (Unified Planning)    │   │
-│  │                 │              │                         │   │
-│  │• argparse       │              │ • UP Engine Plugin      │   │
-│  │• File validation│              │ • RantanPlanPlanner class   │   │
-│  │• Result format  │              │ • Auto-discovery        │   │
-│  └─────────┬───────┘              └─────────┬───────────────┘   │
-│            │                                │                   │
-│            └──────┬─────────────────────────┘                   │
-│                   │                                             │
-│           ┌───────▼─────────┐                                   │
-│           │ planner_wrapper │                                   │
-│           │                 │                                   │
-│           │ • Process mgmt  │                                   │
-│           │ • Protobuf I/O  │                                   │
-│           │ • Error handling│                                   │
-│           └───────┬─────────┘                                   │
-│                   │                                             │
-├───────────────────┼─────────────────────────────────────────────┤
-│                   │ protobuf                                    │
-│                   ▼                                             │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │              C++ RantanPlan Engine                          │    │
-│  │                                                         │    │
-│  │ • SMT-based planning                                    │    │
-│  │ • PDDL parsing                                          │    │
-│  │ • Optimization                                          │    │
-│  │ • Executable: rantanplan/bin/rantanplan                         │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-
-Input: PDDL Domain + Problem → Processing → Output: Plan or UNSAT
+Python Frontend              C++ Backend
+┌─────────────────┐         ┌──────────────────┐
+│ CLI / UP Engine │ ───┐    │  Strategy Config │
+│                 │    │    │  ┌──────────────┐│
+│ • PDDL parsing  │    └───▶│  │ Encoder      ││
+│ • CNF compiler  │ protobuf│  │ Parallelism  ││
+│ • Plan validate │◀────┘   │  │ Propagator   ││
+└─────────────────┘         │  │ Symmetries   ││
+                            │  └──────────────┘│
+                            │                  │
+                            │  Z3 SMT Solver   │
+                            └──────────────────┘
 ```
 
-## Features
+The Python frontend uses Unified Planning to parse PDDL, applies optional CNF normalization, and communicates via protobuf with the C++ backend. The backend encodes the problem as SMT, solves with Z3 using custom propagators, and returns a plan.
 
-- Install as a Python package
-- Command line interface with strategy configuration
-- C++ backend for SMT-based planning
-- Three parallelism strategies:
-  - `sequential`: One action per timestep
-  - `forall`: Parallel actions if none interfere
-  - `exists`: Actions execute if non-interfering order exists
-- Three interference analysis modes:
-  - `eager`: Pre-computed syntactic interferences
-  - `lazy`: On-demand interference computation
-  - `semantic`: Advanced semantic interference analysis
-- Multiple encoding options:
-  - `grounded`: Standard SMT encoding
-  - `chained`: Chained encoding for cumulative effects
-  - `r2e`: R2∃-step semantics with built-in parallelism
-- Object symmetry detection and breaking
-- Unified Planning library integration
-
-**Note:** RantanPlan does not support PDDL delete-then-set effect semantics. Actions that both delete and add the same fluent will be treated as contradictory and may cause planning failures.
-
-## Installation
-
-### Prerequisites
-
-- Python 3.8+
-- CMake (for building the C++ planner)
-- Git
-- **protobuf libraries** (external dependency - install via system package manager)
-  - Ubuntu/Debian: `sudo apt-get install libprotobuf-dev protobuf-compiler`
-  - macOS: `brew install protobuf`
-  - Other systems: See [protobuf installation guide](https://protobuf.dev/downloads/)
-
-### Install from Source
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/pyPMT/RantanPlan.git
-   cd RantanPlan
-   ```
-
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Required for all build/run operations
-   ```
-
-3. Install the package:
-   ```bash
-   pip install -e .          # Install in development mode
-   python build.py           # Build the C++ planner
-   ```
-
-## Usage
-
-### Command Line Interface
-
-Basic usage:
+## Development
 
 ```bash
-# Basic usage with sequential strategy
-rantanplan -d pddl/test/zenotravel/domain.pddl -p pddl/test/zenotravel/problem.pddl --strategy sequential
+source .venv/bin/activate  # Always required
 
-# Use optimized forall strategy with timeout
-rantanplan -d domain.pddl -p problem.pddl --strategy forall-optimized --timeout 120
+# Building
+python build.py              # Standard release build
+python build.py --clean      # Clean rebuild
+python build.py --build-type debug  # Debug build
 
-# Semantic interference analysis with chained encoding
-rantanplan -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chained
-
-# R2E semantics for built-in parallelism
-rantanplan -d domain.pddl -p problem.pddl --strategy r2e
-
-# Enable symmetry detection
-rantanplan -d domain.pddl -p problem.pddl --strategy forall-optimized --detect-symmetries
-
-# Save plan to file
-rantanplan -d domain.pddl -p problem.pddl --strategy exists-optimized-semantic --output-plan solution.txt
-
-# Show help
-rantanplan --help
-```
-
-#### Available Strategies
-
-**Basic:**
-- `sequential`: Sequential encoding
-- `forall-basic`: Forall semantics with pre-computed interference
-- `exists-basic`: Exists semantics with pre-computed interference
-
-**Optimized:**
-- `forall-optimized`: Forall with propagation
-- `forall-lazy`: Forall with lazy interference analysis
-- `exists-optimized`: Exists with lazy interference and cycle detection
-
-**Advanced (Semantic Interference):**
-- `forall-lazy-semantic`: Forall with semantic interference analysis
-- `exists-optimized-semantic`: Exists with semantic interference analysis
-- `forall-lazy-semantic-chained`: Forall with semantic analysis and chained encoding
-- `exists-optimized-semantic-chained`: Exists with semantic analysis and chained encoding
-
-**Novel Encodings:**
-- `r2e`: R2∃-step semantics with declaration-order parallelism
-
-### Library Usage (Unified Planning)
-
-```python
-import unified_planning as up
-from unified_planning.shortcuts import *
-
-# Create a planning problem
-problem = Problem()
-# ... define your problem ...
-
-# RantanPlan is automatically available as an engine
-with OneshotPlanner(name='RantanPlan') as planner:
-    result = planner.solve(problem)
-    if result.status == up.engines.PlanGenerationResultStatus.SOLVED_SATISFICING:
-        print(f"Found plan: {result.plan}")
-```
-
-### Direct Library Usage
-
-```python
-from rantanplan.planner_wrapper import RantanPlanPlanner
-
-# Create planner instance
-planner = RantanPlanPlanner()
-
-# Solve a problem
-result = planner.solve(problem)
-```
-
-## Testing and Development
-
-### Running Tests
-
-```bash
-# Activate virtual environment first
-source .venv/bin/activate
-
-# Run comprehensive tests (all strategies, all domains)
-python test.py
-
-# Quick test subset for development
-python test.py --quick
-
-# Verbose test output
-python test.py -v
-```
-
-### Building and Cleaning
-
-```bash
-# Standard build
-python build.py
-
-# Clean build
-python build.py --clean
-
-# Debug build
-python build.py --build-type debug
+# Testing
+python test.py               # All strategies, all test domains
+python test.py --quick       # Fast subset (zenotravel, rover, gripper, hydropower)
+python test.py -v            # Verbose output
 ```
 
 ## Citation
