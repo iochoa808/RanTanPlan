@@ -105,6 +105,7 @@ add_executable(rantanplan
     src/encoders/parallelism/graph.cpp
     src/encoders/z3_variable_factory.cpp
     src/planners/sequential.cpp
+    src/planners/double_tail_planner.cpp
     src/planners/formula_exporter.cpp
     src/planners/propagators/forall_propagator.cpp
     src/planners/propagators/lazy_forall_propagator.cpp

@@ -129,16 +129,16 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem) 
     // Set parallelism strategy on encoder
     encoder->set_parallelism_strategy(std::move(parallelism));
 
-    // Create planner (start with default constructor, then set propagator)
-    rantanplan::SequentialPlanner planner(problem, *encoder, ctx);
+    // Create planner using strategy (strategy decides which planner to use!)
+    auto planner = strategy->create_planner(problem, *encoder, ctx);
 
     // Get solver reference and create propagator using strategy
-    auto propagator = strategy->create_propagator(planner.get_solver(), problem, *encoder);
-    planner.set_propagator_strategy(std::move(propagator));
+    auto propagator = strategy->create_propagator(planner->get_solver(), problem, *encoder);
+    planner->set_propagator_strategy(std::move(propagator));
 
-    // Call planner.search() and get the result
-    rantanplan::Plan plan = planner.search();
-    if (planner.solution_found()) {
+    // Call planner->search() and get the result
+    rantanplan::Plan plan = planner->search();
+    if (planner->solution_found()) {
         // Plan found (even if empty) - populate the result
         result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
         

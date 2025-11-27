@@ -44,6 +44,17 @@ void StrategyRegistry::initialize_builtin_strategies(std::map<std::string, Strat
     registry["forall-eager-semantic-chain"] = []() { return std::make_unique<ForallEagerSemanticChainStrategy>(); };
     registry["exists-eager-semantic"] = []() { return std::make_unique<ExistsEagerSemanticStrategy>(); };
     registry["exists-eager-semantic-chain"] = []() { return std::make_unique<ExistsEagerSemanticChainStrategy>(); };
+
+    // Double-tail strategies
+    registry["seq-dt"] = []() { return std::make_unique<SequentialDoubleTailStrategy>(); };
+    registry["forall-dt"] = []() { return std::make_unique<ForallDoubleTailStrategy>(); };
+    registry["forall-lazy-dt"] = []() { return std::make_unique<ForallLazyDoubleTailStrategy>(); };
+    registry["forall-lazy-semantic-dt"] = []() { return std::make_unique<ForallLazySemanticDoubleTailStrategy>(); };
+    registry["forall-lazy-semantic-chain-dt"] = []() { return std::make_unique<ForallLazySemanticChainDoubleTailStrategy>(); };
+    registry["exists-dt"] = []() { return std::make_unique<ExistsDoubleTailStrategy>(); };
+    registry["exists-lazy-dt"] = []() { return std::make_unique<ExistsLazyDoubleTailStrategy>(); };
+    registry["exists-lazy-semantic-dt"] = []() { return std::make_unique<ExistsLazySemanticDoubleTailStrategy>(); };
+    registry["exists-lazy-semantic-chain-dt"] = []() { return std::make_unique<ExistsLazySemanticChainDoubleTailStrategy>(); };
 }
 
 std::unique_ptr<StrategyConfiguration> StrategyRegistry::create(const std::string& name) {

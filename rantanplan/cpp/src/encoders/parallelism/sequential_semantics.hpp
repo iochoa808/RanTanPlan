@@ -28,6 +28,8 @@ public:
 
     const InterferenceAnalysis* get_interference_analyzer() const override { return nullptr; }
 
+    bool allows_concurrent_actions() const override { return false; }
+
 private:
     const Problem* problem_;
     z3::context* ctx_;

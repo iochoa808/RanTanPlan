@@ -3,6 +3,7 @@
 #include "../problem/problem.hpp"
 #include "../problem/plan.hpp"
 #include "../encoders/base_encoder.hpp"
+#include "base_planner.hpp"
 #include "propagators/propagator_strategy.hpp"
 #include <z3++.h>
 #include <memory>
@@ -10,7 +11,7 @@
 // This class is able to search for a plan in a sequential manner by using an encoder.
 namespace rantanplan {
 
-class SequentialPlanner {
+class SequentialPlanner : public BasePlanner {
 public:
     // Constructor
     SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx);
@@ -19,18 +20,18 @@ public:
     SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx,
                      std::unique_ptr<PropagatorStrategy> propagator);
 
-    // Search for a plan and return it
-    Plan search();
-    
+    // BasePlanner interface implementation
+    Plan search() override;
+
     // Check if the last search found a solution (even if empty plan)
-    bool solution_found() const { return solution_found_; }
-    
+    bool solution_found() const override { return solution_found_; }
+
     // Strategy management
-    void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator);
-    std::string get_propagator_strategy_name() const;
+    void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) override;
+    std::string get_propagator_strategy_name() const override;
 
     // Get solver reference (for creating propagators)
-    z3::solver& get_solver() { return solver_; }
+    z3::solver& get_solver() override { return solver_; }
 
 private:
     const Problem& problem_;

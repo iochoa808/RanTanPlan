@@ -412,11 +412,11 @@ void GroundedEncoder::build_epc_index() {
 
 Plan GroundedEncoder::extract_plan(const z3::model& model, int max_timestep) const {
     Plan plan;
-    
+
     std::cout << "Extracting plan from Z3 model with " << model.size() << " variable assignments" << std::endl;
-    
-    std::string strategy_name = get_parallelism_strategy_name();
-    bool is_parallel = (strategy_name == "ForallSemantics" || strategy_name == "ExistsSemantics");
+
+    // Use type-safe capability query instead of string comparison
+    bool is_parallel = get_parallelism_strategy()->allows_concurrent_actions();
     
     // Iterate through each timestep
     for (int t = 0; t < max_timestep; ++t) {

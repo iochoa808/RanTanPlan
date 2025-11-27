@@ -54,6 +54,13 @@ public:
      * @return Pointer to the interference analyzer, or nullptr if not available
      */
     virtual const InterferenceAnalysis* get_interference_analyzer() const = 0;
+
+    /**
+     * @brief Check if this strategy allows concurrent action execution
+     * @return true if multiple actions can execute at the same timestep (forall/exists semantics),
+     *         false if at most one action per timestep (sequential semantics)
+     */
+    virtual bool allows_concurrent_actions() const = 0;
 };
 
 } // namespace rantanplan

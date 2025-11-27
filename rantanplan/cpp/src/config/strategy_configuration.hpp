@@ -2,6 +2,8 @@
 
 #include "../problem/problem.hpp"
 #include "../encoders/base_encoder.hpp"
+#include "../planners/base_planner.hpp"
+#include "../planners/sequential.hpp"
 #include "../planners/propagators/propagator_strategy.hpp"
 #include "../encoders/parallelism/parallelism_strategy.hpp"
 #include "../encoders/parallelism/interference_analysis.hpp"
@@ -32,6 +34,21 @@ public:
 
     virtual std::unique_ptr<InterferenceAnalysis> create_interference(
         const Problem& problem) const = 0;
+
+    /**
+     * @brief Create planner instance for this strategy
+     * @param problem The planning problem
+     * @param encoder The encoder to use (must be compatible with strategy)
+     * @param ctx Z3 context
+     * @return Planner instance (default: SequentialPlanner for backward compatibility)
+     *
+     * Override this method to use different planner implementations (e.g., DoubleTailPlanner)
+     */
+    virtual std::unique_ptr<BasePlanner> create_planner(
+        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const {
+        // Default implementation: create SequentialPlanner for backward compatibility
+        return std::make_unique<SequentialPlanner>(problem, encoder, ctx);
+    }
 
     // Capability queries (replaces runtime type checks)
     virtual bool needs_parallelism_encoding() const = 0;
