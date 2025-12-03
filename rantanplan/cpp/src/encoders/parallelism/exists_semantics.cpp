@@ -62,7 +62,7 @@ std::shared_ptr<z3::expr> ExistsSemantics::encode_parallelism(int timestep) {
     std::cout << "ExistsSemantics: Generated " << mutex_constraints.size() << " mutex constraints for timestep " << timestep << std::endl;
     
     auto& stats = Stats::instance();
-    stats.add("encoder.mutex_constraints_per_step", mutex_constraints.size());
+    stats.add("encoder.mutex_constraints", mutex_constraints.size());
     
     z3::expr mutex_formula = z3::mk_and(mutex_constraints);
     return std::make_shared<z3::expr>(mutex_formula);
