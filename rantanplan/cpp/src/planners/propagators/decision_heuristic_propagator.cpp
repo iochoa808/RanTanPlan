@@ -349,8 +349,8 @@ Z3_lbool DecisionHeuristicPropagator::get_condition_value(const Expression& cond
  idx	If the term is a bit-vector, then an index into the bit-vector being branched on
  phase	The tentative truth-value
 */
-void DecisionHeuristicPropagator::decide(z3::expr const& term, unsigned idx, bool phase) {
-    //std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision term: " << term.to_string() << ", phase: " << phase << std::endl;
+void DecisionHeuristicPropagator::decide(z3::expr& val, unsigned& bit, Z3_lbool& is_pos) {
+    //std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision val: " << val.to_string() << ", is_pos: " << is_pos << std::endl;
     auto support_result = find_support(); // Find support for unsupported goals/subgoals
 
     if (support_result.has_value()) {
