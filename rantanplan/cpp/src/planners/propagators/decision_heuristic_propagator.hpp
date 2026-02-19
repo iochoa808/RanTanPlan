@@ -96,7 +96,7 @@ public:
     void push() override;
     void pop(unsigned num_scopes) override;
     void fixed(z3::expr const &ast, z3::expr const &value) override;
-    void decide(z3::expr& val, unsigned& bit, Z3_lbool& is_pos) override;
+    void decide(z3::expr const& val, unsigned bit, bool is_pos) override;
     void final() override;
     z3::user_propagator_base* fresh(z3::context& ctx) override;
     
