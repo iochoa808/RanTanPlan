@@ -22,9 +22,8 @@ namespace rantanplan {
  * (¬a_1 ∨ ¬a_2) ∧ (¬a_1 ∨ ¬a_3) ∧ ...
  * Giving a big and of the mutexes :)
  */
-class ForallPropagator : public z3::user_propagator_base, public PropagatorStrategy {
+class ForallPropagator : public PropagatorStrategy {
 private:
-    const BaseEncoder* encoder_;  // Access to variable factory and problem
     const Problem* problem_;    // Direct access to problem structure
     const Z3VariableFactory* variable_factory_;  // Cached reference to variable factory
     const ParallelismStrategy* parallelism_strategy_;  // Cached reference to parallelism strategy
@@ -54,12 +53,8 @@ public:
      */
     ~ForallPropagator() override = default;
     
-    // Z3 user_propagator_base interface (simplified)
-    void push() override { /* No-op - no state to track */ }
-    void pop(unsigned num_scopes) override { /* No-op - no state to undo */ }
-    void fixed(z3::expr const &ast, z3::expr const &value) override;
-    void final() override;
-    z3::user_propagator_base* fresh(z3::context& ctx) override;
+    // Propagator callbacks
+    void on_fixed(z3::expr const &ast, z3::expr const &value) override;
     
     // PropagatorStrategy interface
     void register_timestep_variables(int timestep) override;

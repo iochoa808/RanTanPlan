@@ -20,9 +20,8 @@ namespace rantanplan {
  * timestep for interference and generates conflicts when interference is detected.
  * This approach avoids precomputing the full interference graph.
  */
-class LazyForallPropagator : public z3::user_propagator_base, public PropagatorStrategy {
+class LazyForallPropagator : public PropagatorStrategy {
 private:
-    const BaseEncoder* encoder_;  // Access to variable factory and problem
     const Problem* problem_;    // Direct access to problem structure
     const Z3VariableFactory* variable_factory_;  // Cached reference to variable factory
     const ParallelismStrategy* parallelism_strategy_;  // Cached reference to parallelism strategy
@@ -55,12 +54,10 @@ public:
      */
     ~LazyForallPropagator() override = default;
     
-    // Z3 user_propagator_base interface
-    void push() override;
-    void pop(unsigned num_scopes) override;
-    void fixed(z3::expr const &ast, z3::expr const &value) override;
-    void final() override;
-    z3::user_propagator_base* fresh(z3::context& ctx) override;
+    // Propagator callbacks
+    void on_push() override;
+    void on_pop(unsigned num_scopes) override;
+    void on_fixed(z3::expr const &ast, z3::expr const &value) override;
     
     // PropagatorStrategy interface
     void register_timestep_variables(int timestep) override;

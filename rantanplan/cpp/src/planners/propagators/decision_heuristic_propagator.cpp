@@ -15,18 +15,16 @@
 namespace rantanplan {
 
 DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, const Problem& problem, const BaseEncoder& encoder)
-    : z3::user_propagator_base(&solver), solver_(&solver), problem_(&problem), encoder_(&encoder),
+    : PropagatorStrategy(solver, encoder), solver_(&solver), problem_(&problem),
      variable_factory_(&encoder.get_variable_factory()),
      parallelism_strategy_(encoder.get_parallelism_strategy()),
-     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()), 
+     interference_analyzer_(parallelism_strategy_->get_interference_analyzer()),
      achievers_analysis_(problem),
      cycle_count_(0),
      current_goal_step_(1),
      reification_counter_(0) {
 
-    // Define callbacks for the user propagator
-    register_fixed();
-    register_final();
+    // Register decide callback for heuristic branching
     register_decide();
 
     // pre-allocate vector for up to max_steps timesteps
@@ -52,12 +50,12 @@ DecisionHeuristicPropagator::DecisionHeuristicPropagator(z3::solver& solver, con
     solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
 }
 
-void DecisionHeuristicPropagator::push() {
+void DecisionHeuristicPropagator::on_push() {
     // Z3 is entering a new backtracking scope - mark decision level
     decision_levels_.push_back(trail_.size());
 }
 
-void DecisionHeuristicPropagator::pop(unsigned num_scopes) {
+void DecisionHeuristicPropagator::on_pop(unsigned num_scopes) {
     // Z3 is backtracking - undo changes for each scope
     for (unsigned i = 0; i < num_scopes; ++i) {
         if (!decision_levels_.empty()) {
@@ -88,7 +86,7 @@ void DecisionHeuristicPropagator::pop(unsigned num_scopes) {
     }
 }
 
-void DecisionHeuristicPropagator::fixed(z3::expr const &var, z3::expr const &value) {
+void DecisionHeuristicPropagator::on_fixed(z3::expr const &var, z3::expr const &value) {
     // Check if this is a reification variable for a condition
     if (is_reification_variable(var)) {
         trail_.push_back(var);
@@ -122,18 +120,9 @@ void DecisionHeuristicPropagator::fixed(z3::expr const &var, z3::expr const &val
     }
 }
 
-void DecisionHeuristicPropagator::final() {
-    // Final constraint validation check
-    // TODO: we need this?
-}
-
-z3::user_propagator_base* DecisionHeuristicPropagator::fresh(z3::context& ctx) {
-    // For now, return null to indicate we don't support fresh instances
-    return nullptr;
-}
-
-
 void DecisionHeuristicPropagator::register_timestep_variables(int timestep) {
+    // Base class handles logging (inc, variable registration)
+    PropagatorStrategy::register_timestep_variables(timestep);
     const Z3VariableFactory& var_factory = *variable_factory_;
     // Create reification variables for conditions in achievers analysis
     create_condition_reification_variables(timestep);
@@ -349,7 +338,7 @@ Z3_lbool DecisionHeuristicPropagator::get_condition_value(const Expression& cond
  idx	If the term is a bit-vector, then an index into the bit-vector being branched on
  phase	The tentative truth-value
 */
-void DecisionHeuristicPropagator::decide(z3::expr const& val, unsigned bit, bool is_pos) {
+void DecisionHeuristicPropagator::on_decide(z3::expr const& val, unsigned bit, bool is_pos) {
     //std::cout << "\n*** DecisionHeuristicPropagator::decide() called. decision val: " << val.to_string() << ", is_pos: " << is_pos << std::endl;
     auto support_result = find_support(); // Find support for unsupported goals/subgoals
 

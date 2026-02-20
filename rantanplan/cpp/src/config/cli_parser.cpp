@@ -111,6 +111,14 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--formula-output requires a filename");
             }
         }
+        // Logging options
+        else if (arg == "--log-file") {
+            if (i + 1 < argc) {
+                config.logging.log_file = argv[++i];
+            } else {
+                throw std::invalid_argument("--log-file requires a filename");
+            }
+        }
     }
 }
 

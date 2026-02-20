@@ -54,14 +54,19 @@ public:
         int timestep = -1;                // Timestep to export formula for
         std::string output_file = "";     // Output file for formula (required)
     } formula_export;
-    
+
+    struct Logging {
+        std::string log_file = "";        // Empty = no logging; path = solver decision log
+    } logging;
+
     void initialize(int argc, char* argv[]);
     void validate() const;
-    
+
     bool is_silent() const { return global.verbosity == VerbosityLevel::SILENT; }
     bool is_info() const { return global.verbosity >= VerbosityLevel::INFO; }
     bool is_verbose() const { return global.verbosity >= VerbosityLevel::VERBOSE; }
     bool is_debug() const { return global.verbosity >= VerbosityLevel::DEBUG; }
+    bool has_log_file() const { return !logging.log_file.empty(); }
 
 private:
     Config() = default;

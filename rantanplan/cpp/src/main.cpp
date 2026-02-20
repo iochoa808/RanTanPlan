@@ -134,6 +134,12 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem) 
 
     // Get solver reference and create propagator using strategy
     auto propagator = strategy->create_propagator(planner->get_solver(), problem, *encoder);
+
+    // Enable solver decision logging if requested
+    if (config.has_log_file()) {
+        propagator->enable_logging(config.logging.log_file, strategy->get_name());
+    }
+
     planner->set_propagator_strategy(std::move(propagator));
 
     // Call planner->search() and get the result

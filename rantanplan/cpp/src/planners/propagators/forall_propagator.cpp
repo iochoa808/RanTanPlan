@@ -10,27 +10,24 @@
 namespace rantanplan {
 
 ForallPropagator::ForallPropagator(z3::solver& solver, const Problem& problem, const BaseEncoder& encoder)
-    : z3::user_propagator_base(&solver), problem_(&problem), encoder_(&encoder),
+    : PropagatorStrategy(solver, encoder), problem_(&problem),
      variable_factory_(&encoder.get_variable_factory()),
      parallelism_strategy_(encoder.get_parallelism_strategy()),
      interference_analyzer_(parallelism_strategy_->get_interference_analyzer()), propagation_count_(0) {
-    // Define callbacks for the user propagator
-    register_fixed();
-    register_final();
-    
     // Set Z3 option to persist clauses for user propagator based on config
     solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
-    
+
     // Build reverse interference lookup for efficient propagation
     build_reverse_interference_lookup();
 }
 
 
-void ForallPropagator::fixed(z3::expr const &action_variable, z3::expr const &value) {
+void ForallPropagator::on_fixed(z3::expr const &action_variable, z3::expr const &value) {
     if (!value.is_true()) return; // Only process true assignments
-    
+
     // Extract action and timestep from the variable
     auto action_info = variable_factory_->get_action_from_variable(action_variable);
+    if (!action_info) return; // Not an action variable (e.g., fluent registered for logging)
     const Action& action = action_info->first;
     int timestep = action_info->second;
     
@@ -73,19 +70,9 @@ void ForallPropagator::perform_forall_propagation(const Action& action, int time
     }
 }
 
-void ForallPropagator::final() {
-    // We are eager so we don't have to keep track of active actions
-    // so this is effectively a NOOP
-}
-
-z3::user_propagator_base* ForallPropagator::fresh(z3::context& ctx) {
-    // For now, return null to indicate we don't support fresh instances
-    // TODO: Implement proper fresh instance creation if needed
-    return nullptr;
-}
-
-
 void ForallPropagator::register_timestep_variables(int timestep) {
+    // Base class handles logging (inc, variable registration)
+    PropagatorStrategy::register_timestep_variables(timestep);
     const Z3VariableFactory& var_factory = *variable_factory_;
     // For timestep 0: register nothing as there are no actions
     if (timestep == 0) return;

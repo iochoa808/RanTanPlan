@@ -14,7 +14,7 @@ namespace rantanplan {
 
 DoubleTailPlanner::DoubleTailPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
     : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
-      propagator_strategy_(std::make_unique<NullPropagator>()) {
+      propagator_strategy_(nullptr) {
     // Set upper bound for backward stack
     auto& config = Config::instance();
     max_horizon_ = config.planner.max_steps;

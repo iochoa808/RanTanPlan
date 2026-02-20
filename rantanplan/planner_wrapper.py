@@ -42,6 +42,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         self._boolean_rpg = options.get('boolean_rpg', False)
         self._numeric_rpg = options.get('numeric_rpg', False)
         self._horizon_schedule = options.get('horizon_schedule')  # None → C++ default ("linear")
+        self._log_file = options.get('log_file')  # None if not specified
 
     def _find_executable(self, provided_path):
         """Find the rantanplan executable, trying various locations."""
@@ -262,6 +263,9 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
 
             if self._horizon_schedule is not None:
                 command.extend(["--horizon-schedule", self._horizon_schedule])
+
+            if self._log_file is not None:
+                command.extend(["--log-file", self._log_file])
 
             print(f"Running planner: {' '.join(command)}")
 

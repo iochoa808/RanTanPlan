@@ -14,16 +14,15 @@
 namespace rantanplan {
 
     SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
-        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
-          propagator_strategy_(std::make_unique<NullPropagator>()) {
+        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx) {
         // Initialize planner with the given problem, encoder, and Z3 context
-        // Uses null propagator by default (no propagation)
+        // Propagator must be set via set_propagator_strategy() before search()
     }
 
     SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx,
                                        std::unique_ptr<PropagatorStrategy> propagator)
         : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
-          propagator_strategy_(propagator ? std::move(propagator) : std::make_unique<NullPropagator>()) {
+          propagator_strategy_(std::move(propagator)) {
         // Initialize planner with the given problem, encoder, Z3 context, and propagator strategy
     }
 

@@ -36,7 +36,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -64,7 +64,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -184,7 +184,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -281,7 +281,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -332,7 +332,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -356,7 +356,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -380,7 +380,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -404,7 +404,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -456,7 +456,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -484,7 +484,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
@@ -580,7 +580,7 @@ public:
 
     std::unique_ptr<PropagatorStrategy> create_propagator(
         z3::solver& s, const Problem& p, const BaseEncoder& e) const override {
-        return std::make_unique<NullPropagator>();
+        return std::make_unique<NullPropagator>(s, e);
     }
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {

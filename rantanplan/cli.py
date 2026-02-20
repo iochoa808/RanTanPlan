@@ -75,6 +75,10 @@ Use --list-strategies to see available strategies and their descriptions.
     parser.add_argument("--numeric-rpg", action="store_true",
                        help="Use Numeric RPG for action removal (slower, more precise, default)")
 
+    # Logging
+    parser.add_argument("--log-file", type=str,
+                       help="Write solver decision log to file (for use with plot.py)")
+
     # Horizon schedule
     parser.add_argument("--horizon-schedule",
                        choices=["linear", "arithmetic", "geometric", "doubling"],
@@ -133,6 +137,8 @@ def solve_problem(problem, args):
         planner_params['numeric_rpg'] = True
     if args.horizon_schedule is not None:
         planner_params['horizon_schedule'] = args.horizon_schedule
+    if args.log_file:
+        planner_params['log_file'] = args.log_file
 
     # Handle verbosity
     if args.silent:
