@@ -4,10 +4,67 @@
 #include "../problem/plan.hpp"
 #include "propagators/propagator_strategy.hpp"
 #include <z3++.h>
+#include <algorithm>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace rantanplan {
+
+// ---------------------------------------------------------------------------
+// HorizonSchedule
+// ---------------------------------------------------------------------------
+// Controls which horizons receive a SAT call during planning. Between any two
+// consecutive scheduled horizons, ALL transitions are still added to the solver
+// (correctness requires a complete transition chain), but only one goal literal
+// is placed at the scheduled horizon. Completeness is preserved via the
+// prefix-monotone encoding (encode_prefix_monotone) which ensures actions are
+// front-loaded so frame axioms propagate shorter plans to the batch horizon.
+
+enum class ScheduleType { LINEAR, ARITHMETIC, GEOMETRIC, DOUBLING };
+
+struct HorizonSchedule {
+    ScheduleType type = ScheduleType::LINEAR;
+
+    /**
+     * Return the next horizon after `current`, always >= current+1, capped at `max`.
+     * Guaranteeing current+1 as a minimum prevents infinite loops when current is 0
+     * with doubling (0*2 = 0) or when the factor/step would not advance the index.
+     *
+     * Per-type hardcoded step/factor:
+     *   linear:     +1 per step
+     *   arithmetic: +5 per step
+     *   geometric:  *1.5 per step
+     *   doubling:   *2  per step
+     */
+    int next(int current, int max) const {
+        int n;
+        switch (type) {
+            case ScheduleType::LINEAR:     n = current + 1;                                      break;
+            case ScheduleType::ARITHMETIC: n = current + 5;                                      break;
+            case ScheduleType::GEOMETRIC:  n = std::max(current + 1,
+                                               static_cast<int>(current * 1.5));                 break;
+            case ScheduleType::DOUBLING:   n = std::max(current + 1, current * 2);               break;
+            default:                       n = current + 1;                                      break;
+        }
+        return std::min(n, max);
+    }
+
+    static HorizonSchedule from_string(const std::string& name) {
+        HorizonSchedule s;
+        if      (name == "linear")     s.type = ScheduleType::LINEAR;
+        else if (name == "arithmetic") s.type = ScheduleType::ARITHMETIC;
+        else if (name == "geometric")  s.type = ScheduleType::GEOMETRIC;
+        else if (name == "doubling")   s.type = ScheduleType::DOUBLING;
+        else throw std::invalid_argument("Unknown horizon schedule: '" + name +
+                                         "'. Valid values: linear, arithmetic, geometric, doubling");
+        return s;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// BasePlanner
+// ---------------------------------------------------------------------------
 
 /**
  * @brief Base interface for all planner implementations
@@ -49,6 +106,16 @@ public:
      * @return Reference to the Z3 solver used by this planner
      */
     virtual z3::solver& get_solver() = 0;
+
+    /**
+     * @brief Set the horizon schedule used during search
+     */
+    void set_horizon_schedule(HorizonSchedule s) { schedule_ = s; }
+    const HorizonSchedule& get_horizon_schedule() const { return schedule_; }
+
+protected:
+    /// Horizon schedule; concrete planners initialise this from Config in their constructor.
+    HorizonSchedule schedule_;
 };
 
 } // namespace rantanplan

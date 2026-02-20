@@ -417,10 +417,34 @@ public:
 };
 
 // =============================================================================
+// DOUBLE-TAIL BASE
+// =============================================================================
+
+/**
+ * @brief Shared base for all double-tail strategies.
+ *
+ * Centralises the two properties that are common to every -dt variant:
+ *   - uses_double_tail() returns true so Config::validate() can reject
+ *     incompatible options (e.g. non-linear horizon schedules) without
+ *     inspecting strategy names.
+ *   - create_planner() returns a DoubleTailPlanner by default; individual
+ *     subclasses may still override this if they need custom behaviour.
+ */
+class DoubleTailStrategyBase : public StrategyConfiguration {
+public:
+    bool uses_double_tail() const override { return true; }
+
+    std::unique_ptr<BasePlanner> create_planner(
+        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
+        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
+    }
+};
+
+// =============================================================================
 // DOUBLE-TAIL SEQUENTIAL STRATEGIES
 // =============================================================================
 
-class SequentialDoubleTailStrategy : public StrategyConfiguration {
+class SequentialDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<GroundedEncoder>(p, ctx);
@@ -439,12 +463,6 @@ public:
         return std::make_unique<EagerInterferenceAnalysis>(p);
     }
 
-    // Override to create DoubleTailPlanner instead of SequentialPlanner
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
-    }
-
     bool needs_parallelism_encoding() const override { return true; }
     bool supports_formula_export() const override { return false; }  // Not yet supported
     std::string get_name() const override { return "seq-dt"; }
@@ -454,7 +472,7 @@ public:
 // DOUBLE-TAIL FORALL STRATEGIES
 // =============================================================================
 
-class ForallDoubleTailStrategy : public StrategyConfiguration {
+class ForallDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<GroundedEncoder>(p, ctx);
@@ -473,16 +491,11 @@ public:
         return std::make_unique<EagerInterferenceAnalysis>(p);
     }
 
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
-    }
-
     bool needs_parallelism_encoding() const override { return true; }
     std::string get_name() const override { return "forall-dt"; }
 };
 
-class ForallLazyDoubleTailStrategy : public StrategyConfiguration {
+class ForallLazyDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<GroundedEncoder>(p, ctx);
@@ -501,16 +514,11 @@ public:
         return std::make_unique<LazyInterferenceAnalysis>(p);
     }
 
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
-    }
-
     bool needs_parallelism_encoding() const override { return false; }
     std::string get_name() const override { return "forall-lazy-dt"; }
 };
 
-class ForallLazySemanticDoubleTailStrategy : public StrategyConfiguration {
+class ForallLazySemanticDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<GroundedEncoder>(p, ctx);
@@ -529,16 +537,11 @@ public:
         return std::make_unique<SemanticInterferenceAnalysis>(p);
     }
 
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
-    }
-
     bool needs_parallelism_encoding() const override { return false; }
     std::string get_name() const override { return "forall-lazy-semantic-dt"; }
 };
 
-class ForallLazySemanticChainDoubleTailStrategy : public StrategyConfiguration {
+class ForallLazySemanticChainDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<ChainedGroundedEncoder>(p, ctx);
@@ -555,11 +558,6 @@ public:
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
         return std::make_unique<SemanticInterferenceAnalysis>(p);
-    }
-
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
     }
 
     bool needs_parallelism_encoding() const override { return false; }
@@ -570,7 +568,7 @@ public:
 // DOUBLE-TAIL EXISTS STRATEGIES
 // =============================================================================
 
-class ExistsDoubleTailStrategy : public StrategyConfiguration {
+class ExistsDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<GroundedEncoder>(p, ctx);
@@ -589,16 +587,11 @@ public:
         return std::make_unique<EagerInterferenceAnalysis>(p);
     }
 
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
-    }
-
     bool needs_parallelism_encoding() const override { return true; }
     std::string get_name() const override { return "exists-dt"; }
 };
 
-class ExistsLazyDoubleTailStrategy : public StrategyConfiguration {
+class ExistsLazyDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<GroundedEncoder>(p, ctx);
@@ -617,16 +610,11 @@ public:
         return std::make_unique<LazyInterferenceAnalysis>(p);
     }
 
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
-    }
-
     bool needs_parallelism_encoding() const override { return false; }
     std::string get_name() const override { return "exists-lazy-dt"; }
 };
 
-class ExistsLazySemanticDoubleTailStrategy : public StrategyConfiguration {
+class ExistsLazySemanticDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<GroundedEncoder>(p, ctx);
@@ -645,16 +633,11 @@ public:
         return std::make_unique<SemanticInterferenceAnalysis>(p);
     }
 
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
-    }
-
     bool needs_parallelism_encoding() const override { return false; }
     std::string get_name() const override { return "exists-lazy-semantic-dt"; }
 };
 
-class ExistsLazySemanticChainDoubleTailStrategy : public StrategyConfiguration {
+class ExistsLazySemanticChainDoubleTailStrategy : public DoubleTailStrategyBase {
 public:
     std::unique_ptr<BaseEncoder> create_encoder(const Problem& p, z3::context& ctx) const override {
         return std::make_unique<ChainedGroundedEncoder>(p, ctx);
@@ -671,11 +654,6 @@ public:
 
     std::unique_ptr<InterferenceAnalysis> create_interference(const Problem& p) const override {
         return std::make_unique<SemanticInterferenceAnalysis>(p);
-    }
-
-    std::unique_ptr<BasePlanner> create_planner(
-        const Problem& problem, BaseEncoder& encoder, z3::context& ctx) const override {
-        return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
     }
 
     bool needs_parallelism_encoding() const override { return false; }

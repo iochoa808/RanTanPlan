@@ -74,6 +74,15 @@ Use --list-strategies to see available strategies and their descriptions.
                        help="Use Boolean RPG for action removal (faster, less precise)")
     parser.add_argument("--numeric-rpg", action="store_true",
                        help="Use Numeric RPG for action removal (slower, more precise, default)")
+
+    # Horizon schedule
+    parser.add_argument("--horizon-schedule",
+                       choices=["linear", "arithmetic", "geometric", "doubling"],
+                       default=None,
+                       help="Horizon growth schedule (default: linear / one-by-one). "
+                            "'doubling' doubles each batch, 'geometric' multiplies by 1.5, "
+                            "'arithmetic' adds 5 each batch.")
+
     
     parser.add_argument(
         "--version",
@@ -122,6 +131,8 @@ def solve_problem(problem, args):
         planner_params['boolean_rpg'] = True
     if args.numeric_rpg:
         planner_params['numeric_rpg'] = True
+    if args.horizon_schedule is not None:
+        planner_params['horizon_schedule'] = args.horizon_schedule
 
     # Handle verbosity
     if args.silent:

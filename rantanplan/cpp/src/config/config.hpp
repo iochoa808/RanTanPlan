@@ -42,6 +42,7 @@ public:
         std::string strategy = "seq";  // Strategy name (replaces parallelism_strategy, encoder, propagator, interference)
         int max_steps = 500;
         int start_timestep = 0;  // Starting timestep for search (can be set by RPG lower bound)
+        std::string horizon_schedule = "linear";  // Schedule type: linear|arithmetic|geometric|doubling
     } planner;
     
     struct Symmetry {

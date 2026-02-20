@@ -53,6 +53,7 @@ public:
     // Capability queries (replaces runtime type checks)
     virtual bool needs_parallelism_encoding() const = 0;
     virtual bool supports_formula_export() const { return false; }
+    virtual bool uses_double_tail() const { return false; }
 
     // Strategy name
     virtual std::string get_name() const = 0;

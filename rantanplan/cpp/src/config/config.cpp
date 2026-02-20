@@ -28,6 +28,26 @@ void Config::validate() const {
                                    ". Use --list-strategies to see available options.");
     }
 
+    // Validate horizon schedule name (catches typos before search begins)
+    const auto& sched = planner.horizon_schedule;
+    if (sched != "linear" && sched != "arithmetic" && sched != "geometric" && sched != "doubling") {
+        throw std::invalid_argument(
+            "Unknown horizon schedule: '" + sched +
+            "'. Valid values: linear, arithmetic, geometric, doubling");
+    }
+
+    // Non-linear horizon schedules rely on prefix-monotone front-loading, which
+    // is only implemented in SequentialPlanner.  DoubleTailPlanner tests a
+    // specific (forward_end, backward_start) pair per iteration and cannot skip
+    // horizons while preserving completeness.
+    if (planner.horizon_schedule != "linear" &&
+        StrategyRegistry::create(planner.strategy)->uses_double_tail()) {
+        throw std::invalid_argument(
+            "Non-linear horizon schedule '" + planner.horizon_schedule +
+            "' is not compatible with double-tail strategy '" + planner.strategy + "'. "
+            "Use a non-dt strategy or --horizon-schedule linear.");
+    }
+
     // Validate global settings
     if (global.timeout <= 0) {
         throw std::invalid_argument("Timeout must be positive");

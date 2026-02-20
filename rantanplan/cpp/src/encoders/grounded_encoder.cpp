@@ -269,6 +269,26 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
 std::shared_ptr<z3::expr> GroundedEncoder::encode_parallelism(int t) {
     return parallelism_strategy_->encode_parallelism(t);
 }
+std::shared_ptr<z3::expr> GroundedEncoder::encode_prefix_monotone(int t) {
+    // Build: (∀a. ¬a@t)  →  (∀a. ¬a@(t+1))
+    // i.e., if no action fires at t, then no action may fire at t+1.
+    // Chained across all t during search, this front-loads all active steps
+    // to the prefix of the plan (0..k-1), with empty steps (k..h-1) at the end.
+    // Frame axioms then propagate the goal state through the empty suffix,
+    // so a single goal literal placed at horizon h witnesses any plan of
+    // length k <= h — enabling the horizon schedule's single-literal batching.
+    z3::expr_vector no_action_t(ctx_), no_action_t1(ctx_);
+    for (const Action& a : problem_.actions()) {
+        no_action_t.push_back(!variable_factory_.get_action_variable(a, t));
+        no_action_t1.push_back(!variable_factory_.get_action_variable(a, t + 1));
+    }
+    if (no_action_t.empty()) {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    }
+    return std::make_shared<z3::expr>(
+        z3::implies(z3::mk_and(no_action_t), z3::mk_and(no_action_t1))
+    );
+}
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_symmetries(int t) {
     auto& config = Config::instance();

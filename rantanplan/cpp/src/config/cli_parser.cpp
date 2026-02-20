@@ -64,6 +64,13 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--max-steps requires a value");
             }
         }
+        else if (arg == "--horizon-schedule") {
+            if (i + 1 < argc) {
+                config.planner.horizon_schedule = argv[++i];
+            } else {
+                throw std::invalid_argument("--horizon-schedule requires a value (linear|arithmetic|geometric|doubling)");
+            }
+        }
         // Action removal options
         else if (arg == "--no-action-removal") {
             config.global.enable_action_removal = false;

@@ -28,6 +28,7 @@ public:
     std::shared_ptr<z3::expr> encode_goal(int t) override;    // Encodes goal conditions at layer_idx
     std::shared_ptr<z3::expr> encode_parallelism(int t) override; // Encodes parallelism semantics
     std::shared_ptr<z3::expr> encode_symmetries(int t) override;
+    std::shared_ptr<z3::expr> encode_prefix_monotone(int t) override; // Front-loading symmetry breaking
     
     // Strategy management
     void set_parallelism_strategy(std::unique_ptr<ParallelismStrategy> strategy) override;

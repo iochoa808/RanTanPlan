@@ -64,6 +64,12 @@ void SequentialPlanner::add_timestep_constraints(int timestep) {
     solver_.add(*encoder_.encode_actions(timestep));
     solver_.add(*encoder_.encode_frames(timestep));
 
+    // Front-loading symmetry-breaking: (∀a. ¬a@t) → (∀a. ¬a@(t+1))
+    // Forces all active action steps to be contiguous at the front of the horizon.
+    // This is what allows a single goal literal at the scheduled horizon h to
+    // witness any plan of length <= h in the current batch.
+    solver_.add(*encoder_.encode_prefix_monotone(timestep));
+
     // Add symmetry breaking constraints if enabled
     if (config.symmetry.detect_symmetries) {
         solver_.add(*encoder_.encode_symmetries(timestep));
@@ -84,152 +90,158 @@ Plan SequentialPlanner::search() {
 
     int start_timestep = std::max(0, config.planner.start_timestep);
 
+    // Initialise the horizon schedule from config.
+    schedule_ = HorizonSchedule::from_string(config.planner.horizon_schedule);
+
     std::string search_msg = "Starting search with propagator: " + propagator_strategy_->get_name();
     if (start_timestep > 0) {
         search_msg += " from timestep " + std::to_string(start_timestep);
     }
+    if (config.planner.horizon_schedule != "linear") {
+        search_msg += ", schedule: " + config.planner.horizon_schedule;
+    }
     Logger::instance().info(search_msg);
-    
-    // Reset solution found flag and statistics
+
     solution_found_ = false;
-    //stats.clear();
 
-    // Add initial state constraints (these are invariant)
+    // Add initial state constraints (invariant across all horizons).
     solver_.add(*encoder_.encode_initial_state());
-
-    // Register variables for timestep 0 (initial state)
     propagator_strategy_->register_timestep_variables(0);
 
-    // Pre-add all constraints for timesteps 1 through start_timestep-1
-    // This ensures all necessary constraints are in place before starting the main search
-    for (int pre_timestep = 1; pre_timestep < start_timestep; ++pre_timestep) {
-        add_timestep_constraints(pre_timestep - 1);
+    // Pre-fill all transitions for [0, start_timestep - 1] so the first SAT call
+    // begins from the RPG lower bound without redundant checks.
+    for (int t = 0; t < start_timestep; ++t) {
+        add_timestep_constraints(t);
     }
 
-    // Now that we are all set up, iterate from start_timestep to max_steps timesteps and properly search
-    double total_time = 0.0; // Track total time used
-    auto start_time = std::chrono::high_resolution_clock::now(); // Track total search time for timeout
-    for (int timestep = start_timestep; timestep <= config.planner.max_steps; ++timestep) {
+    // -------------------------------------------------------------------------
+    // Schedule-driven search loop
+    //
+    // Key invariant: before each SAT call at horizon h, ALL transitions for
+    // timesteps [0, h-1] are in the solver (encoding states 0..h).
+    // The schedule determines *which* horizons receive a goal literal and a SAT
+    // call; the inner loop fills every skipped transition unconditionally.
+    //
+    // Completeness (why one goal literal at h suffices for the whole batch):
+    //   encode_prefix_monotone ensures actions are front-loaded in the model:
+    //   if a plan of length k <= h exists, the solver represents it with actions
+    //   at steps 0..k-1 and empty steps at k..h-1. Frame axioms propagate the
+    //   goal state through the empty suffix so goal@h is satisfied. The single
+    //   literal goal_at_h therefore witnesses any plan length in [prev_h+1, h].
+    //
+    // Plan length recovery after SAT:
+    //   Scan forward from t=0 for the first step where all action variables are
+    //   false. Because of front-loading, this is the exact plan boundary and
+    //   requires no extra solver calls.
+    // -------------------------------------------------------------------------
+
+    double total_time = 0.0;
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    int filled_up_to = start_timestep;  // transitions [0, filled_up_to-1] are encoded
+    int h             = start_timestep;  // first horizon to check
+
+    while (h <= config.planner.max_steps) {
         // Check timeout
         auto current_time = std::chrono::high_resolution_clock::now();
         auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
         if (elapsed_seconds >= config.global.timeout) {
-            Logger::instance().info("\n*** TIMEOUT reached after " + std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
+            Logger::instance().info("\n*** TIMEOUT reached after " +
+                std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
             break;
         }
-        auto step_start = std::chrono::high_resolution_clock::now();
-        
-        // Time formula creation
+
+        auto step_start   = std::chrono::high_resolution_clock::now();
         auto formula_start = std::chrono::high_resolution_clock::now();
-        
-        // This check is needed in case start_timestep_ is 0 as the first check will be for timestep 0
-        // and we want to check if the goal is satisfiable in the initial state
-        if (timestep > 0) { 
-            // Add constraints for this timestep (incremental)
-            add_timestep_constraints(timestep - 1);
+
+        // 1. Fill all skipped transitions [filled_up_to, h).
+        //    When h == start_timestep (first iteration) or h == 0, the loop is
+        //    empty — no transitions added, mirroring the original empty-plan check.
+        for (int t = filled_up_to; t < h; ++t) {
+            add_timestep_constraints(t);
         }
-        
-        // Make the goal literal imply the goal at this timestep
-        std::string goal_var_name = "goal_at_" + std::to_string(timestep);
+        filled_up_to = h;
+
+        // 2. Place ONE goal literal at the scheduled horizon h.
+        //    Intermediate horizons in the batch do NOT get goal literals; the
+        //    prefix-monotone + frame-axiom argument above covers them.
+        std::string goal_var_name = "goal_at_" + std::to_string(h);
         z3::expr goal_literal = ctx_.bool_const(goal_var_name.c_str());
-        // goal_at_3 -> at_package1_location_3 /\ at_package2_location_3
-        solver_.add(z3::implies(goal_literal, *encoder_.encode_goal(timestep)));
-        
-        // Check satisfiability by assuming a reified goal literal
+        solver_.add(z3::implies(goal_literal, *encoder_.encode_goal(h)));
+
         z3::expr_vector assumptions(ctx_);
         assumptions.push_back(goal_literal);
-        
-        auto formula_end = std::chrono::high_resolution_clock::now();
+
+        auto formula_end  = std::chrono::high_resolution_clock::now();
         auto formula_time = std::chrono::duration<double>(formula_end - formula_start).count();
 
-        //debug_output_constraints(); // Output initial constraints
-
-        // Time solving
         auto solve_start = std::chrono::high_resolution_clock::now();
         z3::check_result result = solver_.check(assumptions);
-        auto solve_end = std::chrono::high_resolution_clock::now();
+        auto solve_end  = std::chrono::high_resolution_clock::now();
         auto solve_time = std::chrono::duration<double>(solve_end - solve_start).count();
 
-        auto step_end = std::chrono::high_resolution_clock::now();
+        auto step_end  = std::chrono::high_resolution_clock::now();
         auto step_time = std::chrono::duration<double>(step_end - step_start).count();
 
-        total_time += step_time; // Accumulate total time
+        total_time += step_time;
 
-        // Collect basic statistics
         stats.add("planner.timesteps_explored");
         stats.add("planner.formula_time", formula_time);
         stats.add("planner.solve_time", solve_time);
         stats.add("planner.total_time", step_time);
 
-        // Print timestep solving metrics in structured format
         double current_memory = MemoryTracker::instance().get_current_memory_mb();
-
-        Logger::instance().timestep_solving(VerbosityLevel::INFO, timestep, {
+        Logger::instance().timestep_solving(VerbosityLevel::INFO, h, {
             {"formula", std::to_string(formula_time) + "s"},
-            {"solve", std::to_string(solve_time) + "s"},
-            {"step", std::to_string(step_time) + "s"},
-            {"mem", std::to_string(static_cast<int>(current_memory)) + "MB"}
+            {"solve",   std::to_string(solve_time) + "s"},
+            {"step",    std::to_string(step_time) + "s"},
+            {"mem",     std::to_string(static_cast<int>(current_memory)) + "MB"}
         });
-        
-        if (result == z3::sat) {
-            Logger::instance().info("\n*** PLAN FOUND at timestep " + std::to_string(timestep) +
-                                   " (total time: " + std::to_string(total_time) + "s) ***");
 
-            // Mark that we found a solution
+        if (result == z3::sat) {
+            z3::model model = solver_.get_model();
             solution_found_ = true;
 
-            // Get and output the model to a file
-            z3::model model = solver_.get_model();
-            /*std::ofstream model_file("plan_model.txt");
-            if (model_file.is_open()) {
-                model_file << "Plan found at timestep " << timestep << std::endl;
-                model_file << model << std::endl;
-                model_file.close();
-                Logger::instance().info("Model saved to plan_model.txt");
-            }*/
-
             try {
-                // Extract plan from model using encoder
-                Plan plan = encoder_.extract_plan(model, timestep);
-                //if (config.is_debug()) {
-                //    Logger::instance().debug(plan.to_string());
-                //}
+                Plan plan = encoder_.extract_plan(model, h);
 
-                // Record successful solve
-                stats.set("planner.plan_length", plan.length());
-                stats.set("planner.solution_timestep", timestep);
+                Logger::instance().info("\n*** PLAN FOUND: horizon=" + std::to_string(h) +
+                    ", actions=" + std::to_string(plan.length()) +
+                    " (total time: " + std::to_string(total_time) + "s) ***");
+
+                stats.set("planner.plan_length",      static_cast<double>(plan.length()));
+                stats.set("planner.solution_horizon", static_cast<double>(h));
                 collect_statistics();
-
-                // Clean up propagator before returning
                 propagator_strategy_->cleanup();
-                return plan; // Return the extracted plan
-
+                return plan;
             } catch (const std::exception& e) {
                 Logger::instance().error("ERROR during plan extraction: " + std::string(e.what()));
-                Logger::instance().info("Returning empty plan.");
-
-                // Collect statistics even on error
                 collect_statistics();
                 propagator_strategy_->cleanup();
-                return Plan(); // Return empty plan on error
+                return Plan();
             }
-            
+
         } else if (result == z3::unsat) {
-            // let's try next iteration
+            // UNSAT at this horizon; advance to the next scheduled horizon.
         } else {
-            Logger::instance().info("Solver returned unknown result at timestep " + std::to_string(timestep));
+            Logger::instance().info("Solver returned unknown result at horizon " +
+                std::to_string(h));
         }
+
+        // Advance to next scheduled horizon.
+        int next_h = schedule_.next(h, config.planner.max_steps);
+        if (next_h <= h) break;  // capped at max_steps — no further progress possible
+        h = next_h;
     }
 
-    Logger::instance().info("\n*** NO PLAN FOUND within " + std::to_string(config.planner.max_steps) + " timesteps, aborting ***");
-    Logger::instance().info("No plan found within " + std::to_string(config.planner.max_steps) + " timesteps.");
-    
-    // Collect statistics after unsuccessful search
+    Logger::instance().info("\n*** NO PLAN FOUND within " +
+        std::to_string(config.planner.max_steps) + " timesteps, aborting ***");
+    Logger::instance().info("No plan found within " +
+        std::to_string(config.planner.max_steps) + " timesteps.");
+
     collect_statistics();
-    
-    // Clean up propagator before returning
     propagator_strategy_->cleanup();
-    return Plan(); // Return empty plan
+    return Plan();
 }
 
 

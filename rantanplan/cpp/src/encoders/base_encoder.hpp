@@ -25,6 +25,23 @@ public:
     virtual std::shared_ptr<z3::expr> encode_goal(int t) = 0;
     virtual std::shared_ptr<z3::expr> encode_parallelism(int t) = 0;
     virtual std::shared_ptr<z3::expr> encode_symmetries(int t) = 0;
+
+    /**
+     * @brief Encode the prefix-monotone (front-loading) symmetry-breaking constraint.
+     *
+     * Adds:  (∀a. ¬a@t)  →  (∀a. ¬a@(t+1))
+     *
+     * This chains across all t during search, forcing all active action steps to
+     * be contiguous at the front of the plan. Combined with at-most-one (pble)
+     * parallelism semantics, this guarantees that if a valid plan of length k < h
+     * exists, the solver can represent it with the actions at 0..k-1 and empty steps
+     * at k..h-1. Frame axioms then propagate the goal state to timestep h, so a
+     * single goal literal at h witnesses any plan length in the batch [prev_h+1..h].
+     *
+     * Only called by SequentialPlanner; DoubleTailPlanner has structurally disjoint
+     * forward/backward stacks that cannot use a single uniform front-loading chain.
+     */
+    virtual std::shared_ptr<z3::expr> encode_prefix_monotone(int t) = 0;
     
     // Parallelism management
     virtual void set_parallelism_strategy(std::unique_ptr<ParallelismStrategy> strategy) = 0;
