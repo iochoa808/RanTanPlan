@@ -29,7 +29,7 @@ namespace rantanplan {
  */
 class RelaxedPlanningGraph {
 public:
-    explicit RelaxedPlanningGraph(Problem& problem);
+    explicit RelaxedPlanningGraph(const Problem& problem);
 
     /**
      * Build the relaxed planning graph from initial state until fixpoint.
@@ -101,26 +101,17 @@ public:
     int get_minimum_steps_lower_bound() const;
 
     /**
-     * Get actions that never appear in any RPG layer after fixpoint analysis.
+     * Get indices of actions that never appear in any RPG layer after fixpoint analysis.
      * These actions are safe to remove because:
      * - Actions with only numeric preconditions would appear immediately
      * - Actions that never appear have unsatisfiable Boolean preconditions
-     * @return vector of pointers to actions that never become applicable
+     * @return vector of action indices that never become applicable
      */
-    std::vector<const Action*> get_removable_actions() const;
-
-    /**
-     * Remove unreachable actions from the problem after RPG analysis.
-     * This method modifies the problem by removing actions that never appear
-     * in any RPG layer, reducing the SAT encoding size.
-     * @return number of actions removed
-     * @warning This modifies the problem and invalidates existing action pointers
-     */
-    size_t remove_unreachable_actions();
+    std::vector<size_t> get_removable_action_indices() const;
 
 
 private:
-    Problem& problem_;
+    const Problem& problem_;
 
     // Layer-based storage using grounded fluent IDs for efficiency
     // Fact encoding: positive facts use fluent_id (0, 1, 2, ...),

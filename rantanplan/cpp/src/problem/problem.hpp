@@ -81,14 +81,13 @@ public:
     const Action* find_action(const std::string& name) const;
     
     /**
-     * Remove an action by index and maintain ID system consistency.
-     * All actions after the removed index will have their IDs decremented by 1.
-     * This ensures action.id() continues to match the vector index.
-     * @param index The index of the action to remove (0-based)
-     * @return true if removal successful, false if index out of bounds
-     * @warning This invalidates any existing pointers/references to actions with index >= removed index
+     * Returns a new Problem with the specified actions removed.
+     * Action IDs in the new Problem are contiguous [0..N-1].
+     * ExprPool and types vector are shared (not copied) via shared_ptr.
+     * @param removed_indices Indices of actions to remove
+     * @return New Problem without the specified actions
      */
-    bool remove_action(size_t index);
+    Problem without_actions(const std::vector<size_t>& removed_indices) const;
     
     // Initial state access
     const std::vector<Assignment>& initial_state() const { return initial_state_; }
@@ -101,7 +100,7 @@ public:
     const Goal& goal(size_t index) const { return goals_[index]; }
     
     // Type access
-    const std::vector<Type>& types() const { return types_; }
+    const std::vector<Type>& types() const { return *types_; }
     const Type* find_type(const std::string& name) const;
     
     // String representation
@@ -119,22 +118,22 @@ public:
     bool is_bool_type(ExprID eid) const {
         const ExprNode& node = pool_->get(eid);
         return node.type_id >= 0 &&
-               static_cast<size_t>(node.type_id) < types_.size() &&
-               types_[node.type_id].is_bool();
+               static_cast<size_t>(node.type_id) < types_->size() &&
+               (*types_)[node.type_id].is_bool();
     }
 
     /// Check if an interned expression has numeric type (int or real).
     bool is_numeric_type(ExprID eid) const {
         const ExprNode& node = pool_->get(eid);
-        if (node.type_id < 0 || static_cast<size_t>(node.type_id) >= types_.size()) return false;
-        return types_[node.type_id].is_int() || types_[node.type_id].is_real();
+        if (node.type_id < 0 || static_cast<size_t>(node.type_id) >= types_->size()) return false;
+        return (*types_)[node.type_id].is_int() || (*types_)[node.type_id].is_real();
     }
 
     /// Get the Type pointer for an interned expression (O(1) via ExprPool).
     const Type* type_for_id(ExprID eid) const {
         const ExprNode& node = pool_->get(eid);
-        if (node.type_id >= 0 && static_cast<size_t>(node.type_id) < types_.size()) {
-            return &types_[node.type_id];
+        if (node.type_id >= 0 && static_cast<size_t>(node.type_id) < types_->size()) {
+            return &(*types_)[node.type_id];
         }
         return nullptr;
     }
@@ -149,7 +148,7 @@ private:
     std::vector<ExprID> grounded_fluents_;
     std::vector<Assignment> initial_state_;
     std::vector<Goal> goals_;
-    std::vector<Type> types_;
+    std::shared_ptr<std::vector<Type>> types_ = std::make_shared<std::vector<Type>>();
     
     // Expression interning pool
     std::shared_ptr<ExprPool> pool_ = std::make_shared<ExprPool>();

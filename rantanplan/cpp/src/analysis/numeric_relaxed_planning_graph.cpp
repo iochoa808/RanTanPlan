@@ -51,7 +51,7 @@ bool NumericRelaxedPlanningGraph::LayerState::operator==(const LayerState& other
 // CONSTRUCTION
 // ============================================================================
 
-NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(Problem& problem, z3::context& ctx)
+NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem, z3::context& ctx)
     : problem_(problem),
       ctx_(ctx),
       z3_optimizer_(std::make_unique<z3::optimize>(ctx)),
@@ -978,7 +978,7 @@ const std::vector<const Action*>& NumericRelaxedPlanningGraph::get_actions_in_la
 // ACTION REMOVAL
 // ============================================================================
 
-std::vector<const Action*> NumericRelaxedPlanningGraph::get_removable_actions() const {
+std::vector<size_t> NumericRelaxedPlanningGraph::get_removable_action_indices() const {
     // Collect all actions that appear in any layer of the numeric RPG
     std::unordered_set<const Action*> reachable_actions;
     for (const auto& layer : action_layers_) {
@@ -988,51 +988,14 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::get_removable_actions() 
     }
 
     // Find actions that never appear in any layer
-    // These are unreachable in the numeric relaxed planning graph, meaning:
-    // 1. Their preconditions (Boolean + numeric) are never satisfied
-    // 2. They can be safely removed from the problem
-    std::vector<const Action*> removable_actions;
-    for (const Action& action : problem_.actions()) {
-        if (reachable_actions.find(&action) == reachable_actions.end()) {
-            removable_actions.push_back(&action);
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < problem_.action_count(); ++i) {
+        if (!reachable_actions.count(&problem_.action(i))) {
+            indices.push_back(i);
         }
     }
 
-    return removable_actions;
-}
-
-size_t NumericRelaxedPlanningGraph::remove_unreachable_actions() {
-    // Get actions that can be safely removed
-    auto removable_actions = get_removable_actions();
-
-    if (removable_actions.empty()) {
-        return 0;
-    }
-
-    // Sort by index in descending order to maintain index validity during removal
-    std::vector<size_t> indices_to_remove;
-    for (const Action* action : removable_actions) {
-        // Find the index of this action
-        for (size_t i = 0; i < problem_.action_count(); ++i) {
-            if (&problem_.action(i) == action) {
-                indices_to_remove.push_back(i);
-                break;
-            }
-        }
-    }
-
-    // Sort indices in descending order
-    std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<size_t>());
-
-    // Remove actions from highest index to lowest
-    size_t removed_count = 0;
-    for (size_t index : indices_to_remove) {
-        if (problem_.remove_action(index)) {
-            removed_count++;
-        }
-    }
-
-    return removed_count;
+    return indices;
 }
 
 // ============================================================================

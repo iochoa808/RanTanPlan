@@ -249,7 +249,11 @@ int main(int argc, char* argv[]) {
         int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
         config.planner.start_timestep = rpg_lower_bound;
 
-        size_t removed_actions = rpg.remove_unreachable_actions();
+        auto removed_indices = rpg.get_removable_action_indices();
+        size_t removed_actions = removed_indices.size();
+        if (!removed_indices.empty()) {
+            planning_problem = planning_problem.without_actions(removed_indices);
+        }
 
         std::ostringstream lower_bound_msg, action_removal_msg;
         lower_bound_msg << "[Lower Bound] Boolean RPG lower bound: " << rpg_lower_bound << " steps";
@@ -288,7 +292,11 @@ int main(int argc, char* argv[]) {
         rantanplan::Logger::instance().info(numeric_lower_bound_msg.str());
 
         // Perform actual removal using Numeric RPG
-        size_t removed_actions = numeric_rpg.remove_unreachable_actions();
+        auto removed_indices = numeric_rpg.get_removable_action_indices();
+        size_t removed_actions = removed_indices.size();
+        if (!removed_indices.empty()) {
+            planning_problem = planning_problem.without_actions(removed_indices);
+        }
 
         std::ostringstream numeric_action_removal_msg;
         double percentage = (double)removed_actions / total_actions * 100.0;

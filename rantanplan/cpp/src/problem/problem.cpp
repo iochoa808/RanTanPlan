@@ -26,8 +26,8 @@ ExprID Problem::intern_from_protobuf(const pb::Expression& pb_expr) {
             found_type = find_type(type_str);
         }
         if (found_type) {
-            for (size_t i = 0; i < types_.size(); ++i) {
-                if (&types_[i] == found_type) {
+            for (size_t i = 0; i < types_->size(); ++i) {
+                if (&(*types_)[i] == found_type) {
                     node.type_id = static_cast<int>(i);
                     break;
                 }
@@ -176,23 +176,38 @@ const Type* Problem::find_type(const std::string& name) const {
     return nullptr;
 }
 
-bool Problem::remove_action(size_t index) {
-    if (index >= actions_.size()) {
-        return false;
+Problem Problem::without_actions(const std::vector<size_t>& removed_indices) const {
+    std::unordered_set<size_t> removed_set(removed_indices.begin(), removed_indices.end());
+
+    Problem result;
+    result.domain_name_ = domain_name_;
+    result.problem_name_ = problem_name_;
+    result.types_ = types_;               // shared_ptr — same vector, Type* stay valid
+    result.pool_ = pool_;                 // shared_ptr — same ExprPool
+    result.objects_ = objects_;            // Type* point into shared types_ — valid
+    result.fluents_ = fluents_;            // Type* point into shared types_ — valid
+    result.grounded_fluents_ = grounded_fluents_;
+    result.initial_state_ = initial_state_;
+    result.goals_ = goals_;
+
+    // Copy all index maps except action (which needs rebuilding)
+    result.object_name_to_index_ = object_name_to_index_;
+    result.fluent_name_to_index_ = fluent_name_to_index_;
+    result.grounded_fluent_to_index_ = grounded_fluent_to_index_;
+    result.type_name_to_ptr_ = type_name_to_ptr_;  // pointers into shared types_ — valid
+
+    // Filter actions, re-index IDs
+    result.actions_.reserve(actions_.size() - removed_set.size());
+    int new_id = 0;
+    for (size_t i = 0; i < actions_.size(); ++i) {
+        if (!removed_set.count(i)) {
+            result.actions_.push_back(actions_[i]);
+            result.actions_.back().set_id(new_id++);
+        }
     }
+    result.build_action_mappings();
 
-    // Remove the action from the vector
-    actions_.erase(actions_.begin() + index);
-
-    // Update IDs for all remaining actions to maintain index == ID invariant
-    for (size_t i = index; i < actions_.size(); ++i) {
-        actions_[i].set_id(static_cast<int>(i));
-    }
-
-    // Rebuild the name-to-index mapping
-    build_action_mappings();
-
-    return true;
+    return result;
 }
 
 std::string Problem::to_string() const {
@@ -261,27 +276,27 @@ void Problem::build_grounded_fluent_mappings() {
 }
 
 void Problem::load_types(const pb::RepeatedTypeDeclaration& pb_types) {
-    types_.clear();
+    types_->clear();
     type_name_to_ptr_.clear();
 
     // ensure basic types are present
-    types_.emplace_back("up:bool");
-    types_.emplace_back("up:int");
-    types_.emplace_back("up:real");
+    types_->emplace_back("up:bool");
+    types_->emplace_back("up:int");
+    types_->emplace_back("up:real");
 
     for (const auto& pb_type : pb_types) {
-        types_.emplace_back(pb_type.type_name());
-        types_.back().set_parent_name(pb_type.parent_type());
+        types_->emplace_back(pb_type.type_name());
+        types_->back().set_parent_name(pb_type.parent_type());
     }
-    
+
     // Build the name to pointer mapping
-    for (auto& type : types_) {
+    for (auto& type : *types_) {
         type_name_to_ptr_[type.name()] = &type;
     }
 }
 
 void Problem::resolve_type_hierarchy() {
-    for (auto& type : types_) {
+    for (auto& type : *types_) {
         if (!type.parent_name().empty()) {
             auto it = type_name_to_ptr_.find(type.parent_name());
             if (it != type_name_to_ptr_.end()) {

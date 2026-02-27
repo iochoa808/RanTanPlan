@@ -120,7 +120,7 @@ public:
      * @param problem The planning problem (grounded)
      * @param ctx Shared Z3 context (passed by reference)
      */
-    NumericRelaxedPlanningGraph(Problem& problem, z3::context& ctx);
+    NumericRelaxedPlanningGraph(const Problem& problem, z3::context& ctx);
     ~NumericRelaxedPlanningGraph() = default;
 
     // Disable copying (Z3 context is not copyable)
@@ -210,15 +210,9 @@ public:
     bool is_action_applicable(const Action& action, int layer) const;
 
     /**
-     * @brief Get actions that can be safely removed (never applicable in any layer)
+     * @brief Get indices of actions that can be safely removed (never applicable in any layer)
      */
-    std::vector<const Action*> get_removable_actions() const;
-
-    /**
-     * @brief Remove unreachable actions from the problem
-     * @return Number of actions removed
-     */
-    size_t remove_unreachable_actions();
+    std::vector<size_t> get_removable_action_indices() const;
 
     /**
      * @brief Get total number of layers
@@ -243,7 +237,7 @@ private:
     // MEMBER VARIABLES - Problem Reference
     // ========================================================================
 
-    Problem& problem_;
+    const Problem& problem_;
 
     // ========================================================================
     // MEMBER VARIABLES - State Tracking

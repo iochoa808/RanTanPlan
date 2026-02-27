@@ -15,7 +15,7 @@ namespace rantanplan {
 const std::vector<const Action*> RelaxedPlanningGraph::empty_action_vector_;
 const std::unordered_set<int> RelaxedPlanningGraph::empty_condition_set_;
 
-RelaxedPlanningGraph::RelaxedPlanningGraph(Problem& problem)
+RelaxedPlanningGraph::RelaxedPlanningGraph(const Problem& problem)
     : problem_(problem), build_time_ms_(0.0) {
     extract_goal_conditions();
 }
@@ -382,7 +382,7 @@ int RelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
     return max_goal_layer;
 }
 
-std::vector<const Action*> RelaxedPlanningGraph::get_removable_actions() const {
+std::vector<size_t> RelaxedPlanningGraph::get_removable_action_indices() const {
     // Collect all actions that appear in any layer of the RPG
     std::unordered_set<const Action*> reachable_actions;
     for (const auto& layer : action_layers_) {
@@ -392,54 +392,14 @@ std::vector<const Action*> RelaxedPlanningGraph::get_removable_actions() const {
     }
 
     // Find actions that never appear in any layer (safe to remove after fixpoint)
-    // This is safe because:
-    // 1. Actions with only numeric preconditions appear in layer 0 immediately
-    // 2. Actions with mixed preconditions appear when Boolean parts are satisfied
-    // 3. Actions that never appear have unsatisfiable Boolean preconditions
-    std::vector<const Action*> removable_actions;
+    std::vector<size_t> indices;
     for (size_t i = 0; i < problem_.action_count(); ++i) {
-        const Action& action = problem_.action(i);
-        if (reachable_actions.find(&action) == reachable_actions.end()) {
-            removable_actions.push_back(&action);
+        if (!reachable_actions.count(&problem_.action(i))) {
+            indices.push_back(i);
         }
     }
 
-    return removable_actions;
-}
-
-size_t RelaxedPlanningGraph::remove_unreachable_actions() {
-    // Get actions that can be safely removed
-    auto removable_actions = get_removable_actions();
-
-    if (removable_actions.empty()) {
-        return 0;
-    }
-
-    // Sort by index in descending order to maintain index validity during removal
-    // We need to remove from highest index to lowest to avoid invalidating indices
-    std::vector<size_t> indices_to_remove;
-    for (const Action* action : removable_actions) {
-        // Find the index of this action
-        for (size_t i = 0; i < problem_.action_count(); ++i) {
-            if (&problem_.action(i) == action) {
-                indices_to_remove.push_back(i);
-                break;
-            }
-        }
-    }
-
-    // Sort indices in descending order
-    std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<size_t>());
-
-    // Remove actions from highest index to lowest
-    size_t removed_count = 0;
-    for (size_t index : indices_to_remove) {
-        if (problem_.remove_action(index)) {
-            removed_count++;
-        }
-    }
-
-    return removed_count;
+    return indices;
 }
 
 
@@ -528,10 +488,10 @@ void RelaxedPlanningGraph::print_reachability_analysis() const {
     }
 
     // Show removable actions (safe to remove after fixpoint analysis)
-    auto removable_actions = get_removable_actions();
-    if (removable_actions.size() > 0) {
-        double savings_percentage = (double)removable_actions.size() / total_actions * 100.0;
-        std::cout << "  Removable actions: " << removable_actions.size() << " ("
+    auto removable_indices = get_removable_action_indices();
+    if (!removable_indices.empty()) {
+        double savings_percentage = (double)removable_indices.size() / total_actions * 100.0;
+        std::cout << "  Removable actions: " << removable_indices.size() << " ("
                   << std::fixed << std::setprecision(1) << savings_percentage << "% potential SAT encoding savings)\n";
     }
 
