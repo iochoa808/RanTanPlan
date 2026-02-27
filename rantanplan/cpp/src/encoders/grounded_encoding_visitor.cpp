@@ -6,172 +6,11 @@
 
 namespace rantanplan {
 
-GroundedEncodingVisitor::GroundedEncodingVisitor(z3::context& ctx, 
+GroundedEncodingVisitor::GroundedEncodingVisitor(z3::context& ctx,
                                                  const Problem* problem,
                                                  Z3VariableFactory* factory)
-    : ctx_(ctx), problem_(problem), current_timestep_(-1), 
+    : ctx_(ctx), problem_(problem), current_timestep_(-1),
       variable_factory_(factory) {}
-
-void GroundedEncodingVisitor::visit_symbol(const std::string& symbol, Expression::Kind kind, const Type* type) {
-    //std::cout << "Visiting symbol: " << symbol << ", kind: " << static_cast<int>(kind) << ", type: " << (type ? type->name() : "null") << std::endl;
-    // Use the factory to create symbol variables with proper types
-    // Note: kind is not used in grounded encoding since all symbols become constants
-    result_ = variable_factory_->create_symbol_variable(symbol, type);
-}
-
-void GroundedEncodingVisitor::visit_integer(int64_t value, Expression::Kind kind) {
-    // Force integer literals to be real to maintain type consistency
-    result_ = ctx_.real_val(static_cast<int>(value));
-}
-
-void GroundedEncodingVisitor::visit_real(const Real& value, Expression::Kind kind) {
-    result_ = ctx_.real_val(value.to_string().c_str());
-}
-
-void GroundedEncodingVisitor::visit_boolean(bool value, Expression::Kind kind) {
-    result_ = ctx_.bool_val(value);
-}
-
-void GroundedEncodingVisitor::visit_function_application(const std::string& function_name,
-                                                       std::span<const Expression> args,
-                                                       Expression::Kind kind) {
-    // Convert arguments first
-    std::vector<z3::expr> z3_args;
-    z3_args.reserve(args.size());
-    
-    for (const auto& arg : args) {
-        clear();
-        accept_visitor(arg, *this);
-        if (!has_result()) {
-            std::cerr << "Error: Failed to convert argument in function application: " << function_name 
-                  << ", args: [";
-            for (size_t i = 0; i < args.size(); ++i) {
-            if (i > 0) std::cerr << ", ";
-            std::cerr << args[i].to_string();
-            }
-            std::cerr << "]" << std::endl;
-            return;
-        }
-        z3_args.push_back(get_expression());
-    }
-
-    // Use Expression's static method to convert function name to operator enum
-    Expression::Operator op = Expression::string_to_operator(function_name);
-    
-    // Handle operators using enum-based checking (more robust than string comparison)
-    switch (op) {
-        case Expression::Operator::AND:
-            result_ = handle_and(z3_args);
-            break;
-        case Expression::Operator::OR:
-            result_ = handle_or(z3_args);
-            break;
-        case Expression::Operator::NOT:
-            result_ = handle_not(z3_args);
-            break;
-        case Expression::Operator::EQUALS:
-            result_ = handle_equals(z3_args);
-            break;
-        case Expression::Operator::LESS_THAN:
-            result_ = handle_less_than(z3_args);
-            break;
-        case Expression::Operator::LESS_EQUAL:
-            result_ = handle_less_equal(z3_args);
-            break;
-        case Expression::Operator::GREATER_THAN:
-            result_ = handle_greater_than(z3_args);
-            break;
-        case Expression::Operator::GREATER_EQUAL:
-            result_ = handle_greater_equal(z3_args);
-            break;
-        case Expression::Operator::PLUS:
-            result_ = handle_plus(z3_args);
-            break;
-        case Expression::Operator::MINUS:
-            result_ = handle_minus(z3_args);
-            break;
-        case Expression::Operator::MULTIPLY:
-            result_ = handle_multiply(z3_args);
-            break;
-        case Expression::Operator::DIVIDE:
-            result_ = handle_divide(z3_args);
-            break;
-        case Expression::Operator::IMPLIES:
-            result_ = handle_implies(z3_args);
-            break;
-        case Expression::Operator::MODULO:
-        case Expression::Operator::ABSOLUTE:
-        case Expression::Operator::MAXIMUM:
-        case Expression::Operator::MINIMUM:
-        case Expression::Operator::IFF:
-            std::cerr << "Warning: Operator not yet implemented in grounded encoding: " 
-                      << function_name << " (enum: " << static_cast<int>(op) << ")" << std::endl;
-            result_.reset();
-            break;
-        case Expression::Operator::UNKNOWN:
-        default:
-            std::cerr << "Warning: Unknown function in grounded encoding: " << function_name << std::endl;
-            result_.reset();
-            break;
-    }
-}
-
-void GroundedEncodingVisitor::visit_fluent_application(const std::string& fluent_name,
-                                                     std::span<const Expression> args,
-                                                     Expression::Kind kind) {
-    // Find the fluent definition
-    const Fluent* fluent_def = nullptr;
-    for (const auto& fluent : problem_->fluents()) {
-        if (fluent.name() == fluent_name) {
-            fluent_def = &fluent;
-            break;
-        }
-    }
-
-    if (!fluent_def) {
-        std::cerr << "Error: Fluent definition not found for: " << fluent_name << std::endl;
-        return;
-    }
-
-    // Create a temporary grounded fluent with the specific parameter values
-    std::vector<Parameter> grounded_params;
-    grounded_params.reserve(args.size());
-    
-    for (size_t i = 0; i < args.size(); ++i) {
-        const auto& arg = args[i];
-        if (arg.is_atom()) {
-            // Get the expected type for this parameter from the fluent definition
-            const Type* param_type = nullptr;
-            if (i < fluent_def->parameters().size()) {
-                param_type = fluent_def->parameters()[i].type();
-            }
-            if (!param_type) {
-                // Fallback to 'object' type if parameter type is missing
-                param_type = problem_->find_type("object");
-            }
-            grounded_params.emplace_back(arg.value().symbol(), param_type);
-        } else {
-            std::cerr << "Error: Non-constant argument in grounded fluent application: " << fluent_name 
-                      << " (kind: " << static_cast<int>(arg.kind()) << ")" << std::endl;
-            return;
-        }
-    }
-
-    // Create a temporary grounded fluent
-    Fluent grounded_fluent(fluent_def->name(), fluent_def->value_type(), grounded_params);
-    
-    // Use current timestep if available, otherwise use 0
-    int timestep = (current_timestep_ >= 0) ? current_timestep_ : 0;
-    
-    // Create the variable using the factory's get_fluent_variable method
-    result_ = variable_factory_->get_fluent_variable(grounded_fluent, timestep);
-}
-
-void GroundedEncodingVisitor::visit_list(const std::vector<Expression>& elements, Expression::Kind kind) {
-    // For grounded encoding, lists are not typically expected
-    std::cerr << "Warning: List expression not supported in grounded encoding" << std::endl;
-    result_.reset();
-}
 
 // Arithmetic and logical operation handlers
 std::optional<z3::expr> GroundedEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
@@ -302,6 +141,142 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_implies(const std::vecto
         return std::nullopt;
     }
     return z3::implies(args[0], args[1]);
+}
+
+// ============================================================================
+// ExprID-based conversion: walks ExprNode directly via ExprPool
+// ============================================================================
+
+std::optional<z3::expr> GroundedEncodingVisitor::convert_from_pool(ExprID id, int timestep) {
+    if (!id.valid()) return std::nullopt;
+
+    int saved_timestep = current_timestep_;
+    if (timestep >= 0) {
+        current_timestep_ = timestep;
+    }
+
+    auto result = convert_node(id);
+
+    current_timestep_ = saved_timestep;
+    return result;
+}
+
+std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
+    const ExprPool& pool = problem_->pool();
+    const ExprNode& node = pool.get(id);
+    auto kind = static_cast<ExprKind>(node.kind);
+
+    // ---- Leaf nodes (no children) ----
+    if (node.children.empty()) {
+        if (std::holds_alternative<std::string>(node.payload)) {
+            const std::string& symbol = std::get<std::string>(node.payload);
+            // Resolve type from type_id
+            const Type* type = nullptr;
+            if (node.type_id >= 0 && node.type_id < static_cast<int>(problem_->types().size())) {
+                type = &problem_->types()[node.type_id];
+            }
+            return variable_factory_->create_symbol_variable(symbol, type);
+        }
+        if (std::holds_alternative<int64_t>(node.payload)) {
+            return ctx_.real_val(static_cast<int>(std::get<int64_t>(node.payload)));
+        }
+        if (std::holds_alternative<double>(node.payload)) {
+            return ctx_.real_val(std::to_string(std::get<double>(node.payload)).c_str());
+        }
+        if (std::holds_alternative<bool>(node.payload)) {
+            return ctx_.bool_val(std::get<bool>(node.payload));
+        }
+        return std::nullopt;
+    }
+
+    // ---- State variable (fluent application) ----
+    if (kind == ExprKind::STATE_VARIABLE) {
+        // children[0] = fluent symbol, children[1..] = arguments
+        const ExprNode& fluent_sym = pool.get(node.children[0]);
+        if (!std::holds_alternative<std::string>(fluent_sym.payload)) {
+            std::cerr << "Error: STATE_VARIABLE first child is not a symbol" << std::endl;
+            return std::nullopt;
+        }
+        const std::string& fluent_name = std::get<std::string>(fluent_sym.payload);
+
+        // Find fluent definition
+        const Fluent* fluent_def = nullptr;
+        for (const auto& fluent : problem_->fluents()) {
+            if (fluent.name() == fluent_name) {
+                fluent_def = &fluent;
+                break;
+            }
+        }
+        if (!fluent_def) {
+            std::cerr << "Error: Fluent definition not found for: " << fluent_name << std::endl;
+            return std::nullopt;
+        }
+
+        // Build grounded parameters from argument children
+        std::vector<Parameter> grounded_params;
+        grounded_params.reserve(node.children.size() - 1);
+        for (size_t i = 1; i < node.children.size(); ++i) {
+            const ExprNode& arg = pool.get(node.children[i]);
+            if (!std::holds_alternative<std::string>(arg.payload)) {
+                std::cerr << "Error: Non-symbol argument in grounded fluent: " << fluent_name << std::endl;
+                return std::nullopt;
+            }
+            const Type* param_type = nullptr;
+            if (i - 1 < fluent_def->parameters().size()) {
+                param_type = fluent_def->parameters()[i - 1].type();
+            }
+            if (!param_type) {
+                param_type = problem_->find_type("object");
+            }
+            grounded_params.emplace_back(std::get<std::string>(arg.payload), param_type);
+        }
+
+        Fluent grounded_fluent(fluent_def->name(), fluent_def->value_type(), grounded_params);
+        int timestep = (current_timestep_ >= 0) ? current_timestep_ : 0;
+        return variable_factory_->get_fluent_variable(grounded_fluent, timestep);
+    }
+
+    // ---- Function application ----
+    if (kind == ExprKind::FUNCTION_APPLICATION) {
+        auto op = static_cast<ExprOperator>(node.op);
+
+        // Recursively convert arguments (children[1..], skipping function symbol)
+        std::vector<z3::expr> z3_args;
+        z3_args.reserve(node.children.size() - 1);
+        for (size_t i = 1; i < node.children.size(); ++i) {
+            auto arg_result = convert_node(node.children[i]);
+            if (!arg_result) {
+                std::cerr << "Error: Failed to convert argument in function application (ExprID path)"
+                          << std::endl;
+                return std::nullopt;
+            }
+            z3_args.push_back(*arg_result);
+        }
+
+        // Dispatch to existing handlers
+        switch (op) {
+            case ExprOperator::AND:           return handle_and(z3_args);
+            case ExprOperator::OR:            return handle_or(z3_args);
+            case ExprOperator::NOT:           return handle_not(z3_args);
+            case ExprOperator::EQUALS:        return handle_equals(z3_args);
+            case ExprOperator::LESS_THAN:     return handle_less_than(z3_args);
+            case ExprOperator::LESS_EQUAL:    return handle_less_equal(z3_args);
+            case ExprOperator::GREATER_THAN:  return handle_greater_than(z3_args);
+            case ExprOperator::GREATER_EQUAL: return handle_greater_equal(z3_args);
+            case ExprOperator::PLUS:          return handle_plus(z3_args);
+            case ExprOperator::MINUS:         return handle_minus(z3_args);
+            case ExprOperator::MULTIPLY:      return handle_multiply(z3_args);
+            case ExprOperator::DIVIDE:        return handle_divide(z3_args);
+            case ExprOperator::IMPLIES:       return handle_implies(z3_args);
+            default:
+                std::cerr << "Warning: Unsupported operator in ExprID conversion: "
+                          << static_cast<int>(op) << std::endl;
+                return std::nullopt;
+        }
+    }
+
+    std::cerr << "Warning: Unhandled ExprNode kind in convert_node: " << node.kind << std::endl;
+    return std::nullopt;
 }
 
 } // namespace rantanplan

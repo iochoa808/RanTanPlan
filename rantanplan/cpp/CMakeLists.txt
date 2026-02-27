@@ -75,7 +75,7 @@ add_executable(rantanplan
     src/problem/real.cpp
     src/problem/atom.cpp
     src/problem/parameter.cpp
-    src/problem/expression.cpp
+    src/problem/expr_pool.cpp
     src/problem/effect_expression.cpp
     src/problem/effect.cpp
     src/problem/object.cpp
@@ -86,7 +86,8 @@ add_executable(rantanplan
     src/problem/plan.cpp
     src/problem/problem.cpp
     src/problem/type.cpp
-    src/problem/visitors/expression_visitor.cpp
+    src/problem/visitors/fluent_collector.cpp
+    src/problem/visitors/fluent_polarity_collector.cpp
     src/encoders/lifted_encoding_visitor.cpp
     src/encoders/grounded_encoding_visitor.cpp
     src/encoders/grounded_encoder.cpp

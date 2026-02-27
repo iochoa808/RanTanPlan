@@ -92,7 +92,7 @@ private:
      * @param expr Planning expression to convert
      * @return Z3 expression
      */
-    z3::expr convert_expression_to_z3(const Expression& expr) const;
+    z3::expr convert_expr_id_to_z3(ExprID eid) const;
     
     /**
      * @brief Check condition 1 of Definition 3.9: prevention of execution
@@ -125,7 +125,7 @@ private:
      * @param var The variable being assigned
      * @return True if assignments commute
      */
-    bool assignments_commute(const EffectExpression& eff1, const EffectExpression& eff2, const Expression& var) const;
+    bool assignments_commute(const EffectExpression& eff1, const EffectExpression& eff2, ExprID var_eid) const;
     
     /**
      * @brief Convert an effect expression to a Z3 expression given a base variable

@@ -45,7 +45,7 @@ public:
     Plan extract_plan(const z3::model& model, int max_timestep) const override;
     
     // Helper functions to convert expressions/effects to Z3 using visitor (implementing base interface)
-    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep = -1) override;
+    std::optional<z3::expr> convert_expr_id_to_z3(ExprID id, int timestep = -1) override;
     std::optional<z3::expr> convert_effect_to_z3(const EffectExpression& effect, int timestep) override;
     
 protected:
@@ -65,10 +65,10 @@ protected:
 
     // Indices for the frame axioms
 
-    // Map from grounded fluent (Expression) to vector of (Action*, EffectExpression*). For example:
-    // epc_index_[at(airplane1, city1)] -> [(move_action*, effect_expr*), (fly_action*, effect_expr*)]
+    // Map from grounded fluent (ExprID) to vector of (Action*, EffectExpression*). For example:
+    // epc_index_[expr_id(at(airplane1, city1))] -> [(move_action*, effect_expr*), (fly_action*, effect_expr*)]
     // where each pair represents an action that can affect the fluent at(airplane1, city1)
-    std::unordered_map<Expression, std::vector<std::pair<const Action*, const EffectExpression*>>> epc_index_;
+    std::unordered_map<ExprID, std::vector<std::pair<const Action*, const EffectExpression*>>> epc_index_;
 
     void build_epc_index();
 

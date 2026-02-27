@@ -2,7 +2,6 @@
 
 #include "../problem/fluent.hpp"
 #include "../problem/action.hpp"
-#include "../problem/expression.hpp"
 #include <z3++.h>
 #include <string>
 #include <unordered_map>

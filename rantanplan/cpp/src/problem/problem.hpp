@@ -3,11 +3,11 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <memory>
 #include "protobuf_aliases.hpp"
 #include "real.hpp"
 #include "atom.hpp"
 #include "parameter.hpp"
-#include "expression.hpp"
 #include "effect_expression.hpp"
 #include "effect.hpp"
 #include "object.hpp"
@@ -16,6 +16,7 @@
 #include "assignment.hpp"
 #include "action.hpp"
 #include "type.hpp"
+#include "expr_pool.hpp"
 
 namespace rantanplan {
 
@@ -27,8 +28,8 @@ namespace rantanplan {
  * 
  * Note that this class is the only one that has qualified objects. That is,
  * Fluent objects for example represent the schema of a fluent, not a grounded
- * instance. The grounded instances are represented by the Expression class.
- * The Expression class then has utility methods to check the type of an Expression,
+ * instance. The grounded instances are represented by ExprID handles into ExprPool.
+ * ExprPool provides query methods to check the type of an expression (ExprKind),
  * such as whether it is a fluent application, function application, or an atom.
  */
 class Problem {
@@ -58,31 +59,19 @@ public:
     bool has_fluent(const std::string& name) const;
     const Fluent* find_fluent(const std::string& name) const;
 
-    // Fluent modification
-    // NOTE: Fluent IDs are automatically set to match their position in the fluents_ vector.
-    // This provides a stable ID system where fluent.id() == index in fluents() vector.
-    // IDs are maintained across add_fluent(), set_fluents(), and load_fluents() operations.
-    void add_fluent(const Fluent& fluent);
-    void set_fluents(const std::vector<Fluent>& fluents);
-
     // Grounded fluent access
     // NOTE: Grounded fluents are stored with IDs matching their position in the grounded_fluents_ vector.
     // This provides a stable ID system where grounded_fluent_id == index in grounded_fluents() vector.
-    const std::vector<Expression>& grounded_fluents() const { return grounded_fluents_; }
+    const std::vector<ExprID>& grounded_fluents() const { return grounded_fluents_; }
     size_t grounded_fluent_count() const { return grounded_fluents_.size(); }
-    const Expression& grounded_fluent(int id) const { return grounded_fluents_[id]; }
-
-    // Grounded fluent modification
-    void add_grounded_fluent(const Expression& fluent);
-    void set_grounded_fluents(const std::vector<Expression>& fluents);
+    ExprID grounded_fluent(int id) const { return grounded_fluents_[id]; }
 
     // Grounded fluent lookup
     /**
-     * Find the index of a grounded fluent expression using O(1) hash map lookup.
-     * @param fluent The fluent expression to find
+     * Find the index of a grounded fluent by ExprID using O(1) hash map lookup.
      * @return fluent index (0-based), or -1 if not found
      */
-    int find_grounded_fluent_index(const Expression& fluent) const;
+    int find_grounded_fluent_index(ExprID eid) const;
 
     // Action access
     const std::vector<Action>& actions() const { return actions_; }
@@ -91,13 +80,6 @@ public:
     bool has_action(const std::string& name) const;
     const Action* find_action(const std::string& name) const;
     
-    // Action modification
-    // NOTE: Action IDs are automatically set to match their position in the actions_ vector.
-    // This provides a stable ID system where action.id() == index in actions() vector.
-    // IDs are maintained across add_action(), set_actions(), and load_actions() operations.
-    void add_action(const Action& action);
-    void set_actions(const std::vector<Action>& actions);
-
     /**
      * Remove an action by index and maintain ID system consistency.
      * All actions after the removed index will have their IDs decremented by 1.
@@ -107,14 +89,6 @@ public:
      * @warning This invalidates any existing pointers/references to actions with index >= removed index
      */
     bool remove_action(size_t index);
-
-    /**
-     * Remove an action by pointer and maintain ID system consistency.
-     * @param action Pointer to the action to remove
-     * @return true if removal successful, false if action not found
-     * @warning This invalidates any existing pointers/references to actions after the removed action
-     */
-    bool remove_action(const Action* action);
     
     // Initial state access
     const std::vector<Assignment>& initial_state() const { return initial_state_; }
@@ -130,29 +104,40 @@ public:
     const std::vector<Type>& types() const { return types_; }
     const Type* find_type(const std::string& name) const;
     
-    // Setters
-    void set_domain_name(const std::string& domain_name) { domain_name_ = domain_name; }
-    void set_problem_name(const std::string& problem_name) { problem_name_ = problem_name; }
-    
-    void add_object(const Object& object);
-    void set_objects(const std::vector<Object>& objects);
-    
-    void add_initial_assignment(const Assignment& assignment) { initial_state_.push_back(assignment); }
-    void set_initial_state(const std::vector<Assignment>& initial_state) { initial_state_ = initial_state; }
-    
-    void add_goal(const Goal& goal) { goals_.push_back(goal); }
-    void set_goals(const std::vector<Goal>& goals) { goals_ = goals; }
-    
-    // Convenience methods
-    void clear_all();
-    bool is_empty() const;
-    
     // String representation
     std::string to_string() const;
     
-    // Operators
-    bool operator==(const Problem& other) const;
-    bool operator!=(const Problem& other) const { return !(*this == other); }
+    // Expression pool access
+    /// Returns the shared expression pool (interned expressions).
+    const ExprPool& pool() const { return *pool_; }
+    std::shared_ptr<ExprPool> pool_ptr() const { return pool_; }
+
+    /// Intern a protobuf Expression directly into the pool (no Expression intermediary).
+    ExprID intern_from_protobuf(const pb::Expression& pb_expr);
+
+    /// Check if an interned expression has boolean type (O(1) via ExprPool).
+    bool is_bool_type(ExprID eid) const {
+        const ExprNode& node = pool_->get(eid);
+        return node.type_id >= 0 &&
+               static_cast<size_t>(node.type_id) < types_.size() &&
+               types_[node.type_id].is_bool();
+    }
+
+    /// Check if an interned expression has numeric type (int or real).
+    bool is_numeric_type(ExprID eid) const {
+        const ExprNode& node = pool_->get(eid);
+        if (node.type_id < 0 || static_cast<size_t>(node.type_id) >= types_.size()) return false;
+        return types_[node.type_id].is_int() || types_[node.type_id].is_real();
+    }
+
+    /// Get the Type pointer for an interned expression (O(1) via ExprPool).
+    const Type* type_for_id(ExprID eid) const {
+        const ExprNode& node = pool_->get(eid);
+        if (node.type_id >= 0 && static_cast<size_t>(node.type_id) < types_.size()) {
+            return &types_[node.type_id];
+        }
+        return nullptr;
+    }
 
 private:
     std::string domain_name_;
@@ -161,23 +146,27 @@ private:
     std::vector<Object> objects_;
     std::vector<Fluent> fluents_;
     std::vector<Action> actions_;
-    std::vector<Expression> grounded_fluents_;
+    std::vector<ExprID> grounded_fluents_;
     std::vector<Assignment> initial_state_;
     std::vector<Goal> goals_;
     std::vector<Type> types_;
     
+    // Expression interning pool
+    std::shared_ptr<ExprPool> pool_ = std::make_shared<ExprPool>();
+
     // Quick lookup mappings
     std::unordered_map<std::string, size_t> object_name_to_index_;
     std::unordered_map<std::string, size_t> fluent_name_to_index_;
     std::unordered_map<std::string, size_t> action_name_to_index_;
-    std::unordered_map<Expression, size_t> grounded_fluent_to_index_;
+    std::unordered_map<ExprID, size_t> grounded_fluent_to_index_;
     std::unordered_map<std::string, const Type*> type_name_to_ptr_;
     
     void build_object_mappings();
     void build_fluent_mappings();
     void build_action_mappings();
     void build_grounded_fluent_mappings();
-    void collect_all_grounded_fluents();
+
+    void collect_grounded_fluents();
     void load_types(const pb::RepeatedTypeDeclaration& pb_types);
     void resolve_type_hierarchy();
     void load_objects(const pb::RepeatedObjectDeclaration& pb_objects);

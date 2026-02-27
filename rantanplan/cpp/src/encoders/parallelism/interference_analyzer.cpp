@@ -36,9 +36,6 @@ void InterferenceAnalyzer::initialize(const Problem& problem) {
                               " actions (memory: " + std::to_string(static_cast<int>(current_memory)) + "MB)");
 
     build_interference_graph();
-    // DEBUG: Uncomment to see detailed analysis
-    //print_action_analysis();
-    //output_interference_graph_dot();
 }
 
 void InterferenceAnalyzer::build_interference_graph() {
@@ -69,15 +66,15 @@ void InterferenceAnalyzer::build_interference_graph() {
 
 void InterferenceAnalyzer::analyze_action_conflicts() {
     const auto& actions = problem_->actions();
-    
+
     // Expensive O(n²) preprocessing: analyze all pairs of actions for conflicts
     // Results are cached in the interference graph for fast lookup during execution
     for (size_t i = 0; i < actions.size(); ++i) {
         for (size_t j = 0; j < actions.size(); ++j) {
-            if (i != j) {  // Don't check action against itself
+            if (i != j) {
                 const Action& action1 = actions[i];
                 const Action& action2 = actions[j];
-                
+
                 if (actions_interfere(action1, action2)) {
                     // Cache directional interference: action1 interferes with action2
                     int node1 = action1.id();
@@ -90,20 +87,19 @@ void InterferenceAnalyzer::analyze_action_conflicts() {
 }
 
 bool InterferenceAnalyzer::actions_interfere(const Action& a1, const Action& a2) const {
-    // Get analysis for both actions
+     // Get analysis for both actions
     auto it1 = action_analysis_.find(a1);
     auto it2 = action_analysis_.find(a2);
-    
+
     if (it1 == action_analysis_.end() || it2 == action_analysis_.end()) {
         return false;
     }
-    
+
     const ActionAnalysis& analysis_a1 = it1->second;
     const ActionAnalysis& analysis_a2 = it2->second;
-    
-    // Helper lambda to check if two sets have non-empty intersection
-    auto has_intersection = [](const std::unordered_set<Expression>& set1, 
-                              const std::unordered_set<Expression>& set2) -> bool {
+
+    auto has_intersection = [](const std::unordered_set<ExprID>& set1,
+                              const std::unordered_set<ExprID>& set2) -> bool {
         for (const auto& elem : set1) {
             if (set2.find(elem) != set2.end()) {
                 return true;
@@ -111,7 +107,7 @@ bool InterferenceAnalyzer::actions_interfere(const Action& a1, const Action& a2)
         }
         return false;
     };
-    
+
     // 1. Check if effects of a1 can prevent execution of a2
     // Effects of a1 interfere with preconditions of a2
     if (has_intersection(analysis_a1.positive_boolean_effects, analysis_a2.negative_boolean_preconditions) ||
@@ -119,7 +115,7 @@ bool InterferenceAnalyzer::actions_interfere(const Action& a1, const Action& a2)
         has_intersection(analysis_a1.numeric_effects, analysis_a2.numeric_preconditions)) {
         return true;
     }
-    
+
     // 2. Check if effects of a1 can affect the conditions of a2's conditional effects
     if (has_intersection(analysis_a1.all_effects, analysis_a2.conditional_effect_fluents)) {
         return true;
@@ -136,19 +132,16 @@ bool InterferenceAnalyzer::actions_interfere(const Action& a1, const Action& a2)
         has_intersection(analysis_a1.numeric_effects, analysis_a2.numeric_effects)) {
         return true;
     }
-    
+
     return false;
 }
 
 bool InterferenceAnalyzer::has_interference(const Action& a1, const Action& a2) const {
-
-    // Fast O(1) lookup in the pre-built interference graph using action IDs
     return interference_graph_.has_edge(a1.id(), a2.id());
 }
 
 InterferenceAnalyzer::ActionAnalysis InterferenceAnalyzer::analyze_action(const Action& action) const {
     ActionAnalysis analysis;
-    // Analyze preconditions and effects
     analyze_preconditions(action, analysis);
     analyze_effects(action, analysis);
     return analysis;
@@ -158,56 +151,57 @@ void InterferenceAnalyzer::analyze_preconditions(const Action& action, ActionAna
     if (!action.has_precondition()) {
         return;
     }
-    
-    // Use the fluent polarity collector to analyze preconditions and split by polarity
-    FluentPolarityCollector collector;
-    collector.collect_from_expression(action.precondition());
-    
-    for (const auto& [fluent, polarity] : collector.get_boolean_fluents()) {
+
+    FluentPolarityCollector collector(*problem_);
+    collector.collect_from_id(action.precondition_id());
+
+    for (const auto& [eid, polarity] : collector.get_boolean_fluents()) {
         if (polarity == FluentPolarityCollector::Polarity::POSITIVE) {
-            analysis.positive_boolean_preconditions.insert(fluent);
+            analysis.positive_boolean_preconditions.insert(eid);
         } else {
-            analysis.negative_boolean_preconditions.insert(fluent);
+            analysis.negative_boolean_preconditions.insert(eid);
         }
     }
-    // Store numeric preconditions
-    analysis.numeric_preconditions = collector.get_numeric_fluents();
+    for (ExprID eid : collector.get_numeric_fluents()) {
+        analysis.numeric_preconditions.insert(eid);
+    }
 }
 
 void InterferenceAnalyzer::analyze_effects(const Action& action, ActionAnalysis& analysis) const {
     for (const Effect& effect : action.effects()) {
-        const Expression& fluent = effect.fluent();
-        analysis.all_effects.insert(fluent);
+        const EffectExpression& eff_expr = effect.effect_expression();
+        ExprID fluent_eid = eff_expr.fluent_id();
+        analysis.all_effects.insert(fluent_eid);
 
         if (effect.is_conditional()) {
-            FluentPolarityCollector collector;
-            collector.collect_from_expression(effect.condition());
-            for (const auto& fluent_in_cond : collector.get_boolean_fluents()) {
-                analysis.conditional_effect_fluents.insert(fluent_in_cond.first);
+            FluentPolarityCollector collector(*problem_);
+            collector.collect_from_id(effect.effect_expression().condition_id());
+            for (const auto& [eid, _] : collector.get_boolean_fluents()) {
+                analysis.conditional_effect_fluents.insert(eid);
             }
-            for (const auto& fluent_in_cond : collector.get_numeric_fluents()) {
-                analysis.conditional_effect_fluents.insert(fluent_in_cond);
+            for (ExprID eid : collector.get_numeric_fluents()) {
+                analysis.conditional_effect_fluents.insert(eid);
             }
         }
 
-        // If we have a Boolean assignment ... 
-        if (effect.kind() == EffectExpression::Kind::ASSIGN && fluent.type() && fluent.type()->is_bool()) {
-            const Expression& value = effect.value();
-            if (value.is_atom() && value.value().is_boolean()) {
-                if (value.value().boolean()) { // If we're assigning true
-                    analysis.positive_boolean_effects.insert(fluent);
+        if (effect.kind() == EffectExpression::Kind::ASSIGN && problem_->is_bool_type(fluent_eid)) {
+            ExprID value_eid = eff_expr.value_id();
+            const ExprPool& pool = problem_->pool();
+            if (pool.is_constant(value_eid) && pool.payload_is_bool(value_eid)) {
+                if (pool.payload_bool(value_eid)) {
+                    analysis.positive_boolean_effects.insert(fluent_eid);
                 } else {
-                    analysis.negative_boolean_effects.insert(fluent);
+                    analysis.negative_boolean_effects.insert(fluent_eid);
                 }
             }
         } else {
-            // This handles all numeric effects: ASSIGN, INCREASE, and DECREASE
-            analysis.numeric_effects.insert(fluent);
-            
+            // This handles all numeric effects
+            analysis.numeric_effects.insert(fluent_eid);
+
             // Collect dependencies from the RHS of the numeric effect
-            FluentPolarityCollector collector;
-            collector.collect_from_expression(effect.value());
-            for (const auto& dep : collector.get_numeric_fluents()) {
+            FluentPolarityCollector collector(*problem_);
+            collector.collect_from_id(effect.effect_expression().value_id());
+            for (ExprID dep : collector.get_numeric_fluents()) {
                 analysis.numeric_effect_dependencies.insert(dep);
             }
         }
@@ -220,97 +214,87 @@ void InterferenceAnalyzer::print_action_analysis() const {
         std::cout << "No action analysis available" << std::endl;
         return;
     }
-    
+
     std::cout << "\n=== ACTION ANALYSIS RESULTS ===" << std::endl;
     std::cout << "Total actions analyzed: " << action_analysis_.size() << std::endl;
-    
+
     for (const auto& [action, analysis] : action_analysis_) {
         std::cout << "\nAction: " << action.name() << std::endl;
-        
-        // Print positive boolean preconditions
+
         if (!analysis.positive_boolean_preconditions.empty()) {
             std::cout << "  Positive boolean preconditions:" << std::endl;
-            for (const auto& fluent : analysis.positive_boolean_preconditions) {
-                std::cout << "    " << fluent.to_string() << std::endl;
+            for (const auto& eid : analysis.positive_boolean_preconditions) {
+                std::cout << "    " << problem_->pool().to_string(eid) << std::endl;
             }
         }
-        
-        // Print negative boolean preconditions
+
         if (!analysis.negative_boolean_preconditions.empty()) {
             std::cout << "  Negative boolean preconditions:" << std::endl;
-            for (const auto& fluent : analysis.negative_boolean_preconditions) {
-                std::cout << "    " << fluent.to_string() << std::endl;
+            for (const auto& eid : analysis.negative_boolean_preconditions) {
+                std::cout << "    " << problem_->pool().to_string(eid) << std::endl;
             }
         }
-        
-        // Print numeric preconditions
+
         if (!analysis.numeric_preconditions.empty()) {
             std::cout << "  Numeric preconditions:" << std::endl;
-            for (const auto& fluent : analysis.numeric_preconditions) {
-                std::cout << "    " << fluent.to_string() << std::endl;
+            for (const auto& eid : analysis.numeric_preconditions) {
+                std::cout << "    " << problem_->pool().to_string(eid) << std::endl;
             }
         }
-        
-        // Print boolean effects (true)
+
         if (!analysis.positive_boolean_effects.empty()) {
             std::cout << "  Boolean effects (make true):" << std::endl;
-            for (const auto& fluent : analysis.positive_boolean_effects) {
-                std::cout << "    " << fluent.to_string() << std::endl;
+            for (const auto& eid : analysis.positive_boolean_effects) {
+                std::cout << "    " << problem_->pool().to_string(eid) << std::endl;
             }
         }
-        
-        // Print boolean effects (false)
+
         if (!analysis.negative_boolean_effects.empty()) {
             std::cout << "  Boolean effects (make false):" << std::endl;
-            for (const auto& fluent : analysis.negative_boolean_effects) {
-                std::cout << "    " << fluent.to_string() << std::endl;
+            for (const auto& eid : analysis.negative_boolean_effects) {
+                std::cout << "    " << problem_->pool().to_string(eid) << std::endl;
             }
         }
-        
-        // Print numeric effects
+
         if (!analysis.numeric_effects.empty()) {
             std::cout << "  Numeric effects:" << std::endl;
-            for (const auto& fluent : analysis.numeric_effects) {
-                std::cout << "    " << fluent.to_string() << std::endl;
+            for (const auto& eid : analysis.numeric_effects) {
+                std::cout << "    " << problem_->pool().to_string(eid) << std::endl;
             }
         }
-        
-        // Summary
-        int total_preconditions = analysis.positive_boolean_preconditions.size() + 
-                                 analysis.negative_boolean_preconditions.size() + 
+
+        int total_preconditions = analysis.positive_boolean_preconditions.size() +
+                                 analysis.negative_boolean_preconditions.size() +
                                  analysis.numeric_preconditions.size();
-        int total_effects = analysis.positive_boolean_effects.size() + 
-                           analysis.negative_boolean_effects.size() + 
+        int total_effects = analysis.positive_boolean_effects.size() +
+                           analysis.negative_boolean_effects.size() +
                            analysis.numeric_effects.size();
         std::cout << "  Summary: " << total_preconditions << " preconditions, " << total_effects << " effects" << std::endl;
     }
-    
+
     std::cout << "\n=== END ACTION ANALYSIS ===" << std::endl;
 }
 
 std::vector<const Action*> InterferenceAnalyzer::topological_sort_actions(const std::vector<const Action*>& actions) const {
     std::vector<const Action*> result;
-    
+
     if (actions.size() <= 1) {
         result = actions; // No sorting needed
     } else {
-        // Convert actions to node IDs
         std::vector<int> node_ids;
-        
+
         for (const Action* action : actions) {
             int node_id = action->id();
-            if (node_id >= 0) { // Valid node ID
+            if (node_id >= 0) {
                 node_ids.push_back(node_id);
             }
         }
-        
+
         if (node_ids.empty()) {
-            result = actions; // No valid node IDs found
+            result = actions;
         } else {
-            // Use the graph's topological sort
             std::vector<int> sorted_node_ids = interference_graph_.topological_sort(node_ids);
-            
-            // Convert back to actions using direct problem access
+
             for (int node_id : sorted_node_ids) {
                 if (node_id >= 0 && static_cast<size_t>(node_id) < problem_->action_count()) {
                     result.push_back(&problem_->action(node_id));
@@ -318,7 +302,7 @@ std::vector<const Action*> InterferenceAnalyzer::topological_sort_actions(const 
             }
         }
     }
-    
+
     return result;
 }
 
@@ -330,31 +314,29 @@ void InterferenceAnalyzer::output_interference_graph_dot(const std::string& file
     }
 
     Logger::instance().info("Writing interference graph to " + filename);
-    
+
     file << "digraph InterferenceGraph {" << std::endl;
     file << "    rankdir=LR;" << std::endl;
     file << "    node [shape=box, style=rounded];" << std::endl;
     file << "    edge [color=red, arrowhead=vee];" << std::endl;
     file << std::endl;
-    
-    // Write nodes (actions)
+
     for (size_t i = 0; i < problem_->action_count(); ++i) {
         const Action* action = &problem_->action(i);
         if (action) {
             file << "    " << i << " [label=\"" << action->name() << "\"];" << std::endl;
         }
     }
-    
+
     file << std::endl;
-    
-    // Write edges (interferences)
+
     for (int node_id = 0; node_id < static_cast<int>(problem_->action_count()); ++node_id) {
         const auto& neighbors = interference_graph_.get_neighbours(node_id);
         for (int neighbor : neighbors) {
             file << "    " << node_id << " -> " << neighbor << ";" << std::endl;
         }
     }
-    
+
     file << "}" << std::endl;
     file.close();
 

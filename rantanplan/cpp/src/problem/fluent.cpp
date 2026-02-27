@@ -18,17 +18,13 @@ std::string Fluent::to_string() const {
         oss << ")";
     }
     oss << " : " << (value_type_ ? value_type_->name() : "null");
-    if (has_default_value()) {
-        oss << " = " << default_value_->to_string();
-    }
     return oss.str();
 }
 
 bool Fluent::operator==(const Fluent& other) const {
     return name_ == other.name_ &&
            value_type_ == other.value_type_ &&
-           parameters_ == other.parameters_ &&
-           default_value_ == other.default_value_;
+           parameters_ == other.parameters_;
 }
 
 } // namespace rantanplan

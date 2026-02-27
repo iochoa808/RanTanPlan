@@ -1,33 +1,137 @@
 #include "problem.hpp"
 #include <sstream>
+#include <unordered_set>
 
 namespace rantanplan {
+
+// ============================================================================
+// Expression interning
+// ============================================================================
+
+ExprID Problem::intern_from_protobuf(const pb::Expression& pb_expr) {
+    ExprNode node;
+
+    // Convert kind
+    node.kind = static_cast<int>(pb_expr.kind());
+
+    // Resolve type string to type_id
+    const std::string& type_str = pb_expr.type();
+    if (!type_str.empty()) {
+        std::string resolved = type_str;
+        if (type_str == "up:integer") resolved = "up:int";
+        else if (type_str == "up:boolean") resolved = "up:bool";
+
+        const Type* found_type = find_type(resolved);
+        if (!found_type && resolved != type_str) {
+            found_type = find_type(type_str);
+        }
+        if (found_type) {
+            for (size_t i = 0; i < types_.size(); ++i) {
+                if (&types_[i] == found_type) {
+                    node.type_id = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (pb_expr.has_atom()) {
+        // Atom expression — extract payload
+        const auto& pb_atom = pb_expr.atom();
+        ExprKind kind = static_cast<ExprKind>(pb_expr.kind());
+
+        if (pb_atom.has_symbol()) {
+            std::string symbol = pb_atom.symbol();
+            // Apply UP operator mapping for function/fluent symbols
+            if (kind == ExprKind::FUNCTION_SYMBOL || kind == ExprKind::FLUENT_SYMBOL) {
+                symbol = map_up_operator(symbol);
+            }
+            node.payload = symbol;
+            // Extract operator for function symbols
+            if (kind == ExprKind::FUNCTION_SYMBOL) {
+                node.op = static_cast<int>(string_to_expr_operator(symbol));
+            }
+        } else if (pb_atom.has_int_()) {
+            node.payload = pb_atom.int_();
+        } else if (pb_atom.has_real()) {
+            double val = static_cast<double>(pb_atom.real().numerator()) /
+                         static_cast<double>(pb_atom.real().denominator());
+            node.payload = val;
+        } else if (pb_atom.has_boolean()) {
+            node.payload = pb_atom.boolean();
+        }
+    }
+
+    if (pb_expr.list_size() > 0) {
+        // Compound expression — recursively intern children
+        ExprKind kind = static_cast<ExprKind>(pb_expr.kind());
+
+        node.children.reserve(pb_expr.list_size());
+        for (int i = 0; i < pb_expr.list_size(); ++i) {
+            const auto& child_pb = pb_expr.list(i);
+
+            // For the first child in function applications, apply operator mapping
+            if (i == 0 && kind == ExprKind::FUNCTION_APPLICATION &&
+                child_pb.has_atom() && child_pb.atom().has_symbol()) {
+                // Create a copy with mapped operator symbol
+                pb::Expression mapped_child = child_pb;
+                std::string mapped = map_up_operator(child_pb.atom().symbol());
+                mapped_child.mutable_atom()->set_symbol(mapped);
+                ExprID child_id = intern_from_protobuf(mapped_child);
+                node.children.push_back(child_id);
+
+                // Extract operator from first child
+                node.op = static_cast<int>(string_to_expr_operator(mapped));
+            } else {
+                node.children.push_back(intern_from_protobuf(child_pb));
+            }
+        }
+    }
+
+    return pool_->intern(std::move(node));
+}
+
+void Problem::collect_grounded_fluents() {
+    // Collect unique grounded fluents from initial state assignments.
+    // Assignment ExprIDs are already populated during construction.
+    std::unordered_set<ExprID> seen_fluents;
+    grounded_fluents_.clear();
+
+    for (const auto& assignment : initial_state_) {
+        ExprID fluent_eid = assignment.fluent_id();
+        if (fluent_eid.valid() && seen_fluents.insert(fluent_eid).second) {
+            grounded_fluents_.push_back(fluent_eid);
+        }
+    }
+
+    build_grounded_fluent_mappings();
+}
 
 Problem::Problem(const pb::Problem& pb_problem) {
     load_types(pb_problem.types());
     resolve_type_hierarchy();
-    
+
     // Load objects
     load_objects(pb_problem.objects());
-    
+
     // Load fluents
     load_fluents(pb_problem.fluents());
-    
-    // Load actions
+
+    // Load actions (interns expressions via intern_from_protobuf)
     load_actions(pb_problem.actions());
-    
-    // Load initial state
+
+    // Load initial state (interns expressions via intern_from_protobuf)
     for (const auto& pb_assignment : pb_problem.initial_state()) {
         initial_state_.emplace_back(pb_assignment, this);
     }
-    
-    // Load goals
+
+    // Load goals (interns expressions via intern_from_protobuf)
     for (const auto& pb_goal : pb_problem.goals()) {
         goals_.emplace_back(pb_goal, this);
     }
 
-    // Collect all grounded fluents systematically
-    collect_all_grounded_fluents();
+    // Collect grounded fluents from initial state assignments
+    collect_grounded_fluents();
 }
 
 bool Problem::has_object(const std::string& name) const {
@@ -72,48 +176,6 @@ const Type* Problem::find_type(const std::string& name) const {
     return nullptr;
 }
 
-void Problem::add_object(const Object& object) {
-    objects_.push_back(object);
-    build_object_mappings();
-}
-
-void Problem::set_objects(const std::vector<Object>& objects) {
-    objects_ = objects;
-    build_object_mappings();
-}
-
-void Problem::add_fluent(const Fluent& fluent) {
-    fluents_.push_back(fluent);
-    // Set the ID to match the vector index
-    fluents_.back().set_id(fluents_.size() - 1);
-    build_fluent_mappings();
-}
-
-void Problem::set_fluents(const std::vector<Fluent>& fluents) {
-    fluents_ = fluents;
-    // Set IDs to match vector indices
-    for (size_t i = 0; i < fluents_.size(); ++i) {
-        fluents_[i].set_id(static_cast<int>(i));
-    }
-    build_fluent_mappings();
-}
-
-void Problem::add_action(const Action& action) {
-    actions_.push_back(action);
-    // Set the ID to match the vector index
-    actions_.back().set_id(actions_.size() - 1);
-    build_action_mappings();
-}
-
-void Problem::set_actions(const std::vector<Action>& actions) {
-    actions_ = actions;
-    // Set IDs to match vector indices
-    for (size_t i = 0; i < actions_.size(); ++i) {
-        actions_[i].set_id(static_cast<int>(i));
-    }
-    build_action_mappings();
-}
-
 bool Problem::remove_action(size_t index) {
     if (index >= actions_.size()) {
         return false;
@@ -131,44 +193,6 @@ bool Problem::remove_action(size_t index) {
     build_action_mappings();
 
     return true;
-}
-
-bool Problem::remove_action(const Action* action) {
-    // Find the action index
-    for (size_t i = 0; i < actions_.size(); ++i) {
-        if (&actions_[i] == action) {
-            return remove_action(i);
-        }
-    }
-    return false;
-}
-
-void Problem::add_grounded_fluent(const Expression& fluent) {
-    grounded_fluents_.push_back(fluent);
-    build_grounded_fluent_mappings();
-}
-
-void Problem::set_grounded_fluents(const std::vector<Expression>& fluents) {
-    grounded_fluents_ = fluents;
-    build_grounded_fluent_mappings();
-}
-
-void Problem::clear_all() {
-    objects_.clear();
-    fluents_.clear();
-    actions_.clear();
-    grounded_fluents_.clear();
-    initial_state_.clear();
-    goals_.clear();
-    object_name_to_index_.clear();
-    fluent_name_to_index_.clear();
-    action_name_to_index_.clear();
-    grounded_fluent_to_index_.clear();
-}
-
-bool Problem::is_empty() const {
-    return objects_.empty() && fluents_.empty() && actions_.empty() &&
-           grounded_fluents_.empty() && initial_state_.empty() && goals_.empty();
 }
 
 std::string Problem::to_string() const {
@@ -191,8 +215,8 @@ std::string Problem::to_string() const {
     }
 
     oss << "\n\nGrounded Fluents (" << grounded_fluents_.size() << "):";
-    for (const auto& fluent : grounded_fluents_) {
-        oss << "\n  " << fluent.to_string();
+    for (const auto& eid : grounded_fluents_) {
+        oss << "\n  " << pool().to_string(eid);
     }
     
     oss << "\n\nInitial State (" << initial_state_.size() << " assignments):";
@@ -206,16 +230,6 @@ std::string Problem::to_string() const {
     }
     
     return oss.str();
-}
-
-bool Problem::operator==(const Problem& other) const {
-    return domain_name_ == other.domain_name_ &&
-           problem_name_ == other.problem_name_ &&
-           objects_ == other.objects_ &&
-           fluents_ == other.fluents_ &&
-           actions_ == other.actions_ &&
-           initial_state_ == other.initial_state_ &&
-           goals_ == other.goals_;
 }
 
 void Problem::build_object_mappings() {
@@ -322,29 +336,9 @@ void Problem::load_actions(const pb::RepeatedAction& pb_actions) {
     build_action_mappings();
 }
 
-void Problem::collect_all_grounded_fluents() {
-    grounded_fluents_.clear();
-    std::unordered_set<Expression> unique_fluents;
-
-    // Helper function to add a fluent if it's not already present
-    auto add_unique_fluent = [&](const Expression& fluent) {
-        if (unique_fluents.find(fluent) == unique_fluents.end()) {
-            unique_fluents.insert(fluent);
-            grounded_fluents_.push_back(fluent);
-        }
-    };
-
-    // Collect grounded fluents from initial state
-    for (const auto& assignment : initial_state_) {
-        add_unique_fluent(assignment.fluent());
-    }
-
-    // Build the lookup mappings
-    build_grounded_fluent_mappings();
-}
-
-int Problem::find_grounded_fluent_index(const Expression& fluent) const {
-    auto it = grounded_fluent_to_index_.find(fluent);
+int Problem::find_grounded_fluent_index(ExprID eid) const {
+    if (!eid.valid()) return -1;
+    auto it = grounded_fluent_to_index_.find(eid);
     return (it != grounded_fluent_to_index_.end()) ? static_cast<int>(it->second) : -1;
 }
 

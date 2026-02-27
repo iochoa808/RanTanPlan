@@ -5,7 +5,6 @@
 #include <optional>
 #include "protobuf_aliases.hpp"
 #include "parameter.hpp"
-#include "expression.hpp"
 #include "type.hpp"
 
 namespace rantanplan {
@@ -34,17 +33,12 @@ public:
     size_t parameter_count() const { return parameters_.size(); }
     const Parameter& parameter(size_t index) const { return parameters_[index]; }
     
-    bool has_default_value() const { return default_value_.has_value(); }
-    const Expression& default_value() const { return default_value_.value(); }
-    
     // Setters
     void set_name(const std::string& name) { name_ = name; }
     void set_id(int id) { id_ = id; }
     void set_value_type(const Type* value_type) { value_type_ = value_type; }
     void add_parameter(const Parameter& param) { parameters_.push_back(param); }
     void set_parameters(const std::vector<Parameter>& parameters) { parameters_ = parameters; }
-    void set_default_value(const Expression& default_value) { default_value_ = default_value; }
-    void clear_default_value() { default_value_.reset(); }
     
     // Convenience methods
     bool is_predicate() const {
@@ -80,7 +74,6 @@ private:
     int id_;
     const Type* value_type_ = nullptr;
     std::vector<Parameter> parameters_;
-    std::optional<Expression> default_value_;
 };
 
 } // namespace rantanplan

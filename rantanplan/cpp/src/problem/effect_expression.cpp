@@ -1,53 +1,63 @@
 #include "effect_expression.hpp"
+#include "problem.hpp"
 #include <sstream>
 
 namespace rantanplan {
 
-EffectExpression::EffectExpression(const pb::EffectExpression& pb_effect_expr, const Problem* problem) 
-    : kind_(static_cast<Kind>(pb_effect_expr.kind())),
-      fluent_(pb_effect_expr.fluent(), problem),
-      value_(pb_effect_expr.value(), problem) {
-    
+EffectExpression::EffectExpression(const pb::EffectExpression& pb_effect_expr, Problem* problem)
+    : kind_(static_cast<Kind>(pb_effect_expr.kind())) {
+
+    pool_ = &problem->pool();
+
+    fluent_id_ = problem->intern_from_protobuf(pb_effect_expr.fluent());
+    value_id_ = problem->intern_from_protobuf(pb_effect_expr.value());
+
     if (pb_effect_expr.has_condition()) {
-        condition_ = Expression(pb_effect_expr.condition(), problem);
+        condition_id_ = problem->intern_from_protobuf(pb_effect_expr.condition());
+        // Check if condition is a trivial "true" constant
+        has_condition_ = condition_id_.valid() && !pool_->is_true_constant(condition_id_);
     }
-    
+
     for (const auto& var : pb_effect_expr.forall()) {
-        forall_variables_.emplace_back(var);
+        forall_variable_ids_.push_back(problem->intern_from_protobuf(var));
     }
 }
 
 std::string EffectExpression::to_string() const {
     std::ostringstream oss;
-    
+
     // Add forall quantifiers if present
-    if (is_quantified()) {
+    if (is_quantified() && pool_) {
         oss << "(forall (";
-        for (size_t i = 0; i < forall_variables_.size(); ++i) {
+        for (size_t i = 0; i < forall_variable_ids_.size(); ++i) {
             if (i > 0) oss << " ";
-            oss << forall_variables_[i].to_string();
+            oss << pool_->to_string(forall_variable_ids_[i]);
         }
         oss << ") ";
     }
-    
+
     // Add condition if present
-    if (is_conditional()) {
-        oss << "(when " << condition_->to_string() << " ";
+    if (is_conditional() && pool_) {
+        oss << "(when " << pool_->to_string(condition_id_) << " ";
     }
-    
+
     // Add the effect
-    oss << "(" << kind_to_string() << " " << fluent_.to_string() << " " << value_.to_string() << ")";
-    
+    if (pool_) {
+        oss << "(" << kind_to_string() << " " << pool_->to_string(fluent_id_) << " " << pool_->to_string(value_id_) << ")";
+    } else {
+        oss << "(" << kind_to_string() << " eid:" << fluent_id_.id << " eid:" << value_id_.id << ")";
+    }
+
     // Close condition if present
     if (is_conditional()) {
         oss << ")";
     }
-    
+
     // Close forall if present
     if (is_quantified()) {
         oss << ")";
     }
-    
+
     return oss.str();
 }
 
@@ -62,10 +72,10 @@ std::string EffectExpression::kind_to_string() const {
 
 bool EffectExpression::operator==(const EffectExpression& other) const {
     return kind_ == other.kind_ &&
-           fluent_ == other.fluent_ &&
-           value_ == other.value_ &&
-           condition_ == other.condition_ &&
-           forall_variables_ == other.forall_variables_;
+           fluent_id_ == other.fluent_id_ &&
+           value_id_ == other.value_id_ &&
+           condition_id_ == other.condition_id_ &&
+           forall_variable_ids_ == other.forall_variable_ids_;
 }
 
 } // namespace rantanplan

@@ -1,37 +1,38 @@
 #pragma once
 
 #include "protobuf_aliases.hpp"
-#include "expression.hpp"
+#include "expr_pool.hpp"
 
 namespace rantanplan {
 
+// Forward declaration
+class Problem;
+
 /**
  * @brief Goal
- * 
+ *
  * Represents a goal condition in the planning problem.
  */
 class Goal {
 public:
     // Constructors
     Goal() = default;
-    Goal(const Expression& goal_expr) : goal_expr_(goal_expr) {}
-    Goal(const pb::Goal& pb_goal, const Problem* problem);
-    
+    Goal(const pb::Goal& pb_goal, Problem* problem);
+
     // Accessors
-    const Expression& goal_expression() const { return goal_expr_; }
-    
-    // Setters
-    void set_goal_expression(const Expression& goal_expr) { goal_expr_ = goal_expr; }
-    
+    ExprID goal_id() const { return goal_id_; }
+    void set_goal_id(ExprID id) { goal_id_ = id; }
+
     // String representation
-    std::string to_string() const { return goal_expr_.to_string(); }
-    
+    std::string to_string() const;
+
     // Operators
-    bool operator==(const Goal& other) const { return goal_expr_ == other.goal_expr_; }
+    bool operator==(const Goal& other) const { return goal_id_ == other.goal_id_; }
     bool operator!=(const Goal& other) const { return !(*this == other); }
 
 private:
-    Expression goal_expr_;
+    ExprID goal_id_ = EXPR_NULL;
+    const ExprPool* pool_ = nullptr;
 };
 
 } // namespace rantanplan
