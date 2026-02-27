@@ -1,8 +1,100 @@
 #include "effect_expression.hpp"
 #include "problem.hpp"
 #include <sstream>
+#include <algorithm>
 
 namespace rantanplan {
+
+// ============================================================================
+// ValueKind classification
+// ============================================================================
+
+ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
+    if (!value_id.valid()) return ValueKind::CONSTANT;
+
+    const ExprNode& node = pool.get(value_id);
+    ExprKind kind = static_cast<ExprKind>(node.kind);
+
+    // Leaf nodes
+    if (node.children.empty()) {
+        switch (kind) {
+            case ExprKind::CONSTANT:
+            case ExprKind::PARAMETER:   // grounded — bound to a constant
+            case ExprKind::VARIABLE:    // grounded — bound to a constant
+                return ValueKind::CONSTANT;
+            case ExprKind::STATE_VARIABLE:
+            case ExprKind::FLUENT_SYMBOL:
+                return ValueKind::LINEAR;  // x is linear (1·x)
+            default:
+                return ValueKind::NONLINEAR; // conservative
+        }
+    }
+
+    // State variable with children (grounded fluent application like (fuel airplane1))
+    if (kind == ExprKind::STATE_VARIABLE) {
+        return ValueKind::LINEAR;
+    }
+
+    // Function application — classify based on operator
+    ExprOperator op = static_cast<ExprOperator>(node.op);
+
+    // First, classify all children
+    ValueKind max_child = ValueKind::CONSTANT;
+    for (ExprID child_id : node.children) {
+        ValueKind ck = classify_value_kind(child_id, pool);
+        max_child = std::max(max_child, ck);
+    }
+
+    // If all children are constant, result is constant regardless of operator
+    if (max_child == ValueKind::CONSTANT) {
+        return ValueKind::CONSTANT;
+    }
+
+    switch (op) {
+        case ExprOperator::PLUS:
+        case ExprOperator::MINUS:
+            // Addition/subtraction preserve linearity: linear ± linear = linear
+            return max_child;
+
+        case ExprOperator::MULTIPLY: {
+            // Multiplication: constant × X preserves X's kind.
+            // linear × linear (or higher) = nonlinear.
+            if (node.children.size() == 2) {
+                ValueKind lhs = classify_value_kind(node.children[0], pool);
+                ValueKind rhs = classify_value_kind(node.children[1], pool);
+                if (lhs == ValueKind::CONSTANT) return rhs;
+                if (rhs == ValueKind::CONSTANT) return lhs;
+            }
+            return ValueKind::NONLINEAR;
+        }
+
+        case ExprOperator::DIVIDE: {
+            // Division by constant preserves kind. Division by non-constant is nonlinear.
+            if (node.children.size() == 2) {
+                ValueKind divisor = classify_value_kind(node.children[1], pool);
+                if (divisor == ValueKind::CONSTANT) {
+                    return classify_value_kind(node.children[0], pool);
+                }
+            }
+            return ValueKind::NONLINEAR;
+        }
+
+        case ExprOperator::ABSOLUTE:
+        case ExprOperator::MODULO:
+        case ExprOperator::MAXIMUM:
+        case ExprOperator::MINIMUM:
+            // Piecewise/nonsmooth — nonlinear if any child is non-constant
+            return ValueKind::NONLINEAR;
+
+        default:
+            // Unknown operator — conservative
+            return ValueKind::NONLINEAR;
+    }
+}
+
+// ============================================================================
+// EffectExpression
+// ============================================================================
 
 EffectExpression::EffectExpression(const pb::EffectExpression& pb_effect_expr, Problem* problem)
     : kind_(static_cast<Kind>(pb_effect_expr.kind())) {
@@ -11,6 +103,9 @@ EffectExpression::EffectExpression(const pb::EffectExpression& pb_effect_expr, P
 
     fluent_id_ = problem->intern_from_protobuf(pb_effect_expr.fluent());
     value_id_ = problem->intern_from_protobuf(pb_effect_expr.value());
+
+    // Classify the value expression structure
+    value_kind_ = classify_value_kind(value_id_, *pool_);
 
     if (pb_effect_expr.has_condition()) {
         condition_id_ = problem->intern_from_protobuf(pb_effect_expr.condition());
@@ -41,12 +136,16 @@ std::string EffectExpression::to_string() const {
         oss << "(when " << pool_->to_string(condition_id_) << " ";
     }
 
-    // Add the effect
+    // Add the effect with value kind annotation
     if (pool_) {
-        oss << "(" << kind_to_string() << " " << pool_->to_string(fluent_id_) << " " << pool_->to_string(value_id_) << ")";
+        oss << "(" << kind_to_string() << " " << pool_->to_string(fluent_id_)
+            << " " << pool_->to_string(value_id_) << ")";
     } else {
         oss << "(" << kind_to_string() << " eid:" << fluent_id_.id << " eid:" << value_id_.id << ")";
     }
+
+    // Annotate with value kind
+    oss << " [" << value_kind_to_string(value_kind_) << "]";
 
     // Close condition if present
     if (is_conditional()) {

@@ -27,6 +27,7 @@ public:
 
     // Convenience methods that delegate to the effect expression
     EffectExpression::Kind kind() const { return effect_expr_.kind(); }
+    ValueKind value_kind() const { return effect_expr_.value_kind(); }
     bool is_conditional() const { return effect_expr_.is_conditional(); }
     bool is_quantified() const { return effect_expr_.is_quantified(); }
 
