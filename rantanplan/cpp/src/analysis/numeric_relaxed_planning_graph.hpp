@@ -507,12 +507,6 @@ private:
     void add_numeric_constraints(z3::solver& solver, int layer) const;
 
     /**
-     * @brief Convert ExprID to Z3 using visitor
-     */
-    z3::expr convert_expr_id_to_z3(ExprID eid, int layer) const;
-
-
-    /**
      * @brief Extract numeric value from Z3 model
      *
      * Converts Z3 expression (int, real, fraction) to double.

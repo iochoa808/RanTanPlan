@@ -88,13 +88,6 @@ private:
     z3::expr apply_action_effects_substitution(const Action& action, const z3::expr& target_expr) const;
     
     /**
-     * @brief Convert planning expression to Z3 expression using the visitor
-     * @param expr Planning expression to convert
-     * @return Z3 expression
-     */
-    z3::expr convert_expr_id_to_z3(ExprID eid) const;
-    
-    /**
      * @brief Check condition 1 of Definition 3.9: prevention of execution
      * @param source Source action
      * @param target Target action

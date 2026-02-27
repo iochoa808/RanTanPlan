@@ -142,13 +142,6 @@ private:
     std::unordered_map<std::string, std::vector<const Object*>> get_objects_by_type() const;
     
     /**
-     * @brief Convert an ExprID to Z3 using the lifted encoding visitor
-     * @param eid The ExprID to convert
-     * @return Z3 expression, or nullopt if conversion failed
-     */
-    z3::expr convert_expr_id_to_z3(ExprID eid);
-
-    /**
      * @brief Check if an expression involves a specific object
      * @param eid The ExprID to check
      * @param obj_name Name of the object to look for

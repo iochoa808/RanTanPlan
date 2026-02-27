@@ -155,10 +155,6 @@ SMTSymmetryChecker::get_objects_by_type() const {
 }
 
 
-z3::expr SMTSymmetryChecker::convert_expr_id_to_z3(ExprID eid) {
-    return visitor_.convert_from_pool(eid);
-}
-
 std::vector<std::pair<ExprID, ExprID>> SMTSymmetryChecker::get_symmetric_variable_pairs(
     const std::string& obj1, const std::string& obj2) const {
     std::vector<std::pair<ExprID, ExprID>> variable_pairs;

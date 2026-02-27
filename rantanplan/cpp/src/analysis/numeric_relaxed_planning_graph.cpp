@@ -571,7 +571,7 @@ double NumericRelaxedPlanningGraph::compute_bound_optimization(
 
     // Get the fluent at the next layer
     ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
-    z3::expr fluent_next = convert_expr_id_to_z3(fluent_eid, next_layer);
+    z3::expr fluent_next = grounded_visitor_.convert_from_pool(fluent_eid, next_layer);
 
     // Get current bounds for persistence
     NumericBounds current_bounds = NumericBounds(0.0);
@@ -591,7 +591,7 @@ double NumericRelaxedPlanningGraph::compute_bound_optimization(
 
     // Option 2+: Each effect from applicable actions
     for (const EffectExpression* effect_expr : effects) {
-        z3::expr effect_value = convert_expr_id_to_z3(effect_expr->value_id(), prev_layer);
+        z3::expr effect_value = grounded_visitor_.convert_from_pool(effect_expr->value_id(), prev_layer);
         
         // Build the constraint based on effect kind
         z3::expr effect_constraint = ctx_.bool_val(false);  // default: impossible
@@ -604,14 +604,14 @@ double NumericRelaxedPlanningGraph::compute_bound_optimization(
                 
             case EffectExpression::Kind::INCREASE: {
                 // INCREASE: fluent' = fluent + value
-                z3::expr fluent_prev = convert_expr_id_to_z3(fluent_eid, prev_layer);
+                z3::expr fluent_prev = grounded_visitor_.convert_from_pool(fluent_eid, prev_layer);
                 effect_constraint = (fluent_next == fluent_prev + effect_value);
                 break;
             }
 
             case EffectExpression::Kind::DECREASE: {
                 // DECREASE: fluent' = fluent - value
-                z3::expr fluent_prev = convert_expr_id_to_z3(fluent_eid, prev_layer);
+                z3::expr fluent_prev = grounded_visitor_.convert_from_pool(fluent_eid, prev_layer);
                 effect_constraint = (fluent_next == fluent_prev - effect_value);
                 break;
             }
@@ -696,7 +696,7 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
         action_map[action_var_name] = &action;
 
         // action_var → precondition
-        z3::expr precondition = convert_expr_id_to_z3(action.precondition_id(), layer);
+        z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
         solver.add(z3::implies(action_var, precondition));
     }
 
@@ -734,7 +734,7 @@ bool NumericRelaxedPlanningGraph::is_action_applicable_smt(const Action& action,
     add_layer_constraints(solver, layer);
 
     // Add action precondition
-    z3::expr precondition = convert_expr_id_to_z3(action.precondition_id(), layer);
+    z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
     solver.add(precondition);
 
     // Check satisfiability
@@ -760,7 +760,7 @@ void NumericRelaxedPlanningGraph::add_boolean_constraints(z3::solver& solver, in
     // For each Boolean fluent, add constraints based on its reachability state
     for (const auto& [fluent_id, reach] : layer_state.boolean_reachability) {
         ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
-        z3::expr fluent_z3 = convert_expr_id_to_z3(fluent_eid, layer);
+        z3::expr fluent_z3 = grounded_visitor_.convert_from_pool(fluent_eid, layer);
 
         // Add constraints based on reachability state
         switch (reach) {
@@ -787,18 +787,13 @@ void NumericRelaxedPlanningGraph::add_numeric_constraints(z3::solver& solver, in
     // For each numeric fluent, add bound constraints
     for (const auto& [fluent_id, bounds] : layer_state.numeric_bounds) {
         ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
-        z3::expr fluent_z3 = convert_expr_id_to_z3(fluent_eid, layer);
+        z3::expr fluent_z3 = grounded_visitor_.convert_from_pool(fluent_eid, layer);
 
         // Add lower and upper bound constraints
         solver.add(fluent_z3 >= ctx_.real_val(std::to_string(bounds.lower).c_str()));
         solver.add(fluent_z3 <= ctx_.real_val(std::to_string(bounds.upper).c_str()));
     }
 }
-
-z3::expr NumericRelaxedPlanningGraph::convert_expr_id_to_z3(ExprID eid, int layer) const {
-    return grounded_visitor_.convert_from_pool(eid, layer);
-}
-
 
 
 double NumericRelaxedPlanningGraph::extract_numeric_value(const z3::expr& z3_value) const {
@@ -919,7 +914,7 @@ bool NumericRelaxedPlanningGraph::are_goals_achievable() const {
 
     // Add all goal expressions
     for (const Goal& goal : problem_.goals()) {
-        z3::expr goal_expr = convert_expr_id_to_z3(goal.goal_id(), final_layer);
+        z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), final_layer);
         solver.add(goal_expr);
     }
 
@@ -948,7 +943,7 @@ int NumericRelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
         add_layer_constraints(solver, mid);
 
         for (const Goal& goal : problem_.goals()) {
-            z3::expr goal_expr = convert_expr_id_to_z3(goal.goal_id(), mid);
+            z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), mid);
             solver.add(goal_expr);
         }
 

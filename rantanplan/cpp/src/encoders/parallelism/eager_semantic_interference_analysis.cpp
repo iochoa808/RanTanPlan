@@ -153,7 +153,7 @@ z3::expr EagerSemanticInterferenceAnalysis::apply_action_effects_substitution(co
         const EffectExpression& eff_expr = effect.effect_expression();
         
         // Convert fluent to Z3
-        z3::expr fluent_z3 = convert_expr_id_to_z3(eff_expr.fluent_id());
+        z3::expr fluent_z3 = grounded_visitor_->convert_from_pool(eff_expr.fluent_id(), -1);
 
         // Create the new value expression based on effect type
         z3::expr new_value_z3 = convert_effect_to_z3(eff_expr, fluent_z3);
@@ -162,7 +162,7 @@ z3::expr EagerSemanticInterferenceAnalysis::apply_action_effects_substitution(co
         z3::expr substitution_value = new_value_z3;
         if (effect.is_conditional()) {
             // For conditional effects: fluent -> (condition ? new_value : fluent)
-            z3::expr condition_z3 = convert_expr_id_to_z3(effect.effect_expression().condition_id());
+            z3::expr condition_z3 = grounded_visitor_->convert_from_pool(effect.effect_expression().condition_id(), -1);
             substitution_value = z3::ite(condition_z3, new_value_z3, fluent_z3);
         }
         
@@ -185,10 +185,6 @@ z3::expr EagerSemanticInterferenceAnalysis::apply_action_effects_substitution(co
     
     z3::expr result = target_expr;
     return result.substitute(from_vector, to_vector);
-}
-
-z3::expr EagerSemanticInterferenceAnalysis::convert_expr_id_to_z3(ExprID eid) const {
-    return grounded_visitor_->convert_from_pool(eid, -1);
 }
 
 bool EagerSemanticInterferenceAnalysis::check1(const Action& a1, const Action& a2) const {
@@ -247,7 +243,7 @@ bool EagerSemanticInterferenceAnalysis::check2(const Action& a1, const Action& a
 
     // For each affected variable, check if happening and sequential execution differ
     for (ExprID var_eid : affected_var_eids) {
-        z3::expr var_z3 = convert_expr_id_to_z3(var_eid);
+        z3::expr var_z3 = grounded_visitor_->convert_from_pool(var_eid, -1);
         
         // Create happening effect: apply a1 and a2 in parallel
         z3::expr var_after_happening = var_z3;
@@ -315,7 +311,7 @@ bool EagerSemanticInterferenceAnalysis::assignments_commute(const EffectExpressi
     // Check if two assignments to the same variable commute
     // According to Definition 3.3: T ⊨ (exp2{x → exp1} = exp1{x → exp2})
 
-    z3::expr var_z3 = convert_expr_id_to_z3(var_eid);
+    z3::expr var_z3 = grounded_visitor_->convert_from_pool(var_eid, -1);
     
     // Create the proper effect expressions based on effect type
     z3::expr exp1 = convert_effect_to_z3(eff1, var_z3);
@@ -384,17 +380,17 @@ z3::expr EagerSemanticInterferenceAnalysis::convert_precondition_to_z3(const Act
     if (!action.has_precondition()) {
         return z3_context_->bool_val(true);
     }
-    return convert_expr_id_to_z3(action.precondition_id());
+    return grounded_visitor_->convert_from_pool(action.precondition_id(), -1);
 }
 
 z3::expr EagerSemanticInterferenceAnalysis::convert_effect_to_z3(const EffectExpression& effect, const z3::expr& base_var_z3) const {
     switch (effect.kind()) {
         case EffectExpression::Kind::ASSIGN:
-            return convert_expr_id_to_z3(effect.value_id());
+            return grounded_visitor_->convert_from_pool(effect.value_id(), -1);
         case EffectExpression::Kind::INCREASE:
-            return base_var_z3 + convert_expr_id_to_z3(effect.value_id());
+            return base_var_z3 + grounded_visitor_->convert_from_pool(effect.value_id(), -1);
         case EffectExpression::Kind::DECREASE:
-            return base_var_z3 - convert_expr_id_to_z3(effect.value_id());
+            return base_var_z3 - grounded_visitor_->convert_from_pool(effect.value_id(), -1);
     }
     throw std::runtime_error("Unknown effect kind");
 }

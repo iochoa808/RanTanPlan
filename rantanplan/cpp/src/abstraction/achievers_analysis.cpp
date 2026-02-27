@@ -309,10 +309,6 @@ bool AchieversAnalysis::fluent_sets_intersect(const std::unordered_set<ExprID>& 
     return false;
 }
 
-z3::expr AchieversAnalysis::convert_expr_id_to_z3(ExprID eid, int timestep) {
-    return visitor_->convert_from_pool(eid, timestep);
-}
-
 void AchieversAnalysis::initialize_persistent_solver() {
     std::cout << "  Initializing persistent solver with bounds constraints..." << std::flush;
     auto start = std::chrono::high_resolution_clock::now();
@@ -331,7 +327,7 @@ void AchieversAnalysis::add_bounds_constraints_to_solver() {
     // Add bounds constraints for all state variables in both timesteps
     for (const auto& [fluent_eid, interval] : state_variable_bounds_) {
         // Add bounds for current state (timestep 0)
-        z3::expr fluent_current = convert_expr_id_to_z3(fluent_eid, 0);
+        z3::expr fluent_current = visitor_->convert_from_pool(fluent_eid, 0);
         if (!std::isinf(interval.lower())) {
             persistent_solver_->add(fluent_current >= ctx_->real_val(std::to_string(interval.lower()).c_str()));
         }
@@ -340,7 +336,7 @@ void AchieversAnalysis::add_bounds_constraints_to_solver() {
         }
 
         // Add bounds for next state (timestep 1)
-        z3::expr fluent_next = convert_expr_id_to_z3(fluent_eid, 1);
+        z3::expr fluent_next = visitor_->convert_from_pool(fluent_eid, 1);
         if (!std::isinf(interval.lower())) {
             persistent_solver_->add(fluent_next >= ctx_->real_val(std::to_string(interval.lower()).c_str()));
         }
@@ -359,9 +355,9 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
     for (const auto& effect_wrapper : action.effects()) {
         const EffectExpression& effect = effect_wrapper.effect_expression();
 
-        z3::expr fluent_current = convert_expr_id_to_z3(effect.fluent_id(), 0);
-        z3::expr fluent_next = convert_expr_id_to_z3(effect.fluent_id(), 1);
-        z3::expr value_z3 = convert_expr_id_to_z3(effect.value_id(), 0);
+        z3::expr fluent_current = visitor_->convert_from_pool(effect.fluent_id(), 0);
+        z3::expr fluent_next = visitor_->convert_from_pool(effect.fluent_id(), 1);
+        z3::expr value_z3 = visitor_->convert_from_pool(effect.value_id(), 0);
 
         // Handle different effect kinds
         z3::expr effect_constraint = ctx_->bool_val(true);
@@ -379,7 +375,7 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
 
         // Handle conditional effects
         if (effect.is_conditional()) {
-            z3::expr condition_z3 = convert_expr_id_to_z3(effect.condition_id(), 0);
+            z3::expr condition_z3 = visitor_->convert_from_pool(effect.condition_id(), 0);
             effect_constraint = z3::implies(condition_z3, effect_constraint);
         }
 
@@ -399,15 +395,15 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
 
     for (ExprID fluent_eid : condition_fluents) {
         if (!modified_fluents.contains(fluent_eid)) {
-            z3::expr fluent_current = convert_expr_id_to_z3(fluent_eid, 0);
-            z3::expr fluent_next = convert_expr_id_to_z3(fluent_eid, 1);
+            z3::expr fluent_current = visitor_->convert_from_pool(fluent_eid, 0);
+            z3::expr fluent_next = visitor_->convert_from_pool(fluent_eid, 1);
             persistent_solver_->add(fluent_current == fluent_next);
         }
     }
 
     // Step 3: Encode the transition requirement: condition becomes true
-    z3::expr condition_current = convert_expr_id_to_z3(condition_eid, 0);
-    z3::expr condition_next = convert_expr_id_to_z3(condition_eid, 1);
+    z3::expr condition_current = visitor_->convert_from_pool(condition_eid, 0);
+    z3::expr condition_next = visitor_->convert_from_pool(condition_eid, 1);
 
     // The key requirement: condition is false at current state, true at next state
     persistent_solver_->add(!condition_current);  // condition is currently false
