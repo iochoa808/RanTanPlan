@@ -109,7 +109,7 @@ private:
     std::unordered_set<ExprID> collect_fluents_in_expression(ExprID eid);
     std::unordered_set<ExprID> get_action_modified_fluents(const Action& action);
     bool fluent_sets_intersect(const std::unordered_set<ExprID>& set1, const std::unordered_set<ExprID>& set2);
-    std::optional<z3::expr> convert_expr_id_to_z3(ExprID eid, int timestep);
+    z3::expr convert_expr_id_to_z3(ExprID eid, int timestep);
 
     // SMT solver management methods for push/pop approach
     void initialize_persistent_solver();

@@ -180,14 +180,13 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_precondition_constraints(in
         z3::expr action_var = variable_factory_.get_action_variable(*action, t);
 
         // Convert precondition to Z3
-        auto precond_z3 = convert_expr_id_to_z3(action->precondition_id(), t);
-        assert(precond_z3 && "Failed to convert precondition to Z3");
+        z3::expr precond_z3 = convert_expr_id_to_z3(action->precondition_id(), t);
 
         // Get substitution
         auto prev_substitution = create_prev_substitution(action_index, t);
 
         // Apply substitution σ^t_prev(i)
-        z3::expr substituted_precond = apply_substitution(*precond_z3, prev_substitution, t);
+        z3::expr substituted_precond = apply_substitution(precond_z3, prev_substitution, t);
 
         // a^t_i → Pre^t_ai σ^t_prev(i)
         z3::expr constraint = z3::implies(action_var, substituted_precond);
@@ -248,8 +247,8 @@ z3::expr R2EGroundedEncoder::encode_single_effect_with_carry_forward(const Effec
     // Handle conditional vs unconditional effects
     z3::expr executed_value = prev_value;
     if (effect.is_conditional()) {
-        auto condition_z3 = convert_expr_id_to_z3(effect.effect_expression().condition_id(), timestep);
-        z3::expr substituted_condition = apply_substitution(*condition_z3, prev_substitution, timestep);
+        z3::expr condition_z3 = convert_expr_id_to_z3(effect.effect_expression().condition_id(), timestep);
+        z3::expr substituted_condition = apply_substitution(condition_z3, prev_substitution, timestep);
         executed_value = z3::ite(substituted_condition, new_value, prev_value);
     } else {
         executed_value = new_value;
@@ -263,7 +262,7 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_linking_constraints(int t) 
 
     // Equation (4): x^{t+1} = x^t_ρx(|Ax|)
     for (const auto& [var_eid, modifying_actions] : variable_modifiers_) {
-        auto var_t_plus_1 = convert_expr_id_to_z3(var_eid, t + 1);
+        z3::expr var_t_plus_1 = convert_expr_id_to_z3(var_eid, t + 1);
 
         // The final chain variable corresponds to the last modifying action
         const Action* last_action = modifying_actions.back();
@@ -272,16 +271,16 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_linking_constraints(int t) 
         // and get the corresponding chain variable with it
         z3::expr final_chain = get_chain_variable(var_eid, t, final_action_idx);
 
-        z3::expr linking_constraint = (*var_t_plus_1 == final_chain);
+        z3::expr linking_constraint = (var_t_plus_1 == final_chain);
         constraints.push_back(linking_constraint);
     }
 
     // For variables not modified by any action, add x^{t+1} = x^t
     for (ExprID eid : problem_.grounded_fluents()) {
         if (variable_modifiers_.find(eid) == variable_modifiers_.end()) {
-            auto var_t = convert_expr_id_to_z3(eid, t);
-            auto var_t_plus_1 = convert_expr_id_to_z3(eid, t + 1);
-            constraints.push_back(*var_t_plus_1 == *var_t);
+            z3::expr var_t = convert_expr_id_to_z3(eid, t);
+            z3::expr var_t_plus_1 = convert_expr_id_to_z3(eid, t + 1);
+            constraints.push_back(var_t_plus_1 == var_t);
         }
     }
 
@@ -320,11 +319,9 @@ z3::expr R2EGroundedEncoder::apply_substitution(const z3::expr& expr,
     z3::expr_vector to(ctx_);
 
     for (const auto& [var_eid, replacement] : substitution) {
-        auto expr_z3 = convert_expr_id_to_z3(var_eid, timestep);
-        if (expr_z3) {
-            from.push_back(*expr_z3);
-            to.push_back(replacement);
-        }
+        z3::expr expr_z3 = convert_expr_id_to_z3(var_eid, timestep);
+        from.push_back(expr_z3);
+        to.push_back(replacement);
     }
     if (from.empty()) return expr;
 
@@ -335,9 +332,8 @@ z3::expr R2EGroundedEncoder::apply_substitution(const z3::expr& expr,
 z3::expr R2EGroundedEncoder::create_effect_value_z3(const EffectExpression& eff_expr, const z3::expr& fluent_z3,
                                                    const std::unordered_map<ExprID, z3::expr>& prev_substitution, int timestep) {
     // Convert effect value with proper substitution
-    auto value_z3 = convert_expr_id_to_z3(eff_expr.value_id(), timestep);
-    assert(value_z3 && "Failed to convert effect value to Z3");
-    z3::expr substituted_value = apply_substitution(*value_z3, prev_substitution, timestep);
+    z3::expr value_z3 = convert_expr_id_to_z3(eff_expr.value_id(), timestep);
+    z3::expr substituted_value = apply_substitution(value_z3, prev_substitution, timestep);
 
     // Create the new value expression based on effect type
     switch (eff_expr.kind()) {
@@ -379,17 +375,13 @@ z3::expr R2EGroundedEncoder::get_prev_variable_or_chain(ExprID var_eid, int time
     auto prev_it = prev_x_.find(var_eid);
     if (prev_it == prev_x_.end() || action_index >= static_cast<int>(prev_it->second.size())) {
         // No prev mapping - use original variable
-        auto var_t = convert_expr_id_to_z3(var_eid, timestep);
-        assert(var_t && "Failed to convert variable to Z3");
-        return *var_t;
+        return convert_expr_id_to_z3(var_eid, timestep);
     }
 
     int prev_index = prev_it->second[action_index];
     if (prev_index == 0) {
         // No previous modifier - use original variable x^t
-        auto var_t = convert_expr_id_to_z3(var_eid, timestep);
-        assert(var_t && "Failed to convert variable to Z3");
-        return *var_t;
+        return convert_expr_id_to_z3(var_eid, timestep);
     } else {
         // Use chain variable from previous action
         return get_chain_variable(var_eid, timestep, prev_index);

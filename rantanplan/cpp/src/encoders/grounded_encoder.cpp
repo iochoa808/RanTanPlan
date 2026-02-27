@@ -18,47 +18,34 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
     // Parallelism strategy will be set by the caller
 }
 
-std::optional<z3::expr> GroundedEncoder::convert_expr_id_to_z3(ExprID id, int timestep) {
+z3::expr GroundedEncoder::convert_expr_id_to_z3(ExprID id, int timestep) {
     return grounded_visitor_.convert_from_pool(id, timestep);
 }
 
 // Helper function to convert effect to Z3 constraint using visitor
-std::optional<z3::expr> GroundedEncoder::convert_effect_to_z3(const EffectExpression& effect, int timestep) {
-    auto fluent_curr_z3 = convert_expr_id_to_z3(effect.fluent_id(), timestep);
-    auto fluent_next_z3 = convert_expr_id_to_z3(effect.fluent_id(), timestep + 1);
-    auto value_z3 = convert_expr_id_to_z3(effect.value_id(), timestep);
-    
-    if (!fluent_next_z3 || !value_z3 || !fluent_curr_z3) {
-        std::cerr << "Error: Failed to convert effect fluent or value to Z3" << std::endl;
-        std::cerr << "  fluent_curr_z3: " << (fluent_curr_z3 ? fluent_curr_z3->to_string() : "null") << " (from: " << problem_.pool().to_string(effect.fluent_id()) << ")" << std::endl;
-        std::cerr << "  fluent_next_z3: " << (fluent_next_z3 ? fluent_next_z3->to_string() : "null") << " (from: " << problem_.pool().to_string(effect.fluent_id()) << ")" << std::endl;
-        std::cerr << "  value_z3: " << (value_z3 ? value_z3->to_string() : "null") << " (from: " << problem_.pool().to_string(effect.value_id()) << ")" << std::endl;
-        return std::nullopt;
-    }
-    
+z3::expr GroundedEncoder::convert_effect_to_z3(const EffectExpression& effect, int timestep) {
+    z3::expr fluent_curr_z3 = convert_expr_id_to_z3(effect.fluent_id(), timestep);
+    z3::expr fluent_next_z3 = convert_expr_id_to_z3(effect.fluent_id(), timestep + 1);
+    z3::expr value_z3 = convert_expr_id_to_z3(effect.value_id(), timestep);
+
     z3::expr effect_constraint = ctx_.bool_val(true);
     switch (effect.kind()) {
         case EffectExpression::Kind::ASSIGN:
-            effect_constraint = (*fluent_next_z3 == *value_z3);
+            effect_constraint = (fluent_next_z3 == value_z3);
             break;
-            
-        case EffectExpression::Kind::INCREASE: {
-            effect_constraint = (*fluent_next_z3 == *fluent_curr_z3 + *value_z3);
+        case EffectExpression::Kind::INCREASE:
+            effect_constraint = (fluent_next_z3 == fluent_curr_z3 + value_z3);
             break;
-        }
-        case EffectExpression::Kind::DECREASE: {
-            effect_constraint = (*fluent_next_z3 == *fluent_curr_z3 - *value_z3);
+        case EffectExpression::Kind::DECREASE:
+            effect_constraint = (fluent_next_z3 == fluent_curr_z3 - value_z3);
             break;
-        }
     }
-    
-    if (effect.is_conditional()) { // Handle conditional effects
-        auto condition_z3 = convert_expr_id_to_z3(effect.condition_id(), timestep);
-        if (condition_z3) {
-            effect_constraint = z3::implies(*condition_z3, effect_constraint);
-        }
+
+    if (effect.is_conditional()) {
+        z3::expr condition_z3 = convert_expr_id_to_z3(effect.condition_id(), timestep);
+        effect_constraint = z3::implies(condition_z3, effect_constraint);
     }
-    
+
     return effect_constraint;
 }
 
@@ -74,9 +61,9 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_initial_state() {
     
     // Process each assignment in the initial state at timestep 0
     for (const auto& assignment : problem_.initial_state()) {
-        auto fluent_expr = convert_expr_id_to_z3(assignment.fluent_id(), 0);
-        auto value_expr = convert_expr_id_to_z3(assignment.value_id(), 0);
-        initial_state.push_back(*fluent_expr == *value_expr);
+        z3::expr fluent_expr = convert_expr_id_to_z3(assignment.fluent_id(), 0);
+        z3::expr value_expr = convert_expr_id_to_z3(assignment.value_id(), 0);
+        initial_state.push_back(fluent_expr == value_expr);
     }
     
     // Collect statistics
@@ -102,18 +89,14 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
 
             // Create precondition constraints: action_var => precondition
             if (action.has_precondition()) {
-                std::optional<z3::expr> z3_precond = convert_expr_id_to_z3(action.precondition_id(), t);
-                //std::cout << "pre:" << action_var.to_string() << " -> " << z3_precond.value().to_string() << std::endl;
-                action_constraints.push_back(z3::implies(action_var, z3_precond.value())); // we assume precondition is valid
+                z3::expr z3_precond = convert_expr_id_to_z3(action.precondition_id(), t);
+                action_constraints.push_back(z3::implies(action_var, z3_precond));
             }
-        
+
             // Create effect constraints: action_var => effects
             z3::expr_vector effect_exprs(ctx_);
             for (const Effect& effect : action.effects()) {
-                auto z3_effect = convert_effect_to_z3(effect.effect_expression(), t);
-                if (z3_effect.has_value()) {
-                    effect_exprs.push_back(z3_effect.value());
-                }
+                effect_exprs.push_back(convert_effect_to_z3(effect.effect_expression(), t));
             }
             z3::expr effect_conjunction = z3::mk_and(effect_exprs);
             // action_var => effect_conjunction
@@ -159,11 +142,11 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
         const auto& action_effects = epc_it->second;
 
         // Get fluent variables at timesteps t and t+1
-        auto fluent_t = convert_expr_id_to_z3(eid, t);
-        auto fluent_t_plus_1 = convert_expr_id_to_z3(eid, t + 1);
-        
+        z3::expr fluent_t = convert_expr_id_to_z3(eid, t);
+        z3::expr fluent_t_plus_1 = convert_expr_id_to_z3(eid, t + 1);
+
         // Create the "fluent changed" condition: fluent^t != fluent^(t+1)
-        z3::expr fluent_changed = (*fluent_t != *fluent_t_plus_1);
+        z3::expr fluent_changed = (fluent_t != fluent_t_plus_1);
         
         // Build disjunction of all actions that can cause this change
         std::vector<z3::expr> action_terms;
@@ -174,8 +157,8 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
             
             // For conditional effects: action_var && condition
             if (effect_expr->is_conditional()) {
-                auto condition_z3 = convert_expr_id_to_z3(effect_expr->condition_id(), t);
-                action_terms.push_back(action_var && *condition_z3); // condition /\ action_var
+                z3::expr condition_z3 = convert_expr_id_to_z3(effect_expr->condition_id(), t);
+                action_terms.push_back(action_var && condition_z3); // condition /\ action_var
             } else {
                 action_terms.push_back(action_var); // For unconditional effects: just the action variable
             }
@@ -232,12 +215,7 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_goal(int t) {
     goal_formulas.reserve(goals.size());
     
     for (const auto& goal : goals) {
-        auto z3_goal = convert_expr_id_to_z3(goal.goal_id(), t);
-        if (z3_goal) {
-            goal_formulas.push_back(*z3_goal);
-        } else {
-            std::cerr << "Error: Failed to encode goal expression: " << goal.to_string() << std::endl;
-        }
+        goal_formulas.push_back(convert_expr_id_to_z3(goal.goal_id(), t));
     }
     
     // Collect statistics
@@ -305,9 +283,9 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_symmetries(int t) {
         z3::expr_vector variable_equality_constraints(ctx_);
         
         for (const auto& [var1_eid, var2_eid] : variable_pairs) {
-            auto var1_z3 = convert_expr_id_to_z3(var1_eid, t);
-            auto var2_z3 = convert_expr_id_to_z3(var2_eid, t);
-            variable_equality_constraints.push_back(*var1_z3 == *var2_z3);
+            z3::expr var1_z3 = convert_expr_id_to_z3(var1_eid, t);
+            z3::expr var2_z3 = convert_expr_id_to_z3(var2_eid, t);
+            variable_equality_constraints.push_back(var1_z3 == var2_z3);
         }
         
         // RHS: Lexicographic ordering constraint on action pairs

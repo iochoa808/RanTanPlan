@@ -50,8 +50,8 @@ std::shared_ptr<z3::expr> ChainedGroundedEncoder::encode_actions(int t) {
 
         // Create precondition constraints (unchanged)
         if (action.has_precondition()) {
-            auto z3_precond = convert_expr_id_to_z3(action.precondition_id(), t);
-            all_constraints.push_back(z3::implies(action_var, *z3_precond));
+            z3::expr z3_precond = convert_expr_id_to_z3(action.precondition_id(), t);
+            all_constraints.push_back(z3::implies(action_var, z3_precond));
         }
 
         // Create effect constraints, filtering out multi-modified non-Boolean variables
@@ -68,10 +68,8 @@ std::shared_ptr<z3::expr> ChainedGroundedEncoder::encode_actions(int t) {
 
             if (!needs_chaining) {
                 // Use standard effect constraint for Boolean vars or single-modified vars
-                auto z3_effect = convert_effect_to_z3(effect.effect_expression(), t);
-                if (z3_effect) {
-                    filtered_effects.push_back(*z3_effect);
-                }
+                z3::expr z3_effect = convert_effect_to_z3(effect.effect_expression(), t);
+                filtered_effects.push_back(z3_effect);
             }
             // Multi-modified non-Boolean variables are handled by chained encoding
         }
@@ -118,9 +116,8 @@ std::shared_ptr<z3::expr> ChainedGroundedEncoder::encode_chained_effects(int t) 
         std::vector<z3::expr> chain_vars;
 
         // Equation (7): n^t = ζ^t_{n,0}
-        auto var_t = convert_expr_id_to_z3(var_eid, t);
-        assert(var_t && "Failed to convert variable to Z3");
-        chain_vars.push_back(*var_t);
+        z3::expr var_t = convert_expr_id_to_z3(var_eid, t);
+        chain_vars.push_back(var_t);
 
         // Create chain variables and constraints for each modifying action
         for (size_t i = 0; i < modifying_actions.size(); ++i) {
@@ -155,8 +152,8 @@ std::shared_ptr<z3::expr> ChainedGroundedEncoder::encode_chained_effects(int t) 
                 // For conditional effects: (action^t ∧ condition^t) → ζ^t_{n,i+1} = eff(ζ^t_{n,i})
                 //                          ¬(action^t ∧ condition^t) → ζ^t_{n,i+1} = ζ^t_{n,i}
                 // This ensures chain variable passes through unchanged when condition is false
-                auto condition_z3 = convert_expr_id_to_z3(full_effect->effect_expression().condition_id(), t);
-                z3::expr apply_effect = action_var && *condition_z3;
+                z3::expr condition_z3 = convert_expr_id_to_z3(full_effect->effect_expression().condition_id(), t);
+                z3::expr apply_effect = action_var && condition_z3;
                 chain_constraint = z3::ite(apply_effect,
                                          chain_var_next == effect_applied,
                                          chain_var_next == chain_prev);
@@ -172,9 +169,8 @@ std::shared_ptr<z3::expr> ChainedGroundedEncoder::encode_chained_effects(int t) 
         }
 
         // Equation (9): n^{t+1} = ζ^t_{n,|A_n|}
-        auto var_t_plus_1 = convert_expr_id_to_z3(var_eid, t + 1);
-        assert(var_t_plus_1 && "Failed to convert variable to Z3 at next timestep");
-        constraints.push_back(*var_t_plus_1 == chain_vars.back());
+        z3::expr var_t_plus_1 = convert_expr_id_to_z3(var_eid, t + 1);
+        constraints.push_back(var_t_plus_1 == chain_vars.back());
     }
 
     stats.add("encoder.chained_constraints", constraints.size());
@@ -202,21 +198,20 @@ z3::expr ChainedGroundedEncoder::apply_effect_to_expression(
 
     // Convert the effect value to Z3 - cast away const for this method
     auto* non_const_this = const_cast<ChainedGroundedEncoder*>(this);
-    auto value_z3 = non_const_this->convert_expr_id_to_z3(effect.value_id(), timestep);
-    assert(value_z3 && "Failed to convert effect value to Z3");
+    z3::expr value_z3 = non_const_this->convert_expr_id_to_z3(effect.value_id(), timestep);
 
     // Apply the effect operation to the base expression
     // Note: We can't reuse convert_effect_to_z3() from base class because that creates
     // a constraint (fluent_next == result), but we need the result expression itself
     switch (effect.kind()) {
         case EffectExpression::Kind::ASSIGN:
-            return *value_z3;
+            return value_z3;
 
         case EffectExpression::Kind::INCREASE:
-            return base_expr + *value_z3;
+            return base_expr + value_z3;
 
         case EffectExpression::Kind::DECREASE:
-            return base_expr - *value_z3;
+            return base_expr - value_z3;
     }
 
     // Fallback - should never reach here

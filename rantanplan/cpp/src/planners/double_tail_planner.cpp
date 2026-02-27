@@ -52,12 +52,9 @@ std::shared_ptr<z3::expr> DoubleTailPlanner::create_link_constraints(int forward
     z3::expr_vector links(ctx_);
 
     for (ExprID eid : problem_.grounded_fluents()) {
-        auto forward_var = encoder_.convert_expr_id_to_z3(eid, forward_t);
-        auto backward_var = encoder_.convert_expr_id_to_z3(eid, backward_t);
-
-        if (forward_var && backward_var) {
-            links.push_back(*forward_var == *backward_var);
-        }
+        z3::expr forward_var = encoder_.convert_expr_id_to_z3(eid, forward_t);
+        z3::expr backward_var = encoder_.convert_expr_id_to_z3(eid, backward_t);
+        links.push_back(forward_var == backward_var);
     }
 
     return std::make_shared<z3::expr>(z3::mk_and(links));

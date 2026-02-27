@@ -249,8 +249,7 @@ void DecisionHeuristicPropagator::create_condition_reification_variables(int tim
                 continue;
             }
             // convert condition to Z3 expression at this timestep using the encoder
-            auto condition_z3_opt = const_cast<BaseEncoder*>(encoder_)->convert_expr_id_to_z3(condition_eid, target_timestep);
-            z3::expr condition_z3 = condition_z3_opt.value();
+            z3::expr condition_z3 = const_cast<BaseEncoder*>(encoder_)->convert_expr_id_to_z3(condition_eid, target_timestep);
 
             // create reification variable name with counter
             reification_counter_++;

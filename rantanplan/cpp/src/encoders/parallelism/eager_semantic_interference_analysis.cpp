@@ -188,11 +188,7 @@ z3::expr EagerSemanticInterferenceAnalysis::apply_action_effects_substitution(co
 }
 
 z3::expr EagerSemanticInterferenceAnalysis::convert_expr_id_to_z3(ExprID eid) const {
-    auto result = grounded_visitor_->convert_from_pool(eid, -1);
-    if (!result) {
-        throw std::runtime_error("Failed to convert ExprID to Z3: " + problem_->pool().to_string(eid));
-    }
-    return *result;
+    return grounded_visitor_->convert_from_pool(eid, -1);
 }
 
 bool EagerSemanticInterferenceAnalysis::check1(const Action& a1, const Action& a2) const {

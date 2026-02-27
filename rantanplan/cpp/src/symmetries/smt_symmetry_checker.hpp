@@ -146,7 +146,7 @@ private:
      * @param eid The ExprID to convert
      * @return Z3 expression, or nullopt if conversion failed
      */
-    std::optional<z3::expr> convert_expr_id_to_z3(ExprID eid);
+    z3::expr convert_expr_id_to_z3(ExprID eid);
 
     /**
      * @brief Check if an expression involves a specific object

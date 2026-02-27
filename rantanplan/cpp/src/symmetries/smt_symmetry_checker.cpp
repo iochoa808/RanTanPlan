@@ -89,8 +89,7 @@ std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
 }
 
 bool SMTSymmetryChecker::are_objects_symmetric(const std::string& obj1, const std::string& obj2) {
-    // Clear visitor state and symbol table for clean start
-    visitor_.clear();
+    // Clear symbol table for clean start
     symbol_table_.clear();
     
     // Create Z3 integer constants for the two objects being swapped
@@ -102,21 +101,15 @@ bool SMTSymmetryChecker::are_objects_symmetric(const std::string& obj1, const st
     
     // Add initial state constraints at timestep 0
     for (const auto& assignment : problem_->initial_state()) {
-        auto fluent_expr = visitor_.convert_from_pool(assignment.fluent_id(), 0);
-        auto value_expr = visitor_.convert_from_pool(assignment.value_id(), 0);
-
-        if (fluent_expr && value_expr) {
-            z3::expr constraint = (*fluent_expr) == (*value_expr);
-            original_constraints.push_back(constraint);
-        }
+        z3::expr fluent_expr = visitor_.convert_from_pool(assignment.fluent_id(), 0);
+        z3::expr value_expr = visitor_.convert_from_pool(assignment.value_id(), 0);
+        original_constraints.push_back(fluent_expr == value_expr);
     }
 
     // Add goal constraints at timestep 1 (different from initial state)
     for (const auto& goal : problem_->goals()) {
-        auto goal_expr = visitor_.convert_from_pool(goal.goal_id(), 1);
-        if (goal_expr) {
-            original_constraints.push_back(*goal_expr);
-        }
+        z3::expr goal_expr = visitor_.convert_from_pool(goal.goal_id(), 1);
+        original_constraints.push_back(goal_expr);
     }
     
     // Create swapped problem by substituting obj1 ↔ obj2 in all constraints
@@ -162,7 +155,7 @@ SMTSymmetryChecker::get_objects_by_type() const {
 }
 
 
-std::optional<z3::expr> SMTSymmetryChecker::convert_expr_id_to_z3(ExprID eid) {
+z3::expr SMTSymmetryChecker::convert_expr_id_to_z3(ExprID eid) {
     return visitor_.convert_from_pool(eid);
 }
 

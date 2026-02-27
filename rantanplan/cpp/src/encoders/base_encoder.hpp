@@ -52,8 +52,8 @@ public:
     virtual const Z3VariableFactory& get_variable_factory() const = 0;
     
     // Helper functions to convert expressions/effects to Z3 using visitor (for propagators)
-    virtual std::optional<z3::expr> convert_expr_id_to_z3(ExprID id, int timestep = -1) = 0;
-    virtual std::optional<z3::expr> convert_effect_to_z3(const EffectExpression& effect, int timestep) = 0;
+    virtual z3::expr convert_expr_id_to_z3(ExprID id, int timestep = -1) = 0;
+    virtual z3::expr convert_effect_to_z3(const EffectExpression& effect, int timestep) = 0;
     
     // Plan extraction from Z3 model
     virtual Plan extract_plan(const z3::model& model, int max_timestep) const = 0;

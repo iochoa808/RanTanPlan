@@ -45,8 +45,8 @@ public:
     Plan extract_plan(const z3::model& model, int max_timestep) const override;
     
     // Helper functions to convert expressions/effects to Z3 using visitor (implementing base interface)
-    std::optional<z3::expr> convert_expr_id_to_z3(ExprID id, int timestep = -1) override;
-    std::optional<z3::expr> convert_effect_to_z3(const EffectExpression& effect, int timestep) override;
+    z3::expr convert_expr_id_to_z3(ExprID id, int timestep = -1) override;
+    z3::expr convert_effect_to_z3(const EffectExpression& effect, int timestep) override;
     
 protected:
     

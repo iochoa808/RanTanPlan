@@ -2,7 +2,7 @@
 #include "z3_variable_factory.hpp"
 #include "../problem/fluent.hpp"
 #include "../problem/effect_expression.hpp"
-#include <iostream>
+#include <stdexcept>
 
 namespace rantanplan {
 
@@ -13,11 +13,11 @@ GroundedEncodingVisitor::GroundedEncodingVisitor(z3::context& ctx,
       variable_factory_(factory) {}
 
 // Arithmetic and logical operation handlers
-std::optional<z3::expr> GroundedEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.bool_val(true);
     }
-    
+
     z3::expr_vector z3_args(ctx_);
     for (const auto& arg : args) {
         z3_args.push_back(arg);
@@ -25,11 +25,11 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_and(const std::vector<z3
     return z3::mk_and(z3_args);
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.bool_val(false);
     }
-    
+
     z3::expr_vector z3_args(ctx_);
     for (const auto& arg : args) {
         z3_args.push_back(arg);
@@ -37,59 +37,53 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_or(const std::vector<z3:
     return z3::mk_or(z3_args);
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
     if (args.size() != 1) {
-        std::cerr << "Error: 'not' operation expects exactly 1 argument, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'not' operation expects exactly 1 argument, got " + std::to_string(args.size()));
     }
     return !args[0];
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_equals(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_equals(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        std::cerr << "Error: '=' operation expects exactly 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'=' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] == args[1];
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_less_than(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_less_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        std::cerr << "Error: '<' operation expects exactly 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'<' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] < args[1];
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_less_equal(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_less_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        std::cerr << "Error: '<=' operation expects exactly 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'<=' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] <= args[1];
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_greater_than(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_greater_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        std::cerr << "Error: '>' operation expects exactly 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'>' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] > args[1];
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_greater_equal(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_greater_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        std::cerr << "Error: '>=' operation expects exactly 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'>=' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] >= args[1];
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_plus(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_plus(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.int_val(0);
     }
-    
+
     z3::expr result = args[0];
     for (size_t i = 1; i < args.size(); ++i) {
         result = result + args[i];
@@ -97,29 +91,25 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_plus(const std::vector<z
     return result;
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_minus(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_minus(const std::vector<z3::expr>& args) {
     if (args.empty()) {
-        std::cerr << "Error: '-' operation expects at least 1 argument" << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'-' operation expects at least 1 argument");
     }
-    
+
     if (args.size() == 1) {
-        // Unary minus
         return -args[0];
     } else if (args.size() == 2) {
-        // Binary minus
         return args[0] - args[1];
     } else {
-        std::cerr << "Error: '-' operation expects 1 or 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'-' operation expects 1 or 2 arguments, got " + std::to_string(args.size()));
     }
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_multiply(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_multiply(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.int_val(1);
     }
-    
+
     z3::expr result = args[0];
     for (size_t i = 1; i < args.size(); ++i) {
         result = result * args[i];
@@ -127,18 +117,16 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_multiply(const std::vect
     return result;
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_divide(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_divide(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        std::cerr << "Error: '/' operation expects exactly 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'/' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] / args[1];
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::handle_implies(const std::vector<z3::expr>& args) {
+z3::expr GroundedEncodingVisitor::handle_implies(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        std::cerr << "Error: 'implies' operation expects exactly 2 arguments, got " << args.size() << std::endl;
-        return std::nullopt;
+        throw std::runtime_error("'implies' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return z3::implies(args[0], args[1]);
 }
@@ -147,8 +135,10 @@ std::optional<z3::expr> GroundedEncodingVisitor::handle_implies(const std::vecto
 // ExprID-based conversion: walks ExprNode directly via ExprPool
 // ============================================================================
 
-std::optional<z3::expr> GroundedEncodingVisitor::convert_from_pool(ExprID id, int timestep) {
-    if (!id.valid()) return std::nullopt;
+z3::expr GroundedEncodingVisitor::convert_from_pool(ExprID id, int timestep) {
+    if (!id.valid()) {
+        throw std::invalid_argument("convert_from_pool called with invalid ExprID");
+    }
 
     int saved_timestep = current_timestep_;
     if (timestep >= 0) {
@@ -161,7 +151,7 @@ std::optional<z3::expr> GroundedEncodingVisitor::convert_from_pool(ExprID id, in
     return result;
 }
 
-std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
+z3::expr GroundedEncodingVisitor::convert_node(ExprID id) {
     const ExprPool& pool = problem_->pool();
     const ExprNode& node = pool.get(id);
     auto kind = static_cast<ExprKind>(node.kind);
@@ -186,7 +176,7 @@ std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
         if (std::holds_alternative<bool>(node.payload)) {
             return ctx_.bool_val(std::get<bool>(node.payload));
         }
-        return std::nullopt;
+        throw std::runtime_error("Unhandled payload type in leaf node (ExprID " + std::to_string(id.id) + ")");
     }
 
     // ---- State variable (fluent application) ----
@@ -194,8 +184,7 @@ std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
         // children[0] = fluent symbol, children[1..] = arguments
         const ExprNode& fluent_sym = pool.get(node.children[0]);
         if (!std::holds_alternative<std::string>(fluent_sym.payload)) {
-            std::cerr << "Error: STATE_VARIABLE first child is not a symbol" << std::endl;
-            return std::nullopt;
+            throw std::runtime_error("STATE_VARIABLE first child is not a symbol");
         }
         const std::string& fluent_name = std::get<std::string>(fluent_sym.payload);
 
@@ -208,8 +197,7 @@ std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
             }
         }
         if (!fluent_def) {
-            std::cerr << "Error: Fluent definition not found for: " << fluent_name << std::endl;
-            return std::nullopt;
+            throw std::runtime_error("Fluent definition not found for: " + fluent_name);
         }
 
         // Build grounded parameters from argument children
@@ -218,8 +206,7 @@ std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
         for (size_t i = 1; i < node.children.size(); ++i) {
             const ExprNode& arg = pool.get(node.children[i]);
             if (!std::holds_alternative<std::string>(arg.payload)) {
-                std::cerr << "Error: Non-symbol argument in grounded fluent: " << fluent_name << std::endl;
-                return std::nullopt;
+                throw std::runtime_error("Non-symbol argument in grounded fluent: " + fluent_name);
             }
             const Type* param_type = nullptr;
             if (i - 1 < fluent_def->parameters().size()) {
@@ -244,13 +231,7 @@ std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
         std::vector<z3::expr> z3_args;
         z3_args.reserve(node.children.size() - 1);
         for (size_t i = 1; i < node.children.size(); ++i) {
-            auto arg_result = convert_node(node.children[i]);
-            if (!arg_result) {
-                std::cerr << "Error: Failed to convert argument in function application (ExprID path)"
-                          << std::endl;
-                return std::nullopt;
-            }
-            z3_args.push_back(*arg_result);
+            z3_args.push_back(convert_node(node.children[i]));
         }
 
         // Dispatch to existing handlers
@@ -269,14 +250,11 @@ std::optional<z3::expr> GroundedEncodingVisitor::convert_node(ExprID id) {
             case ExprOperator::DIVIDE:        return handle_divide(z3_args);
             case ExprOperator::IMPLIES:       return handle_implies(z3_args);
             default:
-                std::cerr << "Warning: Unsupported operator in ExprID conversion: "
-                          << static_cast<int>(op) << std::endl;
-                return std::nullopt;
+                throw std::runtime_error("Unsupported operator in ExprID conversion: " + std::to_string(static_cast<int>(op)));
         }
     }
 
-    std::cerr << "Warning: Unhandled ExprNode kind in convert_node: " << node.kind << std::endl;
-    return std::nullopt;
+    throw std::runtime_error("Unhandled ExprNode kind in convert_node: " + std::to_string(node.kind));
 }
 
 } // namespace rantanplan

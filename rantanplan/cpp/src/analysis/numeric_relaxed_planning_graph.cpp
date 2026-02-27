@@ -796,13 +796,7 @@ void NumericRelaxedPlanningGraph::add_numeric_constraints(z3::solver& solver, in
 }
 
 z3::expr NumericRelaxedPlanningGraph::convert_expr_id_to_z3(ExprID eid, int layer) const {
-    auto result = grounded_visitor_.convert_from_pool(eid, layer);
-    if (result) {
-        return *result;
-    } else {
-        std::cerr << "Warning: No result from visitor for expression: " << problem_.pool().to_string(eid) << std::endl;
-        return ctx_.bool_const("error");
-    }
+    return grounded_visitor_.convert_from_pool(eid, layer);
 }
 
 

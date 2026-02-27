@@ -1,13 +1,14 @@
 #include "lifted_encoding_visitor.hpp"
+#include <stdexcept>
 
 namespace rantanplan {
 
 // Helper methods for handling specific operators
-std::optional<z3::expr> LiftedEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_and(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.bool_val(true);
     }
-    
+
     z3::expr_vector z3_args(ctx_);
     for (const auto& arg : args) {
         z3_args.push_back(arg);
@@ -15,11 +16,11 @@ std::optional<z3::expr> LiftedEncodingVisitor::handle_and(const std::vector<z3::
     return z3::mk_and(z3_args);
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_or(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.bool_val(false);
     }
-    
+
     z3::expr_vector z3_args(ctx_);
     for (const auto& arg : args) {
         z3_args.push_back(arg);
@@ -27,53 +28,53 @@ std::optional<z3::expr> LiftedEncodingVisitor::handle_or(const std::vector<z3::e
     return z3::mk_or(z3_args);
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_not(const std::vector<z3::expr>& args) {
     if (args.size() != 1) {
-        return std::nullopt;
+        throw std::runtime_error("'not' operation expects exactly 1 argument, got " + std::to_string(args.size()));
     }
     return !args[0];
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_equals(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_equals(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        return std::nullopt;
+        throw std::runtime_error("'=' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] == args[1];
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_less_than(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_less_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        return std::nullopt;
+        throw std::runtime_error("'<' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] < args[1];
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_less_equal(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_less_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        return std::nullopt;
+        throw std::runtime_error("'<=' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] <= args[1];
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_greater_than(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_greater_than(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        return std::nullopt;
+        throw std::runtime_error("'>' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] > args[1];
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_greater_equal(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_greater_equal(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        return std::nullopt;
+        throw std::runtime_error("'>=' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] >= args[1];
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_plus(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_plus(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.int_val(0);
     }
-    
+
     z3::expr result = args[0];
     for (size_t i = 1; i < args.size(); ++i) {
         result = result + args[i];
@@ -81,22 +82,20 @@ std::optional<z3::expr> LiftedEncodingVisitor::handle_plus(const std::vector<z3:
     return result;
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_minus(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_minus(const std::vector<z3::expr>& args) {
     if (args.size() == 1) {
-        // Unary minus
         return -args[0];
     } else if (args.size() == 2) {
-        // Binary minus
         return args[0] - args[1];
     }
-    return std::nullopt;
+    throw std::runtime_error("'-' operation expects 1 or 2 arguments, got " + std::to_string(args.size()));
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_multiply(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_multiply(const std::vector<z3::expr>& args) {
     if (args.empty()) {
         return ctx_.int_val(1);
     }
-    
+
     z3::expr result = args[0];
     for (size_t i = 1; i < args.size(); ++i) {
         result = result * args[i];
@@ -104,45 +103,43 @@ std::optional<z3::expr> LiftedEncodingVisitor::handle_multiply(const std::vector
     return result;
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_divide(const std::vector<z3::expr>& args) {
+z3::expr LiftedEncodingVisitor::handle_divide(const std::vector<z3::expr>& args) {
     if (args.size() != 2) {
-        return std::nullopt;
+        throw std::runtime_error("'/' operation expects exactly 2 arguments, got " + std::to_string(args.size()));
     }
     return args[0] / args[1];
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::handle_uninterpreted_function(
-    const std::string& function_name, 
+z3::expr LiftedEncodingVisitor::handle_uninterpreted_function(
+    const std::string& function_name,
     const std::vector<z3::expr>& args,
     const z3::sort& return_sort) {
-    
+
     // Create or get function declaration
     auto func_it = symbol_table_.find(function_name);
-    
+
     if (func_it == symbol_table_.end() || !std::holds_alternative<z3::func_decl>(func_it->second)) {
         // Create new function declaration with appropriate domain sorts
         std::vector<z3::sort> domain;
         for (const auto& arg : args) {
-            // Use the actual sort of each argument to maintain type consistency
             domain.push_back(arg.get_sort());
         }
-        z3::func_decl func_decl = ctx_.function(function_name.c_str(), 
+        z3::func_decl func_decl = ctx_.function(function_name.c_str(),
                                  static_cast<unsigned>(args.size()),
-                                 domain.data(), 
+                                 domain.data(),
                                  return_sort);
         symbol_table_.emplace(function_name, func_decl);
         func_it = symbol_table_.find(function_name);
-        //std::cout << "Created function declaration: " << func_decl << std::endl;
     }
-    
+
     z3::func_decl func_decl = std::get<z3::func_decl>(func_it->second);
-    
+
     // Apply function
     z3::expr_vector z3_args(ctx_);
     for (const auto& arg : args) {
         z3_args.push_back(arg);
     }
-    
+
     return func_decl(z3_args);
 }
 
@@ -153,7 +150,7 @@ z3::expr LiftedEncodingVisitor::create_bool_variable(const std::string& name) {
             return std::get<z3::expr>(it->second);
         }
     }
-    
+
     z3::expr var = ctx_.bool_const(name.c_str());
     symbol_table_.emplace(name, var);
     return var;
@@ -166,7 +163,7 @@ z3::expr LiftedEncodingVisitor::create_int_variable(const std::string& name) {
             return std::get<z3::expr>(it->second);
         }
     }
-    
+
     z3::expr var = ctx_.int_const(name.c_str());
     symbol_table_.emplace(name, var);
     return var;
@@ -179,7 +176,7 @@ z3::expr LiftedEncodingVisitor::create_real_variable(const std::string& name) {
             return std::get<z3::expr>(it->second);
         }
     }
-    
+
     z3::expr var = ctx_.real_const(name.c_str());
     symbol_table_.emplace(name, var);
     return var;
@@ -189,8 +186,10 @@ z3::expr LiftedEncodingVisitor::create_real_variable(const std::string& name) {
 // ExprID-based conversion: walks ExprNode directly via ExprPool
 // ============================================================================
 
-std::optional<z3::expr> LiftedEncodingVisitor::convert_from_pool(ExprID id, int timestep) {
-    if (!id.valid()) return std::nullopt;
+z3::expr LiftedEncodingVisitor::convert_from_pool(ExprID id, int timestep) {
+    if (!id.valid()) {
+        throw std::invalid_argument("convert_from_pool called with invalid ExprID");
+    }
 
     int saved_timestep = current_timestep_;
     if (timestep >= 0) {
@@ -203,7 +202,7 @@ std::optional<z3::expr> LiftedEncodingVisitor::convert_from_pool(ExprID id, int 
     return result;
 }
 
-std::optional<z3::expr> LiftedEncodingVisitor::convert_node_pool(ExprID id) {
+z3::expr LiftedEncodingVisitor::convert_node_pool(ExprID id) {
     const ExprPool& pool = problem_->pool();
     const ExprNode& node = pool.get(id);
     auto kind = static_cast<ExprKind>(node.kind);
@@ -236,7 +235,7 @@ std::optional<z3::expr> LiftedEncodingVisitor::convert_node_pool(ExprID id) {
         if (std::holds_alternative<bool>(node.payload)) {
             return ctx_.bool_val(std::get<bool>(node.payload));
         }
-        return std::nullopt;
+        throw std::runtime_error("Unhandled payload type in leaf node (ExprID " + std::to_string(id.id) + ")");
     }
 
     // ---- State variable (fluent application) ----
@@ -244,7 +243,7 @@ std::optional<z3::expr> LiftedEncodingVisitor::convert_node_pool(ExprID id) {
         // children[0] = fluent symbol, children[1..] = arguments
         const ExprNode& fluent_sym = pool.get(node.children[0]);
         if (!std::holds_alternative<std::string>(fluent_sym.payload)) {
-            return std::nullopt;
+            throw std::runtime_error("STATE_VARIABLE first child is not a symbol");
         }
         const std::string& fluent_name = std::get<std::string>(fluent_sym.payload);
 
@@ -252,9 +251,7 @@ std::optional<z3::expr> LiftedEncodingVisitor::convert_node_pool(ExprID id) {
         std::vector<z3::expr> z3_args;
         z3_args.reserve(node.children.size() - 1);
         for (size_t i = 1; i < node.children.size(); ++i) {
-            auto arg_result = convert_node_pool(node.children[i]);
-            if (!arg_result) return std::nullopt;
-            z3_args.push_back(*arg_result);
+            z3_args.push_back(convert_node_pool(node.children[i]));
         }
 
         // Add timestep as final argument if temporal encoding is enabled
@@ -282,9 +279,7 @@ std::optional<z3::expr> LiftedEncodingVisitor::convert_node_pool(ExprID id) {
         std::vector<z3::expr> z3_args;
         z3_args.reserve(node.children.size() - 1);
         for (size_t i = 1; i < node.children.size(); ++i) {
-            auto arg_result = convert_node_pool(node.children[i]);
-            if (!arg_result) return std::nullopt;
-            z3_args.push_back(*arg_result);
+            z3_args.push_back(convert_node_pool(node.children[i]));
         }
 
         switch (op) {
@@ -311,7 +306,7 @@ std::optional<z3::expr> LiftedEncodingVisitor::convert_node_pool(ExprID id) {
         }
     }
 
-    return std::nullopt;
+    throw std::runtime_error("Unhandled ExprNode kind in convert_node: " + std::to_string(node.kind));
 }
 
 } // namespace rantanplan
