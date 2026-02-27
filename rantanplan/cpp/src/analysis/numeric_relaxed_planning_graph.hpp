@@ -511,10 +511,6 @@ private:
      */
     z3::expr convert_expr_id_to_z3(ExprID eid, int layer) const;
 
-    /**
-     * @brief Convert effect value to Z3 expression
-     */
-    z3::expr convert_effect_value_to_z3(const EffectExpression& effect_expr, int layer) const;
 
     /**
      * @brief Extract numeric value from Z3 model

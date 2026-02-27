@@ -591,7 +591,7 @@ double NumericRelaxedPlanningGraph::compute_bound_optimization(
 
     // Option 2+: Each effect from applicable actions
     for (const EffectExpression* effect_expr : effects) {
-        z3::expr effect_value = convert_effect_value_to_z3(*effect_expr, prev_layer);
+        z3::expr effect_value = convert_expr_id_to_z3(effect_expr->value_id(), prev_layer);
         
         // Build the constraint based on effect kind
         z3::expr effect_constraint = ctx_.bool_val(false);  // default: impossible
@@ -805,9 +805,7 @@ z3::expr NumericRelaxedPlanningGraph::convert_expr_id_to_z3(ExprID eid, int laye
     }
 }
 
-z3::expr NumericRelaxedPlanningGraph::convert_effect_value_to_z3(const EffectExpression& effect_expr, int layer) const {
-    return convert_expr_id_to_z3(effect_expr.value_id(), layer);
-}
+
 
 double NumericRelaxedPlanningGraph::extract_numeric_value(const z3::expr& z3_value) const {
     // Handle different Z3 value types
