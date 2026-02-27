@@ -20,8 +20,9 @@
 #include "symmetries/smt_symmetry_checker.hpp"
 #include "arpg/arpg.hpp"
 #include "abstraction/achievers_analysis.hpp"
-#include "analysis/relaxed_planning_graph.hpp"
-#include "analysis/numeric_relaxed_planning_graph.hpp"
+#include "passes/pipeline.hpp"
+#include "passes/boolean_rpg_pass.hpp"
+#include "passes/numeric_rpg_pass.hpp"
 
 #include "z3++.h"
 
@@ -220,90 +221,30 @@ int main(int argc, char* argv[]) {
         return export_formula_and_exit(planning_problem);
     }
 
-    // === GOAL REACHABILITY CHECK, ACTION REMOVAL, AND LOWER BOUND ===
-    size_t total_actions = planning_problem.action_count();
+    // === PREPROCESSING PIPELINE: GOAL REACHABILITY, ACTION REMOVAL, LOWER BOUND ===
+    rantanplan::BooleanRPGPass boolean_rpg_pass;
+    rantanplan::NumericRPGPass numeric_rpg_pass;
+    std::vector<const rantanplan::Pass*> passes;
 
-    if (!config.global.enable_action_removal) {
-        // Branch 1: No RPG - skip goal reachability check, no action removal, no lower bound
-        config.planner.start_timestep = 0;
+    if (config.global.enable_action_removal) {
+        passes.push_back(config.global.use_numeric_rpg
+                         ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
+                         : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
+    }
 
-        rantanplan::Logger::instance().info("[Action Removal] Disabled - using all " + std::to_string(total_actions) + " actions");
-        rantanplan::Logger::instance().info("[Lower Bound] Starting from timestep 0 (no RPG lower bound)");
-    } else if (!config.global.use_numeric_rpg) {
-        // Branch 2: Boolean RPG - check goal reachability, compute lower bound, remove actions
-        rantanplan::RelaxedPlanningGraph rpg(planning_problem);
-        bool goals_reachable = rpg.build();
+    auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);
+    planning_problem = std::move(pipeline_result.problem);
+    config.planner.start_timestep = pipeline_result.lower_bound;
 
-        // If goals are not reachable in the relaxed planning graph, the problem is unsolvable
-        if (!goals_reachable) {
-            PlanGenerationResult result;
-            result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
+    if (pipeline_result.proven_unsolvable) {
+        PlanGenerationResult result;
+        result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
 
-            auto* log_message = result.add_log_messages();
-            log_message->set_level(LogMessage_LogLevel_INFO);
-            log_message->set_message("Problem proven unsolvable: goals not reachable in Boolean relaxed planning graph");
+        auto* log_message = result.add_log_messages();
+        log_message->set_level(LogMessage_LogLevel_INFO);
+        log_message->set_message("Problem proven unsolvable: goals not reachable in " + pipeline_result.unsolvable_reason);
 
-            return write_result_and_exit(result, argv[2]);
-        }
-
-        int rpg_lower_bound = rpg.get_minimum_steps_lower_bound();
-        config.planner.start_timestep = rpg_lower_bound;
-
-        auto removed_indices = rpg.get_removable_action_indices();
-        size_t removed_actions = removed_indices.size();
-        if (!removed_indices.empty()) {
-            planning_problem = planning_problem.without_actions(removed_indices);
-        }
-
-        std::ostringstream lower_bound_msg, action_removal_msg;
-        lower_bound_msg << "[Lower Bound] Boolean RPG lower bound: " << rpg_lower_bound << " steps";
-        rantanplan::Logger::instance().info(lower_bound_msg.str());
-
-        double percentage = (double)removed_actions / total_actions * 100.0;
-        action_removal_msg << "[Action Removal] Removed " << removed_actions << "/" << total_actions
-                          << " unreachable actions using Boolean RPG (" << std::fixed << std::setprecision(1)
-                          << percentage << "%)";
-        rantanplan::Logger::instance().info(action_removal_msg.str());
-    } else {
-        // Branch 3: Numeric RPG only
-        z3::context ctx;
-
-        rantanplan::NumericRelaxedPlanningGraph numeric_rpg(planning_problem, ctx);
-        bool numeric_goals_reachable = numeric_rpg.build();
-
-        // If goals are not reachable in the numeric relaxed planning graph, the problem is unsolvable
-        if (!numeric_goals_reachable) {
-            PlanGenerationResult result;
-            result.set_status(PlanGenerationResult_Status_UNSOLVABLE_PROVEN);
-
-            auto* log_message = result.add_log_messages();
-            log_message->set_level(LogMessage_LogLevel_INFO);
-            log_message->set_message("Problem proven unsolvable: goals not reachable in Numeric relaxed planning graph");
-
-            return write_result_and_exit(result, argv[2]);
-        }
-
-        // Extract and set Numeric RPG lower bound
-        int numeric_rpg_lower_bound = numeric_rpg.get_minimum_steps_lower_bound();
-        config.planner.start_timestep = numeric_rpg_lower_bound;
-
-        std::ostringstream numeric_lower_bound_msg;
-        numeric_lower_bound_msg << "[Lower Bound] Numeric RPG lower bound: " << numeric_rpg_lower_bound << " steps";
-        rantanplan::Logger::instance().info(numeric_lower_bound_msg.str());
-
-        // Perform actual removal using Numeric RPG
-        auto removed_indices = numeric_rpg.get_removable_action_indices();
-        size_t removed_actions = removed_indices.size();
-        if (!removed_indices.empty()) {
-            planning_problem = planning_problem.without_actions(removed_indices);
-        }
-
-        std::ostringstream numeric_action_removal_msg;
-        double percentage = (double)removed_actions / total_actions * 100.0;
-        numeric_action_removal_msg << "[Action Removal] Removed " << removed_actions << "/" << total_actions
-                                   << " unreachable actions using Numeric RPG (" << std::fixed << std::setprecision(1)
-                                   << percentage << "%)";
-        rantanplan::Logger::instance().info(numeric_action_removal_msg.str());
+        return write_result_and_exit(result, argv[2]);
     }
 
     // Solve the planning problem using configuration
