@@ -34,19 +34,17 @@ private:
     // Global action ordering L = [a1, a2, ..., a|A|]
     std::vector<const Action*> global_action_order_;
     
-    // For each variable x, Ax = set of actions that modify x
-    std::unordered_map<Expression, std::vector<const Action*>> variable_modifiers_;
-    
+    // For each variable x (ExprID), Ax = set of actions that modify x
+    std::unordered_map<ExprID, std::vector<const Action*>> variable_modifiers_;
+
     // Mapping ρx: {0, ..., |Ax|} → {0, ..., |A|} for each variable x
-    // ρx(i) gives the index in global_action_order_ of the i-th action that modifies x
-    std::unordered_map<Expression, std::vector<int>> rho_x_;
-    
+    std::unordered_map<ExprID, std::vector<int>> rho_x_;
+
     // Mapping prevx: {1, ..., |A|} → {0, ..., |A|} for each variable x
-    // prevx(i) gives the index of the last action before ai that modifies x
-    std::unordered_map<Expression, std::vector<int>> prev_x_;
-    
+    std::unordered_map<ExprID, std::vector<int>> prev_x_;
+
     // All state variables for closed-world assumption
-    std::unordered_set<Expression> all_state_variables_;
+    std::unordered_set<ExprID> all_state_variables_;
     
     // Setup methods
     void build_action_ordering();
@@ -64,21 +62,20 @@ private:
     std::shared_ptr<z3::expr> encode_linking_constraints(int t);
     
     // Helper methods
-    std::unordered_map<Expression, z3::expr> create_prev_substitution(int action_index, int timestep);
-    std::unordered_map<Expression, z3::expr> create_modi_substitution(int action_index, int timestep);
-    z3::expr apply_substitution(const z3::expr& expr, const std::unordered_map<Expression, z3::expr>& substitution, int timestep);
-    std::optional<z3::expr> convert_expression_to_z3_template(const Expression& expr);
+    std::unordered_map<ExprID, z3::expr> create_prev_substitution(int action_index, int timestep);
+    std::unordered_map<ExprID, z3::expr> create_modi_substitution(int action_index, int timestep);
+    z3::expr apply_substitution(const z3::expr& expr, const std::unordered_map<ExprID, z3::expr>& substitution, int timestep);
     z3::expr create_effect_value_z3(const EffectExpression& eff_expr, const z3::expr& fluent_z3,
-                                   const std::unordered_map<Expression, z3::expr>& prev_substitution, int timestep);
-    z3::expr encode_single_effect_with_carry_forward(const Effect& effect, 
-                                                   const std::unordered_map<Expression, z3::expr>& prev_substitution,
-                                                   const std::unordered_map<Expression, z3::expr>& modi_substitution, 
+                                   const std::unordered_map<ExprID, z3::expr>& prev_substitution, int timestep);
+    z3::expr encode_single_effect_with_carry_forward(const Effect& effect,
+                                                   const std::unordered_map<ExprID, z3::expr>& prev_substitution,
+                                                   const std::unordered_map<ExprID, z3::expr>& modi_substitution,
                                                    int timestep, int action_index, const z3::expr& action_var);
     
     // Chain variable management
-    std::string get_chain_variable_name(const Expression& variable, int timestep, int action_index) const;
-    z3::expr get_chain_variable(const Expression& variable, int timestep, int action_index);
-    z3::expr get_prev_variable_or_chain(const Expression& variable, int timestep, int action_index);
+    std::string get_chain_variable_name(ExprID var_eid, int timestep, int action_index) const;
+    z3::expr get_chain_variable(ExprID var_eid, int timestep, int action_index);
+    z3::expr get_prev_variable_or_chain(ExprID var_eid, int timestep, int action_index);
     
     // Action index management
     int get_global_action_index(const Action* action) const;

@@ -1,11 +1,14 @@
 #include "action.hpp"
+#include "problem.hpp"
 #include <sstream>
 
 namespace rantanplan {
 
-Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, const Problem* problem)
+Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, Problem* problem)
     : name_(pb_action.name()), id_(-1), parameters_(parameters) {
-    
+
+    pool_ = &problem->pool();
+
     // Create single precondition from repeated conditions using AND
     if (pb_action.conditions().empty()) {
         // No preconditions - create true constant
@@ -13,35 +16,38 @@ Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parame
         pb_true_expr.mutable_atom()->set_boolean(true);
         pb_true_expr.set_kind(pb::ExpressionKind::CONSTANT);
         pb_true_expr.set_type("up:bool");
-        precondition_ = Expression(pb_true_expr, problem);
+        precondition_id_ = problem->intern_from_protobuf(pb_true_expr);
+        has_precondition_ = false;
     } else if (pb_action.conditions().size() == 1) {
         // Single precondition - use it directly
-        precondition_ = Expression(pb_action.conditions(0).cond(), problem);
+        precondition_id_ = problem->intern_from_protobuf(pb_action.conditions(0).cond());
+        has_precondition_ = !pool_->is_true_constant(precondition_id_);
     } else {
         // Multiple preconditions - create AND expression
         pb::Expression pb_and_expr;
         pb_and_expr.set_kind(pb::ExpressionKind::FUNCTION_APPLICATION);
         pb_and_expr.set_type("up:bool");
-        
+
         // First element: the "and" function symbol
         pb::Expression* and_symbol = pb_and_expr.add_list();
         and_symbol->mutable_atom()->set_symbol("and");
         and_symbol->set_kind(pb::ExpressionKind::FUNCTION_SYMBOL);
         and_symbol->set_type("up:bool");
-        
+
         // Add all the condition expressions directly from protobuf
         for (const auto& pb_condition : pb_action.conditions()) {
             pb::Expression* operand = pb_and_expr.add_list();
             *operand = pb_condition.cond();
         }
-        
-        precondition_ = Expression(pb_and_expr, problem);
+
+        precondition_id_ = problem->intern_from_protobuf(pb_and_expr);
+        has_precondition_ = true;
     }
-    
+
     for (const auto& pb_effect : pb_action.effects()) {
         effects_.emplace_back(pb_effect, problem);
     }
-    
+
     build_parameter_mappings();
 }
 
@@ -70,7 +76,7 @@ void Action::set_parameters(const std::vector<Parameter>& parameters) {
 std::string Action::to_string() const {
     std::ostringstream oss;
     oss << "Action: " << name_;
-    
+
     if (!parameters_.empty()) {
         oss << "(";
         for (size_t i = 0; i < parameters_.size(); ++i) {
@@ -79,25 +85,25 @@ std::string Action::to_string() const {
         }
         oss << ")";
     }
-    
-    if (has_precondition()) {
-        oss << "\n  Precondition: " << precondition_.to_string();
+
+    if (has_precondition() && pool_) {
+        oss << "\n  Precondition: " << pool_->to_string(precondition_id_);
     }
-    
+
     if (!effects_.empty()) {
         oss << "\n  Effects:";
         for (const auto& effect : effects_) {
             oss << "\n    " << effect.to_string();
         }
     }
-    
+
     return oss.str();
 }
 
 bool Action::operator==(const Action& other) const {
     return name_ == other.name_ &&
            parameters_ == other.parameters_ &&
-           precondition_ == other.precondition_ &&
+           precondition_id_ == other.precondition_id_ &&
            effects_ == other.effects_;
 }
 

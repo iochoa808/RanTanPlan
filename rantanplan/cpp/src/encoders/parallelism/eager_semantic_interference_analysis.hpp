@@ -104,13 +104,6 @@ private:
     z3::expr apply_action_effects_substitution(const Action& action, const z3::expr& target_expr) const;
     
     /**
-     * @brief Convert planning expression to Z3 expression using the visitor
-     * @param expr Planning expression to convert
-     * @return Z3 expression
-     */
-    z3::expr convert_expression_to_z3(const Expression& expr) const;
-    
-    /**
      * @brief Check condition 1 of Definition 3.9: prevention of execution
      * @param source Source action
      * @param target Target action
@@ -141,7 +134,7 @@ private:
      * @param var The variable being assigned
      * @return True if assignments commute
      */
-    bool assignments_commute(const EffectExpression& eff1, const EffectExpression& eff2, const Expression& var) const;
+    bool assignments_commute(const EffectExpression& eff1, const EffectExpression& eff2, ExprID var_eid) const;
     
     /**
      * @brief Convert an effect expression to a Z3 expression given a base variable

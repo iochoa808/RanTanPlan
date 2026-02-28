@@ -2,7 +2,6 @@
 
 #include "../problem/problem.hpp"
 #include "../problem/action.hpp"
-#include "../problem/expression.hpp"
 #include "../problem/goal.hpp"
 #include <vector>
 #include <unordered_set>
@@ -30,7 +29,7 @@ namespace rantanplan {
  */
 class RelaxedPlanningGraph {
 public:
-    explicit RelaxedPlanningGraph(Problem& problem);
+    explicit RelaxedPlanningGraph(const Problem& problem);
 
     /**
      * Build the relaxed planning graph from initial state until fixpoint.
@@ -43,14 +42,14 @@ public:
      * @param condition The condition to check (can be Boolean or numeric)
      * @return true if the condition is achievable in the relaxed graph
      */
-    bool is_achievable(const Expression& condition) const;
+    bool is_achievable(ExprID condition_eid) const;
 
     /**
      * Get the first layer where a condition becomes achievable.
-     * @param condition The condition to check
+     * @param condition_eid The condition ExprID to check
      * @return layer number (0-based), or -1 if not achievable
      */
-    int get_achievability_layer(const Expression& condition) const;
+    int get_achievability_layer(ExprID condition_eid) const;
 
     /**
      * Get all actions that become applicable in a given layer.
@@ -102,26 +101,17 @@ public:
     int get_minimum_steps_lower_bound() const;
 
     /**
-     * Get actions that never appear in any RPG layer after fixpoint analysis.
+     * Get indices of actions that never appear in any RPG layer after fixpoint analysis.
      * These actions are safe to remove because:
      * - Actions with only numeric preconditions would appear immediately
      * - Actions that never appear have unsatisfiable Boolean preconditions
-     * @return vector of pointers to actions that never become applicable
+     * @return vector of action indices that never become applicable
      */
-    std::vector<const Action*> get_removable_actions() const;
-
-    /**
-     * Remove unreachable actions from the problem after RPG analysis.
-     * This method modifies the problem by removing actions that never appear
-     * in any RPG layer, reducing the SAT encoding size.
-     * @return number of actions removed
-     * @warning This modifies the problem and invalidates existing action pointers
-     */
-    size_t remove_unreachable_actions();
+    std::vector<size_t> get_removable_action_indices() const;
 
 
 private:
-    Problem& problem_;
+    const Problem& problem_;
 
     // Layer-based storage using grounded fluent IDs for efficiency
     // Fact encoding: positive facts use fluent_id (0, 1, 2, ...),
@@ -159,7 +149,7 @@ private:
      * @param expr The expression to extract from
      * @param conditions Output vector for pointers to extracted conditions
      */
-    void extract_cnf_conditions(const Expression& expr, std::vector<const Expression*>& conditions) const;
+    void extract_cnf_conditions(ExprID eid, std::vector<ExprID>& conditions) const;
 
     /**
      * Compute which actions become applicable at the current layer.
@@ -183,7 +173,7 @@ private:
      * @param layer_index The layer to check against
      * @return true if the condition is satisfied
      */
-    bool is_condition_satisfied(const Expression& condition, int layer_index) const;
+    bool is_condition_satisfied(ExprID condition_eid, int layer_index) const;
 
     /**
      * Add effects of an action to the next fact layer.
@@ -212,25 +202,25 @@ private:
      * @param layer_index The layer to check against
      * @return true if the fact exists in the layer
      */
-    bool is_fact_in_layer(const Expression& condition, int layer_index) const;
+    bool is_fact_in_layer(ExprID condition_eid, int layer_index) const;
 
 
     /**
      * Extract the inner condition from a negated condition.
-     * @param negated_condition The negated condition (must be negated)
-     * @return reference to the inner positive condition
+     * @param negated_eid The negated condition ExprID (must be negated)
+     * @return ExprID of the inner positive condition
      */
-    const Expression& get_inner_condition(const Expression& negated_condition) const;
+    ExprID get_inner_condition(ExprID negated_eid) const;
 
 
     /**
-     * Find the grounded fluent ID for a given expression.
+     * Find the grounded fluent ID for a given ExprID.
      * For positive expressions: returns fluent_id (0, 1, 2, ...)
      * For negative expressions: returns -(fluent_id + 1) (-1, -2, -3, ...)
-     * @param expr The expression to find ID for (can be positive or negative)
+     * @param eid The ExprID to find fluent ID for (can be positive or negative)
      * @return encoded fact ID, or -1 if not found
      */
-    int find_grounded_fluent_id(const Expression& expr) const;
+    int find_grounded_fluent_id(ExprID eid) const;
 
     /**
      * Helper to decode fact ID and get string representation for debugging.

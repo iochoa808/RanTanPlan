@@ -51,7 +51,7 @@ bool NumericRelaxedPlanningGraph::LayerState::operator==(const LayerState& other
 // CONSTRUCTION
 // ============================================================================
 
-NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(Problem& problem, z3::context& ctx)
+NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem, z3::context& ctx)
     : problem_(problem),
       ctx_(ctx),
       z3_optimizer_(std::make_unique<z3::optimize>(ctx)),
@@ -106,23 +106,20 @@ std::string NumericRelaxedPlanningGraph::reachability_to_string(BooleanReachabil
 // PRIVATE METHODS - Expression Analysis
 // ============================================================================
 
-bool NumericRelaxedPlanningGraph::is_boolean_expression(const Expression& expr) const {
-    // Check if expression type is Boolean
-    return expr.type() != nullptr && expr.type()->is_bool();
+bool NumericRelaxedPlanningGraph::is_boolean_expression(ExprID eid) const {
+    return problem_.is_bool_type(eid);
 }
 
-bool NumericRelaxedPlanningGraph::is_numeric_expression(const Expression& expr) const {
-    // Check if expression type is numeric (int or real)
-    return expr.type() != nullptr &&
-           (expr.type()->is_int() || expr.type()->is_real());
+bool NumericRelaxedPlanningGraph::is_numeric_expression(ExprID eid) const {
+    return problem_.is_numeric_type(eid);
 }
 
-int NumericRelaxedPlanningGraph::find_grounded_fluent_id(const Expression& fluent) const {
+int NumericRelaxedPlanningGraph::find_grounded_fluent_id(ExprID fluent_eid) const {
     // Use Problem's find_grounded_fluent_index for O(1) lookup
-    int index = problem_.find_grounded_fluent_index(fluent);
+    int index = problem_.find_grounded_fluent_index(fluent_eid);
     if (index < 0) {
         std::cerr << "Error: Fluent not found in grounded fluents: "
-                  << fluent.to_string() << std::endl;
+                  << problem_.pool().to_string(fluent_eid) << std::endl;
         return -1;
     }
     return index;
@@ -141,22 +138,22 @@ void NumericRelaxedPlanningGraph::build_epc_index() {
     // Initialize index with all grounded fluents (empty effect lists)
     // This ensures ALL fluents get frame axioms, including those from
     // initial state, action effects, preconditions, and goals
-    for (const Expression& fluent : problem_.grounded_fluents()) {
-        epc_index_[fluent] = std::vector<std::pair<const Action*, const EffectExpression*>>();
+    for (ExprID eid : problem_.grounded_fluents()) {
+        epc_index_[eid] = std::vector<std::pair<const Action*, const EffectExpression*>>();
     }
 
     // Add action effects to the fluents that can be modified
     for (const Action& action : problem_.actions()) {
         for (const Effect& effect : action.effects()) {
             const EffectExpression& eff_expr = effect.effect_expression();
-            const Expression& fluent = eff_expr.fluent();
-            epc_index_[fluent].emplace_back(&action, &eff_expr);
+            ExprID fluent_eid = eff_expr.fluent_id();
+            epc_index_[fluent_eid].emplace_back(&action, &eff_expr);
         }
     }
 
     Logger::instance().debug("EPC index built: " + std::to_string(epc_index_.size()) + " fluents indexed");
     size_t total_effects = 0;
-    for (const auto& [fluent, effects] : epc_index_) {
+    for (const auto& [eid, effects] : epc_index_) {
         total_effects += effects.size();
     }
     Logger::instance().debug("  Total effect entries: " + std::to_string(total_effects));
@@ -168,10 +165,10 @@ void NumericRelaxedPlanningGraph::classify_fluents() {
     numeric_fluent_ids_.clear();
 
     int fluent_id = 0;
-    for (const Expression& fluent : problem_.grounded_fluents()) {
-        if (is_boolean_expression(fluent)) {
+    for (ExprID eid : problem_.grounded_fluents()) {
+        if (problem_.is_bool_type(eid)) {
             boolean_fluent_ids_.insert(fluent_id);
-        } else if (is_numeric_expression(fluent)) {
+        } else if (problem_.is_numeric_type(eid)) {
             numeric_fluent_ids_.insert(fluent_id);
         } else {
             // Object-typed fluents are treated as Boolean (equality checks)
@@ -187,44 +184,46 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
 
     LayerState initial_layer;
 
+    const auto& pool = problem_.pool();
+
     // Process each assignment in the initial state
     for (const auto& assignment : problem_.initial_state()) {
-        const Expression& fluent = assignment.fluent();
-        int fluent_id = find_grounded_fluent_id(fluent);
+        ExprID fluent_eid = assignment.fluent_id();
+        int fluent_id = find_grounded_fluent_id(fluent_eid);
         if (fluent_id < 0) {
             continue;  // Skip if not found
         }
 
-        const Expression& value = assignment.value();
+        ExprID val_eid = assignment.value_id();
 
         if (boolean_fluent_ids_.contains(fluent_id)) {
             // Boolean fluent: check if value is true or false
-            if (value.is_constant() && value.is_atom() && value.value().is_boolean()) {
-                bool is_true = value.value().boolean();
+            if (pool.is_constant(val_eid) && pool.payload_is_bool(val_eid)) {
+                bool is_true = pool.payload_bool(val_eid);
                 initial_layer.boolean_reachability[fluent_id] =
                     is_true ? BooleanReachability::TRUE_ONLY
                             : BooleanReachability::FALSE_ONLY;
             } else {
                 std::cerr << "Warning: Boolean fluent has non-Boolean value in initial state: "
-                          << fluent.to_string() << std::endl;
+                          << pool.to_string(fluent_eid) << std::endl;
                 initial_layer.boolean_reachability[fluent_id] = BooleanReachability::FALSE_ONLY;
             }
         } else if (numeric_fluent_ids_.contains(fluent_id)) {
             // Numeric fluent: extract value and create point bounds
-            if (value.is_constant() && value.is_atom()) {
+            if (pool.is_constant(val_eid)) {
                 double numeric_value = 0.0;
-                if (value.value().is_integer()) {
-                    numeric_value = static_cast<double>(value.value().integer());
-                } else if (value.value().is_real()) {
-                    numeric_value = value.value().real().to_double();
+                if (pool.payload_is_int(val_eid)) {
+                    numeric_value = static_cast<double>(pool.payload_int(val_eid));
+                } else if (pool.payload_is_double(val_eid)) {
+                    numeric_value = pool.payload_double(val_eid);
                 } else {
                     std::cerr << "Warning: Numeric fluent has non-numeric value in initial state: "
-                              << fluent.to_string() << std::endl;
+                              << pool.to_string(fluent_eid) << std::endl;
                 }
                 initial_layer.numeric_bounds[fluent_id] = NumericBounds(numeric_value);
             } else {
                 std::cerr << "Warning: Numeric fluent has non-constant value in initial state: "
-                          << fluent.to_string() << std::endl;
+                          << pool.to_string(fluent_eid) << std::endl;
                 initial_layer.numeric_bounds[fluent_id] = NumericBounds(0.0);
             }
         }
@@ -401,11 +400,11 @@ void NumericRelaxedPlanningGraph::propagate_boolean_effects(
             current_state = it->second;
         }
 
-        // Get fluent expression for EPC lookup
-        const Expression& fluent = problem_.grounded_fluents()[fluent_id];
+        // Get fluent ExprID for EPC lookup
+        ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
 
         // Find all effects from applicable actions that modify this fluent
-        auto epc_it = epc_index_.find(fluent);
+        auto epc_it = epc_index_.find(fluent_eid);
         if (epc_it == epc_index_.end()) {
             continue;  // No effects for this fluent
         }
@@ -445,15 +444,15 @@ void NumericRelaxedPlanningGraph::apply_boolean_effect(
     int layer) const {
 
     // Determine if this is a positive effect (sets to true) or negative (sets to false)
-    // We need to check the effect value expression
-    const Expression& value_expr = effect.value();
+    const auto& pool = problem_.pool();
+    ExprID val_eid = effect.value_id();
 
     bool is_positive_effect = false;
     bool is_negative_effect = false;
 
     // Check if the effect value is a Boolean constant
-    if (value_expr.is_constant() && value_expr.is_atom() && value_expr.value().is_boolean()) {
-        bool effect_value = value_expr.value().boolean();
+    if (pool.is_constant(val_eid) && pool.payload_is_bool(val_eid)) {
+        bool effect_value = pool.payload_bool(val_eid);
         is_positive_effect = effect_value;   // Sets to true
         is_negative_effect = !effect_value;  // Sets to false
     } else {
@@ -526,9 +525,6 @@ NumericRelaxedPlanningGraph::NumericBounds NumericRelaxedPlanningGraph::compute_
     int prev_layer,
     int next_layer) const {
 
-    // Get the fluent expression
-    const Expression& fluent = problem_.grounded_fluents()[fluent_id];
-
     // Get current bounds (for persistence option)
     NumericBounds current_bounds = NumericBounds(0.0);
     auto it = layer_states_[prev_layer].numeric_bounds.find(fluent_id);
@@ -574,8 +570,8 @@ double NumericRelaxedPlanningGraph::compute_bound_optimization(
     }
 
     // Get the fluent at the next layer
-    const Expression& fluent = problem_.grounded_fluents()[fluent_id];
-    z3::expr fluent_next = convert_expression_to_z3(fluent, next_layer);
+    ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
+    z3::expr fluent_next = grounded_visitor_.convert_from_pool(fluent_eid, next_layer);
 
     // Get current bounds for persistence
     NumericBounds current_bounds = NumericBounds(0.0);
@@ -595,7 +591,7 @@ double NumericRelaxedPlanningGraph::compute_bound_optimization(
 
     // Option 2+: Each effect from applicable actions
     for (const EffectExpression* effect_expr : effects) {
-        z3::expr effect_value = convert_effect_value_to_z3(*effect_expr, prev_layer);
+        z3::expr effect_value = grounded_visitor_.convert_from_pool(effect_expr->value_id(), prev_layer);
         
         // Build the constraint based on effect kind
         z3::expr effect_constraint = ctx_.bool_val(false);  // default: impossible
@@ -608,14 +604,14 @@ double NumericRelaxedPlanningGraph::compute_bound_optimization(
                 
             case EffectExpression::Kind::INCREASE: {
                 // INCREASE: fluent' = fluent + value
-                z3::expr fluent_prev = convert_expression_to_z3(fluent, prev_layer);
+                z3::expr fluent_prev = grounded_visitor_.convert_from_pool(fluent_eid, prev_layer);
                 effect_constraint = (fluent_next == fluent_prev + effect_value);
                 break;
             }
-                
+
             case EffectExpression::Kind::DECREASE: {
                 // DECREASE: fluent' = fluent - value
-                z3::expr fluent_prev = convert_expression_to_z3(fluent, prev_layer);
+                z3::expr fluent_prev = grounded_visitor_.convert_from_pool(fluent_eid, prev_layer);
                 effect_constraint = (fluent_next == fluent_prev - effect_value);
                 break;
             }
@@ -700,7 +696,7 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
         action_map[action_var_name] = &action;
 
         // action_var → precondition
-        z3::expr precondition = convert_expression_to_z3(action.precondition(), layer);
+        z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
         solver.add(z3::implies(action_var, precondition));
     }
 
@@ -738,7 +734,7 @@ bool NumericRelaxedPlanningGraph::is_action_applicable_smt(const Action& action,
     add_layer_constraints(solver, layer);
 
     // Add action precondition
-    z3::expr precondition = convert_expression_to_z3(action.precondition(), layer);
+    z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
     solver.add(precondition);
 
     // Check satisfiability
@@ -763,8 +759,8 @@ void NumericRelaxedPlanningGraph::add_boolean_constraints(z3::solver& solver, in
 
     // For each Boolean fluent, add constraints based on its reachability state
     for (const auto& [fluent_id, reach] : layer_state.boolean_reachability) {
-        const Expression& fluent = problem_.grounded_fluents()[fluent_id];
-        z3::expr fluent_z3 = convert_expression_to_z3(fluent, layer);
+        ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
+        z3::expr fluent_z3 = grounded_visitor_.convert_from_pool(fluent_eid, layer);
 
         // Add constraints based on reachability state
         switch (reach) {
@@ -790,8 +786,8 @@ void NumericRelaxedPlanningGraph::add_numeric_constraints(z3::solver& solver, in
 
     // For each numeric fluent, add bound constraints
     for (const auto& [fluent_id, bounds] : layer_state.numeric_bounds) {
-        const Expression& fluent = problem_.grounded_fluents()[fluent_id];
-        z3::expr fluent_z3 = convert_expression_to_z3(fluent, layer);
+        ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
+        z3::expr fluent_z3 = grounded_visitor_.convert_from_pool(fluent_eid, layer);
 
         // Add lower and upper bound constraints
         solver.add(fluent_z3 >= ctx_.real_val(std::to_string(bounds.lower).c_str()));
@@ -799,33 +795,6 @@ void NumericRelaxedPlanningGraph::add_numeric_constraints(z3::solver& solver, in
     }
 }
 
-z3::expr NumericRelaxedPlanningGraph::convert_expression_to_z3(const Expression& expr, int layer) const {
-    // Use the grounded visitor to convert the expression
-    grounded_visitor_.clear();
-    grounded_visitor_.set_timestep(layer);
-
-    // Visit the expression using the visitor pattern
-    accept_visitor(expr, grounded_visitor_);
-
-    grounded_visitor_.clear_timestep();
-
-    // Get the result
-    if (grounded_visitor_.has_result()) {
-        return grounded_visitor_.get_expression();
-    } else {
-        // Fallback: return a fresh Boolean constant if no result
-        std::cerr << "Warning: No result from visitor for expression: " << expr.to_string() << std::endl;
-        return ctx_.bool_const("error");
-    }
-}
-
-z3::expr NumericRelaxedPlanningGraph::convert_effect_value_to_z3(const EffectExpression& effect_expr, int layer) const {
-    // Get the value expression from the effect
-    const Expression& value = effect_expr.value();
-
-    // Convert to Z3
-    return convert_expression_to_z3(value, layer);
-}
 
 double NumericRelaxedPlanningGraph::extract_numeric_value(const z3::expr& z3_value) const {
     // Handle different Z3 value types
@@ -876,11 +845,11 @@ std::vector<const EffectExpression*> NumericRelaxedPlanningGraph::get_effects_fo
 
     std::vector<const EffectExpression*> effects;
 
-    // Get the fluent expression
-    const Expression& fluent = problem_.grounded_fluents()[fluent_id];
+    // Get the fluent ExprID
+    ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
 
     // Look up in EPC index
-    auto epc_it = epc_index_.find(fluent);
+    auto epc_it = epc_index_.find(fluent_eid);
     if (epc_it == epc_index_.end()) {
         return effects;  // No effects for this fluent
     }
@@ -945,7 +914,7 @@ bool NumericRelaxedPlanningGraph::are_goals_achievable() const {
 
     // Add all goal expressions
     for (const Goal& goal : problem_.goals()) {
-        z3::expr goal_expr = convert_expression_to_z3(goal.goal_expression(), final_layer);
+        z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), final_layer);
         solver.add(goal_expr);
     }
 
@@ -974,7 +943,7 @@ int NumericRelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
         add_layer_constraints(solver, mid);
 
         for (const Goal& goal : problem_.goals()) {
-            z3::expr goal_expr = convert_expression_to_z3(goal.goal_expression(), mid);
+            z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), mid);
             solver.add(goal_expr);
         }
 
@@ -1009,7 +978,7 @@ const std::vector<const Action*>& NumericRelaxedPlanningGraph::get_actions_in_la
 // ACTION REMOVAL
 // ============================================================================
 
-std::vector<const Action*> NumericRelaxedPlanningGraph::get_removable_actions() const {
+std::vector<size_t> NumericRelaxedPlanningGraph::get_removable_action_indices() const {
     // Collect all actions that appear in any layer of the numeric RPG
     std::unordered_set<const Action*> reachable_actions;
     for (const auto& layer : action_layers_) {
@@ -1019,51 +988,14 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::get_removable_actions() 
     }
 
     // Find actions that never appear in any layer
-    // These are unreachable in the numeric relaxed planning graph, meaning:
-    // 1. Their preconditions (Boolean + numeric) are never satisfied
-    // 2. They can be safely removed from the problem
-    std::vector<const Action*> removable_actions;
-    for (const Action& action : problem_.actions()) {
-        if (reachable_actions.find(&action) == reachable_actions.end()) {
-            removable_actions.push_back(&action);
+    std::vector<size_t> indices;
+    for (size_t i = 0; i < problem_.action_count(); ++i) {
+        if (!reachable_actions.count(&problem_.action(i))) {
+            indices.push_back(i);
         }
     }
 
-    return removable_actions;
-}
-
-size_t NumericRelaxedPlanningGraph::remove_unreachable_actions() {
-    // Get actions that can be safely removed
-    auto removable_actions = get_removable_actions();
-
-    if (removable_actions.empty()) {
-        return 0;
-    }
-
-    // Sort by index in descending order to maintain index validity during removal
-    std::vector<size_t> indices_to_remove;
-    for (const Action* action : removable_actions) {
-        // Find the index of this action
-        for (size_t i = 0; i < problem_.action_count(); ++i) {
-            if (&problem_.action(i) == action) {
-                indices_to_remove.push_back(i);
-                break;
-            }
-        }
-    }
-
-    // Sort indices in descending order
-    std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<size_t>());
-
-    // Remove actions from highest index to lowest
-    size_t removed_count = 0;
-    for (size_t index : indices_to_remove) {
-        if (problem_.remove_action(index)) {
-            removed_count++;
-        }
-    }
-
-    return removed_count;
+    return indices;
 }
 
 // ============================================================================
@@ -1179,8 +1111,7 @@ void NumericRelaxedPlanningGraph::print_action_applicability(
         if (!layer_state.numeric_bounds.empty()) {
             std::cout << "  Numeric fluents (" << layer_state.numeric_bounds.size() << "):" << std::endl;
             for (const auto& [fluent_id, bounds] : layer_state.numeric_bounds) {
-                const Expression& fluent = problem_.grounded_fluents()[fluent_id];
-                std::cout << "    " << fluent.to_string() << ": "
+                std::cout << "    " << problem_.pool().to_string(problem_.grounded_fluent(fluent_id)) << ": "
                           << "[" << bounds.lower << ", " << bounds.upper << "]" << std::endl;
             }
         }
@@ -1237,8 +1168,7 @@ void NumericRelaxedPlanningGraph::print_layer_delta(int prev_layer, int curr_lay
         std::cout << "  Boolean transitions (" << bool_changes.size() << "):" << std::endl;
         for (const auto& [fluent_id, transition] : bool_changes) {
             // Get fluent expression by index
-            const Expression& fluent = problem_.grounded_fluents()[fluent_id];
-            std::cout << "    " << fluent.to_string() << ": "
+            std::cout << "    " << problem_.pool().to_string(problem_.grounded_fluent(fluent_id)) << ": "
                       << reachability_to_string(transition.first) << " → "
                       << reachability_to_string(transition.second) << std::endl;
         }
@@ -1258,8 +1188,7 @@ void NumericRelaxedPlanningGraph::print_layer_delta(int prev_layer, int curr_lay
         std::cout << "  Numeric bound changes (" << num_changes.size() << "):" << std::endl;
         for (const auto& [fluent_id, prev_bounds, curr_bounds] : num_changes) {
             // Get fluent expression by index
-            const Expression& fluent = problem_.grounded_fluents()[fluent_id];
-            std::cout << "    " << fluent.to_string() << ": "
+            std::cout << "    " << problem_.pool().to_string(problem_.grounded_fluent(fluent_id)) << ": "
                       << "[" << prev_bounds.lower << ", " << prev_bounds.upper << "] → "
                       << "[" << curr_bounds.lower << ", " << curr_bounds.upper << "]" << std::endl;
         }

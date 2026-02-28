@@ -4,7 +4,6 @@
 #include <unordered_set>
 #include <vector>
 #include <string>
-#include "../problem/expression.hpp"
 #include "../problem/action.hpp"
 #include "../problem/goal.hpp"
 #include "../problem/problem.hpp"
@@ -48,17 +47,17 @@ public:
     void analyze(const Problem& problem);
     
     // Access methods for preconditions
-    const std::unordered_set<Action>& get_actions_requiring_precondition(const Expression& precondition) const;
-    const std::unordered_set<Expression>& get_preconditions(const Action& action) const;
+    const std::unordered_set<Action>& get_actions_requiring_precondition(ExprID precondition) const;
+    const std::unordered_set<ExprID>& get_preconditions(const Action& action) const;
 
     // Access methods for achievers
-    const std::unordered_set<Action>& get_achievers(const Expression& condition) const;
-    const std::unordered_set<Expression>& get_achieved_conditions(const Action& action) const;
+    const std::unordered_set<Action>& get_achievers(ExprID condition) const;
+    const std::unordered_set<ExprID>& get_achieved_conditions(const Action& action) const;
 
     // Get conditions in various shapes/forms
-    const std::unordered_set<Expression>& get_all_conditions() const;
-    const std::unordered_set<Expression>& get_pre_conditions() const;
-    const std::unordered_set<Expression>& get_goal_conditions() const;
+    const std::unordered_set<ExprID>& get_all_conditions() const;
+    const std::unordered_set<ExprID>& get_pre_conditions() const;
+    const std::unordered_set<ExprID>& get_goal_conditions() const;
     
     // Output method
     void print_analysis() const;
@@ -68,23 +67,23 @@ public:
 
 private:
     // Map from precondition to set of actions that require it
-    std::unordered_map<Expression, std::unordered_set<Action>> precondition_to_actions_;
-    
+    std::unordered_map<ExprID, std::unordered_set<Action>> precondition_to_actions_;
+
     // Map from action to set of preconditions it requires
-    std::unordered_map<Action, std::unordered_set<Expression>> action_to_preconditions_;
-    
+    std::unordered_map<Action, std::unordered_set<ExprID>> action_to_preconditions_;
+
     // Map from condition to set of actions that can achieve it (using semantic analysis)
-    std::unordered_map<Expression, std::unordered_set<Action>> condition_to_achievers_;
-    
+    std::unordered_map<ExprID, std::unordered_set<Action>> condition_to_achievers_;
+
     // Map from action to set of conditions it achieves (using semantic analysis)
-    std::unordered_map<Action, std::unordered_set<Expression>> action_to_achieved_conditions_;
-    
+    std::unordered_map<Action, std::unordered_set<ExprID>> action_to_achieved_conditions_;
+
     // Set of goal conditions (extracted from goal expressions)
-    std::unordered_set<Expression> pre_conditions_;
-    std::unordered_set<Expression> goal_conditions_;
-    
+    std::unordered_set<ExprID> pre_conditions_;
+    std::unordered_set<ExprID> goal_conditions_;
+
     // Cached set of all conditions (computed once for performance)
-    mutable std::unordered_set<Expression> all_conditions_cache_;
+    mutable std::unordered_set<ExprID> all_conditions_cache_;
     mutable bool all_conditions_cached_ = false;
     
     // SMT solving infrastructure
@@ -97,25 +96,23 @@ private:
     const Problem* problem_;
     
     // State variable bounds from ARPG for SMT constraint generation
-    std::unordered_map<Expression, Interval> state_variable_bounds_;
+    std::unordered_map<ExprID, Interval> state_variable_bounds_;
     
     // Statistics tracking
     mutable size_t z3_query_count_ = 0;
 
     // Helper methods
-    void extract_cnf_literals(const Expression& expr, std::vector<Expression>& literals);
+    void extract_cnf_literals(ExprID eid, std::vector<ExprID>& literals);
     void process_action_preconditions(const Action& action);
     void process_goal_conditions(const Goal& goal);
     void analyze_semantic_achievers();
-    std::unordered_set<Expression> collect_fluents_in_expression(const Expression& expr);
-    std::unordered_set<Expression> get_action_modified_fluents(const Action& action);
-    bool expressions_share_fluents(const std::unordered_set<Expression>& set1, const std::unordered_set<Expression>& set2);
-    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr, int timestep);
-    
+    std::unordered_set<ExprID> collect_fluents_in_expression(ExprID eid);
+    std::unordered_set<ExprID> get_action_modified_fluents(const Action& action);
+    bool fluent_sets_intersect(const std::unordered_set<ExprID>& set1, const std::unordered_set<ExprID>& set2);
     // SMT solver management methods for push/pop approach
     void initialize_persistent_solver();
     void add_bounds_constraints_to_solver();
-    bool check_action_achieves_condition_with_pushpop(const Action& action, const Expression& condition);
+    bool check_action_achieves_condition_with_pushpop(const Action& action, ExprID condition_eid);
 };
 
 } // namespace rantanplan

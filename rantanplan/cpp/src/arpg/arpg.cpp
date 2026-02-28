@@ -14,18 +14,19 @@ namespace rantanplan {
 
 // Supporter class implementation
 Supporter::Supporter(const std::string& name, const std::string& affected_variable,
-                     const Action& source_action, const Effect& effect)
+                     const Action& source_action, const Effect& effect,
+                     const Problem& problem)
     : name_(name), affected_variable_(affected_variable),
-      source_action_(source_action), effect_(effect) {}
+      source_action_(source_action), effect_(effect), problem_(&problem) {}
 
 bool Supporter::is_applicable(const RelaxedState& state) const {
     // Check if action preconditions are satisfied in the relaxed state
-    return state.satisfies_condition(source_action_.precondition());
+    return state.satisfies_condition(source_action_.precondition_id(), problem_->pool());
 }
 
 void Supporter::apply_effect(RelaxedState& state) const {
     // Handle boolean effects (propositions)
-    if (effect_.fluent().is_bool_type() ||
+    if (problem_->is_bool_type(effect_.effect_expression().fluent_id()) ||
         (!effect_.effect_expression().is_increase() &&
          !effect_.effect_expression().is_decrease() &&
          !effect_.effect_expression().is_assign())) {
@@ -157,12 +158,13 @@ bool ARPG::construct_graph() {
 void ARPG::create_supporters() {
     supporters_.clear();
 
+    const ExprPool& pool = problem_.pool();
     for (const auto& action : problem_.actions()) {
         for (const auto& effect : action.effects()) {
-            std::string var_name = effect.fluent().to_string();
+            std::string var_name = pool.to_string(effect.effect_expression().fluent_id());
             if (!var_name.empty()) {
                 std::string supporter_name = action.name() + "_" + var_name;
-                supporters_.emplace_back(supporter_name, var_name, action, effect);
+                supporters_.emplace_back(supporter_name, var_name, action, effect, problem_);
             }
         }
     }
@@ -190,8 +192,9 @@ void ARPG::apply_supporters(const std::vector<size_t>& indices) {
 }
 
 bool ARPG::check_goal_satisfaction() const {
+    const ExprPool& pool = problem_.pool();
     for (const auto& goal_condition : problem_.goals()) {
-        if (!current_state_.satisfies_condition(goal_condition.goal_expression())) {
+        if (!current_state_.satisfies_condition(goal_condition.goal_id(), pool)) {
             return false;
         }
     }
@@ -200,23 +203,25 @@ bool ARPG::check_goal_satisfaction() const {
 
 RelaxedState ARPG::create_initial_state() const {
     RelaxedState initial_state;
+    const ExprPool& pool = problem_.pool();
 
     // Process all initial state assignments
     for (const auto& assignment : problem_.initial_state()) {
-        std::string var_name = assignment.fluent().to_string();
+        std::string var_name = pool.to_string(assignment.fluent_id());
 
         // Handle numeric assignments
-        if (assignment.value().is_constant() && assignment.value().is_atom()) {
-            if (assignment.value().value().is_real()) {
-                double value = assignment.value().value().real().to_double();
-                initial_state.set_variable(var_name, Interval(value));
-            } else if (assignment.value().value().is_integer()) {
-                double value = static_cast<double>(assignment.value().value().integer());
-                initial_state.set_variable(var_name, Interval(value));
-            } else if (assignment.value().value().is_boolean()) {
-                if (assignment.value().value().boolean()) {
+        ExprID val_eid = assignment.value_id();
+        if (pool.is_constant(val_eid)) {
+            if (pool.payload_is_bool(val_eid)) {
+                if (pool.payload_bool(val_eid)) {
                     initial_state.add_proposition(var_name);
                 }
+            } else if (pool.payload_is_double(val_eid)) {
+                double value = pool.payload_double(val_eid);
+                initial_state.set_variable(var_name, Interval(value));
+            } else if (pool.payload_is_int(val_eid)) {
+                double value = static_cast<double>(pool.payload_int(val_eid));
+                initial_state.set_variable(var_name, Interval(value));
             }
         } else {
             // For non-constant assignments, treat as propositions
@@ -227,16 +232,14 @@ RelaxedState ARPG::create_initial_state() const {
     return initial_state;
 }
 
-std::unordered_map<Expression, Interval> ARPG::get_state_variable_bounds() const {
-    std::unordered_map<Expression, Interval> bounds_map;
+std::unordered_map<ExprID, Interval> ARPG::get_state_variable_bounds() const {
+    std::unordered_map<ExprID, Interval> bounds_map;
 
-    // Use the systematic grounded fluent collection from the problem
-    // This is much more efficient than manually collecting from initial state and effects
-    for (const Expression& grounded_fluent : problem_.grounded_fluents()) {
-        std::string var_name = grounded_fluent.to_string();
+    for (ExprID eid : problem_.grounded_fluents()) {
+        std::string var_name = problem_.pool().to_string(eid);
         auto interval_opt = current_state_.get_variable(var_name);
         if (interval_opt.has_value()) {
-            bounds_map[grounded_fluent] = interval_opt.value();
+            bounds_map[eid] = interval_opt.value();
         }
     }
 

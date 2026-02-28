@@ -38,11 +38,11 @@ struct ActionSwap {
  */
 struct SymmetryInfo {
     ObjectSwap object_swap;
-    std::vector<std::pair<const Expression*, const Expression*>> variable_pairs;
+    std::vector<std::pair<ExprID, ExprID>> variable_pairs;
     std::vector<ActionSwap> action_pairs;
-    
-    SymmetryInfo(const ObjectSwap& swap, 
-                 const std::vector<std::pair<const Expression*, const Expression*>>& pairs,
+
+    SymmetryInfo(const ObjectSwap& swap,
+                 const std::vector<std::pair<ExprID, ExprID>>& pairs,
                  const std::vector<ActionSwap>& actions = {})
         : object_swap(swap), variable_pairs(pairs), action_pairs(actions) {}
 };
@@ -117,7 +117,7 @@ public:
      * @param obj2 Name of second object
      * @return Vector of variable pairs, or empty if no symmetry exists
      */
-    std::vector<std::pair<const Expression*, const Expression*>> get_variable_pairs_for_swap(const std::string& obj1, const std::string& obj2) const;
+    std::vector<std::pair<ExprID, ExprID>> get_variable_pairs_for_swap(const std::string& obj1, const std::string& obj2) const;
     
     /**
      * @brief Check if two objects are known to be symmetric (from cached results)
@@ -142,37 +142,30 @@ private:
     std::unordered_map<std::string, std::vector<const Object*>> get_objects_by_type() const;
     
     /**
-     * @brief Convert a RantanPlan Expression to Z3 using the lifted encoding visitor
-     * @param expr The expression to convert
-     * @return Z3 expression, or nullopt if conversion failed
-     */
-    std::optional<z3::expr> convert_expression_to_z3(const Expression& expr);
-    
-    /**
      * @brief Check if an expression involves a specific object
-     * @param expr The expression to check
+     * @param eid The ExprID to check
      * @param obj_name Name of the object to look for
      * @return True if the expression involves the object
      */
-    bool expression_involves_object(const Expression& expr, const std::string& obj_name) const;
-    
+    bool expression_involves_object(ExprID eid, const std::string& obj_name) const;
+
     /**
      * @brief Check if two expressions are symmetric with respect to object swap
-     * @param expr1 First expression
-     * @param expr2 Second expression  
+     * @param eid1 First expression
+     * @param eid2 Second expression
      * @param obj1 First object in the swap
      * @param obj2 Second object in the swap
-     * @return True if expr2 is the same as expr1 with obj1 and obj2 swapped
+     * @return True if eid2 is the same as eid1 with obj1 and obj2 swapped
      */
-    bool are_expressions_symmetric(const Expression& expr1, const Expression& expr2, const std::string& obj1, const std::string& obj2) const;
-    
+    bool are_expressions_symmetric(ExprID eid1, ExprID eid2, const std::string& obj1, const std::string& obj2) const;
+
     /**
      * @brief Get pairs of fluents related by the object swap symmetry (internal use)
      * @param obj1 Name of first object
      * @param obj2 Name of second object
-     * @return Vector of pairs of pointers to fluents (v, v') where v' is obtained from v by swapping obj1 and obj2
+     * @return Vector of pairs of ExprIDs (v, v') where v' is obtained from v by swapping obj1 and obj2
      */
-    std::vector<std::pair<const Expression*, const Expression*>> get_symmetric_variable_pairs(const std::string& obj1, const std::string& obj2) const;
+    std::vector<std::pair<ExprID, ExprID>> get_symmetric_variable_pairs(const std::string& obj1, const std::string& obj2) const;
     
     /**
      * @brief Get pairs of actions related by the object swap symmetry (internal use)

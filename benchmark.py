@@ -45,12 +45,12 @@ def get_available_strategies():
 
 # Benchmark strategies (excluding sequential for performance focus)
 BENCHMARK_STRATEGIES = [
-    "r2e",
-    "dec",
+    #"r2e",
+    #"dec",
     "exists-lazy-semantic-chain",
-    "forall-lazy-semantic-chain",
-    "exists-lazy",
-    "forall-lazy"
+    #"forall-lazy-semantic-chain",
+    #"exists-lazy",
+    #"forall-lazy"
 ]
 
 # Default timeout per solver run (seconds)

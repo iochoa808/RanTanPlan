@@ -1,5 +1,4 @@
 #include "smt_symmetry_checker.hpp"
-#include "../problem/visitors/expression_visitor.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/scoped_timer.hpp"
 #include "../util/logger.hpp"
@@ -90,8 +89,7 @@ std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
 }
 
 bool SMTSymmetryChecker::are_objects_symmetric(const std::string& obj1, const std::string& obj2) {
-    // Clear visitor state and symbol table for clean start
-    visitor_.clear();
+    // Clear symbol table for clean start
     symbol_table_.clear();
     
     // Create Z3 integer constants for the two objects being swapped
@@ -102,28 +100,17 @@ bool SMTSymmetryChecker::are_objects_symmetric(const std::string& obj1, const st
     z3::expr_vector original_constraints(context_);
     
     // Add initial state constraints at timestep 0
-    visitor_.set_timestep(0);
     for (const auto& assignment : problem_->initial_state()) {
-        auto fluent_expr = convert_expression_to_z3(assignment.fluent());
-        auto value_expr = convert_expression_to_z3(assignment.value());
-        
-        if (fluent_expr && value_expr) {
-            z3::expr constraint = (*fluent_expr) == (*value_expr);
-            original_constraints.push_back(constraint);
-        }
+        z3::expr fluent_expr = visitor_.convert_from_pool(assignment.fluent_id(), 0);
+        z3::expr value_expr = visitor_.convert_from_pool(assignment.value_id(), 0);
+        original_constraints.push_back(fluent_expr == value_expr);
     }
-    
+
     // Add goal constraints at timestep 1 (different from initial state)
-    visitor_.set_timestep(1);
     for (const auto& goal : problem_->goals()) {
-        auto goal_expr = convert_expression_to_z3(goal.goal_expression());
-        if (goal_expr) {
-            original_constraints.push_back(*goal_expr);
-        }
+        z3::expr goal_expr = visitor_.convert_from_pool(goal.goal_id(), 1);
+        original_constraints.push_back(goal_expr);
     }
-    
-    // Clear timestep after use
-    visitor_.clear_timestep();
     
     // Create swapped problem by substituting obj1 ↔ obj2 in all constraints
     z3::expr_vector swapped_constraints(context_);
@@ -168,94 +155,92 @@ SMTSymmetryChecker::get_objects_by_type() const {
 }
 
 
-std::optional<z3::expr> SMTSymmetryChecker::convert_expression_to_z3(const Expression& expr) {
-    visitor_.clear();
-    accept_visitor(expr, visitor_);
-    return visitor_.get_result();
-}
-
-std::vector<std::pair<const Expression*, const Expression*>> SMTSymmetryChecker::get_symmetric_variable_pairs(
+std::vector<std::pair<ExprID, ExprID>> SMTSymmetryChecker::get_symmetric_variable_pairs(
     const std::string& obj1, const std::string& obj2) const {
-    std::vector<std::pair<const Expression*, const Expression*>> variable_pairs;
-    
-    // Collect all fluents from initial state that involve either symmetric object
-    std::vector<const Expression*> relevant_fluents;
+    std::vector<std::pair<ExprID, ExprID>> variable_pairs;
+
+    // Collect all fluent ExprIDs from initial state that involve either symmetric object
+    std::vector<ExprID> relevant_fluents;
     for (const auto& assignment : problem_->initial_state()) {
-        const Expression& fluent = assignment.fluent();
-        if (expression_involves_object(fluent, obj1) || expression_involves_object(fluent, obj2)) {
-            relevant_fluents.push_back(&fluent);
+        ExprID fluent_eid = assignment.fluent_id();
+        if (expression_involves_object(fluent_eid, obj1) || expression_involves_object(fluent_eid, obj2)) {
+            relevant_fluents.push_back(fluent_eid);
         }
     }
-    
-    
+
     // For each pair of relevant fluents, check if they are symmetric with respect to obj1 and obj2
     for (size_t i = 0; i < relevant_fluents.size(); i++) {
         for (size_t j = i + 1; j < relevant_fluents.size(); j++) {
-            const Expression* fluent1 = relevant_fluents[i];
-            const Expression* fluent2 = relevant_fluents[j];
-            
-            // Check if these two fluents are symmetric with respect to obj1 and obj2
-            if (are_expressions_symmetric(*fluent1, *fluent2, obj1, obj2)) {
+            ExprID fluent1 = relevant_fluents[i];
+            ExprID fluent2 = relevant_fluents[j];
+
+            if (are_expressions_symmetric(fluent1, fluent2, obj1, obj2)) {
                 variable_pairs.push_back({fluent1, fluent2});
             }
         }
     }
-    
+
     return variable_pairs;
 }
 
-bool SMTSymmetryChecker::expression_involves_object(const Expression& expr, const std::string& obj_name) const {
-    // Check if this is a constant atom matching the object name
-    if (expr.is_constant() && expr.is_atom() && expr.value().symbol() == obj_name) {
+bool SMTSymmetryChecker::expression_involves_object(ExprID eid, const std::string& obj_name) const {
+    const auto& pool = problem_->pool();
+
+    // Check if this is a leaf node with a string payload matching the object name
+    if (pool.is_constant(eid) && pool.payload_is_string(eid) && pool.payload_string(eid) == obj_name) {
         return true;
     }
-    
-    // Check all sub-expressions in the list
-    for (size_t i = 0; i < expr.list_size(); i++) {
-        const Expression& param = expr.list_element(i);
-        if (expression_involves_object(param, obj_name)) {
+
+    // Recursively check children
+    for (ExprID child : pool.children(eid)) {
+        if (expression_involves_object(child, obj_name)) {
             return true;
         }
     }
     return false;
 }
 
-bool SMTSymmetryChecker::are_expressions_symmetric(const Expression& expr1, const Expression& expr2, 
+bool SMTSymmetryChecker::are_expressions_symmetric(ExprID eid1, ExprID eid2,
                                                    const std::string& obj1, const std::string& obj2) const {
-    // Base case: both are atoms
-    if (expr1.is_atom() && expr2.is_atom()) {
-        if (expr1.is_constant() && expr2.is_constant()) {
-            std::string name1 = expr1.value().symbol();
-            std::string name2 = expr2.value().symbol();
-            
-            // They are symmetric if one has obj1 where the other has obj2, or vice versa
+    const auto& pool = problem_->pool();
+    const auto& node1 = pool.get(eid1);
+    const auto& node2 = pool.get(eid2);
+
+    if (node1.kind != node2.kind) return false;
+    if (node1.op != node2.op) return false;
+    if (node1.type_id != node2.type_id) return false;
+
+    bool leaf1 = node1.children.empty();
+    bool leaf2 = node2.children.empty();
+
+    // Base case: both are leaf nodes
+    if (leaf1 && leaf2) {
+        if (pool.payload_is_string(eid1) && pool.payload_is_string(eid2)) {
+            const std::string& name1 = pool.payload_string(eid1);
+            const std::string& name2 = pool.payload_string(eid2);
+
+            // Symmetric if one has obj1 where the other has obj2, or vice versa
             if (name1 == obj1 && name2 == obj2) return true;
             if (name1 == obj2 && name2 == obj1) return true;
             // Or if they're identical but don't involve the symmetric objects
             if (name1 == name2 && name1 != obj1 && name1 != obj2) return true;
             return false;
         }
-        // For non-constant atoms, they should be identical
-        return expr1 == expr2;
+        // For non-string leaves: must be identical
+        return eid1 == eid2;
     }
-    
-    // Both should be lists
-    if (!expr1.is_list() || !expr2.is_list()) {
-        return false;
-    }
-    
-    // Lists should have the same size
-    if (expr1.list_size() != expr2.list_size()) {
-        return false;
-    }
-    
-    // Recursively check all elements
-    for (size_t i = 0; i < expr1.list_size(); i++) {
-        if (!are_expressions_symmetric(expr1.list_element(i), expr2.list_element(i), obj1, obj2)) {
+
+    // Both must have children
+    if (leaf1 || leaf2) return false;
+    if (node1.children.size() != node2.children.size()) return false;
+
+    // Recursively check all children
+    for (size_t i = 0; i < node1.children.size(); ++i) {
+        if (!are_expressions_symmetric(node1.children[i], node2.children[i], obj1, obj2)) {
             return false;
         }
     }
-    
+
     return true;
 }
 
@@ -371,7 +356,7 @@ std::vector<ObjectSwap> SMTSymmetryChecker::get_object_swaps() const {
     return swaps;
 }
 
-std::vector<std::pair<const Expression*, const Expression*>> 
+std::vector<std::pair<ExprID, ExprID>>
 SMTSymmetryChecker::get_variable_pairs_for_swap(const std::string& obj1, const std::string& obj2) const {
     for (const auto& symmetry : detected_symmetries_) {
         const ObjectSwap& swap = symmetry.object_swap;

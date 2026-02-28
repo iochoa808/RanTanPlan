@@ -2,7 +2,7 @@
 
 namespace rantanplan {
 
-Effect::Effect(const pb::Effect& pb_effect, const Problem* problem) 
+Effect::Effect(const pb::Effect& pb_effect, Problem* problem)
     : effect_expr_(pb_effect.effect(), problem) {
 }
 

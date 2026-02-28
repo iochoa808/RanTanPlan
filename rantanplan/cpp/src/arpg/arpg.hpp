@@ -11,7 +11,6 @@
 #include "../problem/problem.hpp"
 #include "../problem/action.hpp"
 #include "../problem/effect.hpp"
-#include "../problem/expression.hpp"
 
 namespace rantanplan {
 
@@ -184,35 +183,35 @@ public:
         }
     }
 
-    // Evaluate expressions to intervals (simplified from original 60+ line method)
-    Interval evaluate_expression(const Expression& expr) const {
+    // ExprID-based evaluation using ExprPool
+    Interval evaluate_expression(ExprID eid, const ExprPool& pool) const {
         // Handle constants
-        if (expr.is_constant() && expr.is_atom()) {
-            const auto& atom = expr.value();
-            if (atom.is_boolean()) return Interval(atom.boolean() ? 1.0 : 0.0);
-            if (atom.is_real()) return Interval(atom.real().to_double());
-            if (atom.is_integer()) return Interval(static_cast<double>(atom.integer()));
+        if (pool.is_constant(eid)) {
+            if (pool.payload_is_bool(eid)) return Interval(pool.payload_bool(eid) ? 1.0 : 0.0);
+            if (pool.payload_is_double(eid)) return Interval(pool.payload_double(eid));
+            if (pool.payload_is_int(eid)) return Interval(static_cast<double>(pool.payload_int(eid)));
         }
 
         // Handle variables by name lookup
-        if (expr.is_parameter() || expr.is_variable() || expr.is_state_variable() ||
-            expr.is_fluent_symbol() || expr.is_atom()) {
-            std::string var_name = expr.to_string();
+        ExprKind kind = pool.kind(eid);
+        if (kind == ExprKind::PARAMETER || kind == ExprKind::VARIABLE ||
+            kind == ExprKind::STATE_VARIABLE || kind == ExprKind::FLUENT_SYMBOL ||
+            (kind == ExprKind::CONSTANT && !pool.payload_is_bool(eid))) {
+            std::string var_name = pool.to_string(eid);
             auto result = get_variable(var_name);
             return result.value_or(Interval(0.0));
         }
 
         // Handle arithmetic operations
-        if (expr.is_plus() && expr.list_size() == 2) {
-            return evaluate_expression(expr.list_element(0)) + evaluate_expression(expr.list_element(1));
+        if (pool.is_plus(eid) && pool.argument_count(eid) == 2) {
+            return evaluate_expression(pool.argument(eid, 0), pool) + evaluate_expression(pool.argument(eid, 1), pool);
         }
-        if (expr.is_minus() && expr.list_size() == 2) {
-            return evaluate_expression(expr.list_element(0)) - evaluate_expression(expr.list_element(1));
+        if (pool.is_minus(eid) && pool.argument_count(eid) == 2) {
+            return evaluate_expression(pool.argument(eid, 0), pool) - evaluate_expression(pool.argument(eid, 1), pool);
         }
-        if (expr.is_multiply() && expr.list_size() == 2) {
-            Interval left = evaluate_expression(expr.list_element(0));
-            Interval right = evaluate_expression(expr.list_element(1));
-            // Handle missing variable special case
+        if (pool.is_multiply(eid) && pool.argument_count(eid) == 2) {
+            Interval left = evaluate_expression(pool.argument(eid, 0), pool);
+            Interval right = evaluate_expression(pool.argument(eid, 1), pool);
             if ((left.lower() == 0.0 && left.upper() == 0.0 && right.upper() > 0.0) ||
                 (right.lower() == 0.0 && right.upper() == 0.0 && left.upper() > 0.0)) {
                 double nonzero_val = (left.upper() > 0.0) ? left.upper() : right.upper();
@@ -224,79 +223,50 @@ public:
         return Interval(1.0); // Default for unknown expressions
     }
 
-    // Check if conditions are satisfied (simplified from original 40+ line method)
-    bool satisfies_condition(const Expression& condition) const {
+    // ExprID-based condition satisfaction check using ExprPool
+    bool satisfies_condition(ExprID eid, const ExprPool& pool) const {
         // Handle boolean constants
-        if (condition.is_constant() && condition.is_atom() && condition.value().is_boolean()) {
-            return condition.value().boolean();
+        if (pool.is_constant(eid) && pool.payload_is_bool(eid)) {
+            return pool.payload_bool(eid);
         }
 
         // Handle propositions
-        if (condition.is_state_variable() || condition.is_fluent_symbol()) {
-            std::string condition_name = condition.to_string();
-
-            // First check if it exists as a boolean proposition
-            if (is_proposition_true(condition_name)) {
-                return true;
-            }
-
-            // If not found as proposition, check if it exists as a numeric interval
-            // This handles cases like location predicates that may be stored as intervals
+        ExprKind kind = pool.kind(eid);
+        if (kind == ExprKind::STATE_VARIABLE || kind == ExprKind::FLUENT_SYMBOL) {
+            std::string condition_name = pool.to_string(eid);
+            if (is_proposition_true(condition_name)) return true;
             auto interval_opt = get_variable(condition_name);
-            if (interval_opt.has_value()) {
-                // Consider the condition satisfied if the interval has a positive upper bound
-                return interval_opt->upper() > 0.0;
-            }
-
+            if (interval_opt.has_value()) return interval_opt->upper() > 0.0;
             return false;
         }
 
         // Handle logical operations
-        if (condition.is_and()) {
-            for (size_t i = 0; i < condition.list_size(); ++i) {
-                if (!satisfies_condition(condition.list_element(i))) return false;
+        if (pool.is_and(eid)) {
+            for (ExprID arg : pool.arguments(eid)) {
+                if (!satisfies_condition(arg, pool)) return false;
             }
             return true;
         }
-        if (condition.is_or()) {
-            for (size_t i = 0; i < condition.list_size(); ++i) {
-                if (satisfies_condition(condition.list_element(i))) return true;
+        if (pool.is_or(eid)) {
+            for (ExprID arg : pool.arguments(eid)) {
+                if (satisfies_condition(arg, pool)) return true;
             }
             return false;
         }
-        if (condition.is_not() && condition.list_size() == 1) {
-            return !satisfies_condition(condition.list_element(0));
+        if (pool.is_not(eid) && pool.argument_count(eid) == 1) {
+            return !satisfies_condition(pool.argument(eid, 0), pool);
         }
 
         // Handle numeric comparisons
-        if (condition.list_size() >= 2) {
-            // For expressions like (<= a b), the operands are typically at indices 0 and 1
-            // But if list_size() is 3, it might be operator at 0 and operands at 1,2
-            size_t left_idx = (condition.list_size() == 3) ? 1 : 0;
-            size_t right_idx = (condition.list_size() == 3) ? 2 : 1;
+        if (pool.is_function_application(eid) && pool.argument_count(eid) >= 2) {
+            Interval left = evaluate_expression(pool.argument(eid, 0), pool);
+            Interval right = evaluate_expression(pool.argument(eid, 1), pool);
 
-            Interval left = evaluate_expression(condition.list_element(left_idx));
-            Interval right = evaluate_expression(condition.list_element(right_idx));
-
-            if (condition.is_greater_equal()) {
-                return (left - right).lower() >= 0.0;
-            }
-            if (condition.is_greater_than()) {
-                return (left - right).lower() > 0.0;
-            }
-            if (condition.is_less_equal()) {
-                // For relaxed planning: A <= B is satisfied if it's possible that A <= B
-                // This means A.lower() <= B.upper()
-                return left.lower() <= right.upper();
-            }
-            if (condition.is_less_than()) {
-                // For relaxed planning: A < B is satisfied if it's possible that A < B
-                // This means A.lower() < B.upper()
-                return left.lower() < right.upper();
-            }
-            if (condition.is_equals()) {
-                return !(left.upper() < right.lower() || right.upper() < left.lower());
-            }
+            if (pool.is_greater_equal(eid)) return (left - right).lower() >= 0.0;
+            if (pool.is_greater_than(eid)) return (left - right).lower() > 0.0;
+            if (pool.is_less_equal(eid)) return left.lower() <= right.upper();
+            if (pool.is_less_than(eid)) return left.lower() < right.upper();
+            if (pool.is_equals(eid)) return !(left.upper() < right.lower() || right.upper() < left.lower());
         }
 
         return true; // Default assume satisfied
@@ -324,7 +294,8 @@ class Supporter {
 public:
     // Constructor with action and effect
     Supporter(const std::string& name, const std::string& affected_variable,
-              const Action& source_action, const Effect& effect);
+              const Action& source_action, const Effect& effect,
+              const Problem& problem);
 
     // Accessors
     const std::string& name() const { return name_; }
@@ -346,6 +317,7 @@ private:
     std::string affected_variable_;
     const Action& source_action_;
     const Effect& effect_;
+    const Problem* problem_;
 
     // Compute the interval effect based on the effect type and current value
     Interval compute_effect_interval(double current_value) const;
@@ -371,8 +343,8 @@ public:
     // Get the final relaxed state
     const RelaxedState& get_final_state() const { return current_state_; }
 
-    // Get bounds for all state variables from the final relaxed state
-    std::unordered_map<Expression, Interval> get_state_variable_bounds() const;
+    // Get bounds for all state variables from the final relaxed state (keyed by ExprID)
+    std::unordered_map<ExprID, Interval> get_state_variable_bounds() const;
 
     // Get construction statistics
     size_t get_num_supporters() const { return supporters_.size(); }

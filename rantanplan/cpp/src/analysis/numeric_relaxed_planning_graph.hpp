@@ -2,7 +2,6 @@
 
 #include "../problem/problem.hpp"
 #include "../problem/action.hpp"
-#include "../problem/expression.hpp"
 #include "../problem/effect_expression.hpp"
 #include "../encoders/z3_variable_factory.hpp"
 #include "../encoders/grounded_encoding_visitor.hpp"
@@ -121,7 +120,7 @@ public:
      * @param problem The planning problem (grounded)
      * @param ctx Shared Z3 context (passed by reference)
      */
-    NumericRelaxedPlanningGraph(Problem& problem, z3::context& ctx);
+    NumericRelaxedPlanningGraph(const Problem& problem, z3::context& ctx);
     ~NumericRelaxedPlanningGraph() = default;
 
     // Disable copying (Z3 context is not copyable)
@@ -179,22 +178,22 @@ public:
     /**
      * @brief Get Boolean reachability at specific layer
      */
-    BooleanReachability get_boolean_reachability(const Expression& fluent, int layer) const;
+    BooleanReachability get_boolean_reachability(ExprID fluent_eid, int layer) const;
 
     /**
      * @brief Get reachability status at final layer
      */
-    BooleanReachability get_boolean_reachability(const Expression& fluent) const;
+    BooleanReachability get_boolean_reachability(ExprID fluent_eid) const;
 
     /**
      * @brief Get numeric bounds at specific layer
      */
-    NumericBounds get_numeric_bounds(const Expression& fluent, int layer) const;
+    NumericBounds get_numeric_bounds(ExprID fluent_eid, int layer) const;
 
     /**
      * @brief Get numeric bounds at final layer
      */
-    NumericBounds get_numeric_bounds(const Expression& fluent) const;
+    NumericBounds get_numeric_bounds(ExprID fluent_eid) const;
 
     // ========================================================================
     // QUERY METHODS - Actions
@@ -211,15 +210,9 @@ public:
     bool is_action_applicable(const Action& action, int layer) const;
 
     /**
-     * @brief Get actions that can be safely removed (never applicable in any layer)
+     * @brief Get indices of actions that can be safely removed (never applicable in any layer)
      */
-    std::vector<const Action*> get_removable_actions() const;
-
-    /**
-     * @brief Remove unreachable actions from the problem
-     * @return Number of actions removed
-     */
-    size_t remove_unreachable_actions();
+    std::vector<size_t> get_removable_action_indices() const;
 
     /**
      * @brief Get total number of layers
@@ -244,7 +237,7 @@ private:
     // MEMBER VARIABLES - Problem Reference
     // ========================================================================
 
-    Problem& problem_;
+    const Problem& problem_;
 
     // ========================================================================
     // MEMBER VARIABLES - State Tracking
@@ -271,7 +264,7 @@ private:
 
     // Maps each fluent to the actions/effects that can modify it
     // Enables O(effects_for_fluent) lookup instead of O(all_actions * all_effects)
-    std::unordered_map<Expression, std::vector<std::pair<const Action*, const EffectExpression*>>> epc_index_;
+    std::unordered_map<ExprID, std::vector<std::pair<const Action*, const EffectExpression*>>> epc_index_;
 
     // ========================================================================
     // MEMBER VARIABLES - Configuration
@@ -472,17 +465,17 @@ private:
     /**
      * @brief Check if expression is a Boolean condition
      */
-    bool is_boolean_expression(const Expression& expr) const;
+    bool is_boolean_expression(ExprID eid) const;
 
     /**
      * @brief Check if expression is a numeric expression
      */
-    bool is_numeric_expression(const Expression& expr) const;
+    bool is_numeric_expression(ExprID eid) const;
 
     /**
-     * @brief Get fluent ID from expression (for indexing)
+     * @brief Get fluent ID from ExprID (for indexing)
      */
-    int find_grounded_fluent_id(const Expression& fluent) const;
+    int find_grounded_fluent_id(ExprID fluent_eid) const;
 
     // ========================================================================
     // PRIVATE METHODS - SMT Constraint Building
@@ -506,19 +499,6 @@ private:
      * @brief Add numeric bounds constraints
      */
     void add_numeric_constraints(z3::solver& solver, int layer) const;
-
-    /**
-     * @brief Convert planning expression to Z3 using visitor
-     */
-    z3::expr convert_expression_to_z3(const Expression& expr, int layer) const;
-
-    /**
-     * @brief Convert effect value to Z3 expression
-     *
-     * Uses EffectExpression::value() which returns const Expression&,
-     * then passes to grounded_visitor_ for conversion.
-     */
-    z3::expr convert_effect_value_to_z3(const EffectExpression& effect_expr, int layer) const;
 
     /**
      * @brief Extract numeric value from Z3 model

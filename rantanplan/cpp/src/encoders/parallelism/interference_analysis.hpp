@@ -119,24 +119,24 @@ protected:
     // Common data structures for action analysis results
     struct ActionAnalysis {
         // Precondition analysis
-        std::unordered_set<Expression> positive_boolean_preconditions;  // Boolean fluents required to be true
-        std::unordered_set<Expression> negative_boolean_preconditions;  // Boolean fluents required to be false
-        std::unordered_set<Expression> numeric_preconditions;           // Numeric fluents in preconditions
-        
+        std::unordered_set<ExprID> positive_boolean_preconditions;  // Boolean fluents required to be true
+        std::unordered_set<ExprID> negative_boolean_preconditions;  // Boolean fluents required to be false
+        std::unordered_set<ExprID> numeric_preconditions;           // Numeric fluents in preconditions
+
         // Effect analysis
-        std::unordered_set<Expression> positive_boolean_effects;  // Boolean fluents made true
-        std::unordered_set<Expression> negative_boolean_effects;  // Boolean fluents made false
-        std::unordered_set<Expression> numeric_effects;           // Numeric fluents modified
+        std::unordered_set<ExprID> positive_boolean_effects;  // Boolean fluents made true
+        std::unordered_set<ExprID> negative_boolean_effects;  // Boolean fluents made false
+        std::unordered_set<ExprID> numeric_effects;           // Numeric fluents modified
 
         // A set of all fluents modified by this action's effects (the union of all the previous 3 sets)
-        std::unordered_set<Expression> all_effects;
+        std::unordered_set<ExprID> all_effects;
 
         // Fluents appearing in the conditions of conditional effects
-        std::unordered_set<Expression> conditional_effect_fluents;
+        std::unordered_set<ExprID> conditional_effect_fluents;
 
-        // Fluents appearing on the RHS of numeric assignments. 
+        // Fluents appearing on the RHS of numeric assignments.
         // For example, given an effect x' = x + y + y + z^2 would have y and z in this set.
-        std::unordered_set<Expression> numeric_effect_dependencies;
+        std::unordered_set<ExprID> numeric_effect_dependencies;
     };
 
     // Common data that all implementations need

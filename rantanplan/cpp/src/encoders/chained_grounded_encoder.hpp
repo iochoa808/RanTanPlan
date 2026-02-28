@@ -23,8 +23,8 @@ public:
     std::shared_ptr<z3::expr> encode_actions(int t) override;
 
 private:
-    // Map from non-Boolean variable to actions that modify it  
-    std::unordered_map<Expression, std::vector<const Action*>> variable_modifiers_;
+    // Map from non-Boolean variable (ExprID) to actions that modify it
+    std::unordered_map<ExprID, std::vector<const Action*>> variable_modifiers_;
     
     /**
      * @brief Build index of which actions modify which variables
@@ -42,7 +42,7 @@ private:
      * @brief Get the effect expression for a specific variable from an action
      */
     std::optional<const EffectExpression*> get_effect_for_variable(
-        const Action& action, const Expression& variable) const;
+        const Action& action, ExprID var_eid) const;
     
     /**
      * @brief Apply an effect to an expression (for chaining)

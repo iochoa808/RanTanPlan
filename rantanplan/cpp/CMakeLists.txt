@@ -75,7 +75,7 @@ add_executable(rantanplan
     src/problem/real.cpp
     src/problem/atom.cpp
     src/problem/parameter.cpp
-    src/problem/expression.cpp
+    src/problem/expr_pool.cpp
     src/problem/effect_expression.cpp
     src/problem/effect.cpp
     src/problem/object.cpp
@@ -86,7 +86,8 @@ add_executable(rantanplan
     src/problem/plan.cpp
     src/problem/problem.cpp
     src/problem/type.cpp
-    src/problem/visitors/expression_visitor.cpp
+    src/problem/visitors/fluent_collector.cpp
+    src/problem/visitors/fluent_polarity_collector.cpp
     src/encoders/lifted_encoding_visitor.cpp
     src/encoders/grounded_encoding_visitor.cpp
     src/encoders/grounded_encoder.cpp
@@ -117,6 +118,9 @@ add_executable(rantanplan
     src/abstraction/achievers_analysis.cpp
     src/analysis/relaxed_planning_graph.cpp
     src/analysis/numeric_relaxed_planning_graph.cpp
+    src/passes/pipeline.cpp
+    src/passes/boolean_rpg_pass.cpp
+    src/passes/numeric_rpg_pass.cpp
 )
 
 # Define proto files and generate C++ sources
@@ -145,6 +149,7 @@ target_include_directories(rantanplan PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/symmetries/      # symmetries headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/abstraction/     # abstraction headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/analysis/        # analysis headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/passes/          # pass system headers
     ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
     ${Z3_INCLUDE_DIR}                                # Z3 headers
 )
