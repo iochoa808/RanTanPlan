@@ -1,5 +1,6 @@
 #include "problem.hpp"
 #include <sstream>
+#include <stdexcept>
 #include <unordered_set>
 
 namespace rantanplan {
@@ -12,7 +13,11 @@ ExprID Problem::intern_from_protobuf(const pb::Expression& pb_expr) {
     ExprNode node;
 
     // Convert kind
-    node.kind = static_cast<int>(pb_expr.kind());
+    int kind_value = static_cast<int>(pb_expr.kind());
+    if (kind_value == 8) {
+        throw std::runtime_error("Unsupported expression kind CONTAINER_ID (8) in protobuf input");
+    }
+    node.kind = kind_value;
 
     // Resolve type string to type_id
     const std::string& type_str = pb_expr.type();

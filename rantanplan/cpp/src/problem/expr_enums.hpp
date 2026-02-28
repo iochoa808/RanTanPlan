@@ -16,6 +16,9 @@ enum class ExprKind {
     STATE_VARIABLE = 5,         // Fluent application (e.g., `(at-robot l1)`)
     FUNCTION_APPLICATION = 6,   // Function application (e.g., `(+ 1 3)`)
     VARIABLE = 7                // Variable from outer scope (existential/universal)
+    // NOTE: Protobuf ExpressionKind also defines CONTAINER_ID = 8.
+    // This internal IR does not support it; parsing rejects it explicitly in
+    // Problem::intern_from_protobuf() with a runtime error.
 };
 
 /**

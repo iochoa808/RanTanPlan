@@ -206,6 +206,10 @@ bool SMTSymmetryChecker::are_expressions_symmetric(ExprID eid1, ExprID eid2,
     const auto& node1 = pool.get(eid1);
     const auto& node2 = pool.get(eid2);
 
+    if (node1.kind != node2.kind) return false;
+    if (node1.op != node2.op) return false;
+    if (node1.type_id != node2.type_id) return false;
+
     bool leaf1 = node1.children.empty();
     bool leaf2 = node2.children.empty();
 
