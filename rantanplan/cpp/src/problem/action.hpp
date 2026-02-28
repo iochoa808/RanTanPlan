@@ -35,7 +35,6 @@ public:
 
     // Precondition access
     ExprID precondition_id() const { return precondition_id_; }
-    void set_precondition_id(ExprID id) { precondition_id_ = id; }
     bool has_precondition() const { return has_precondition_; }
 
     // Effect access

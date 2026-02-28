@@ -66,11 +66,6 @@ public:
     bool is_conditional() const { return has_condition_; }
     const std::vector<ExprID>& forall_variable_ids() const { return forall_variable_ids_; }
 
-    // Setters (used during interning)
-    void set_fluent_id(ExprID id) { fluent_id_ = id; }
-    void set_value_id(ExprID id) { value_id_ = id; }
-    void set_condition_id(ExprID id) { condition_id_ = id; }
-
     // Effect kind predicates
     bool is_assign() const { return kind_ == Kind::ASSIGN; }
     bool is_increase() const { return kind_ == Kind::INCREASE; }

@@ -28,6 +28,8 @@ std::string ExprNode::canonical_key() const {
             key += std::to_string(val);
         } else if constexpr (std::is_same_v<T, std::string>) {
             key += "s:";
+            key += std::to_string(val.size());
+            key += ':';
             key += val;
         }
     }, payload);
