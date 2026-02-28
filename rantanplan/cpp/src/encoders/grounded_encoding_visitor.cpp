@@ -181,8 +181,7 @@ z3::expr GroundedEncodingVisitor::convert_node(ExprID id) {
 
     // ---- State variable (fluent application) ----
     if (kind == ExprKind::STATE_VARIABLE) {
-        // children[0] = fluent symbol, children[1..] = arguments
-        const ExprNode& fluent_sym = pool.get(node.children[0]);
+        const ExprNode& fluent_sym = pool.head_symbol_node(id);
         if (!std::holds_alternative<std::string>(fluent_sym.payload)) {
             throw std::runtime_error("STATE_VARIABLE first child is not a symbol");
         }
@@ -202,20 +201,22 @@ z3::expr GroundedEncodingVisitor::convert_node(ExprID id) {
 
         // Build grounded parameters from argument children
         std::vector<Parameter> grounded_params;
-        grounded_params.reserve(node.children.size() - 1);
-        for (size_t i = 1; i < node.children.size(); ++i) {
-            const ExprNode& arg = pool.get(node.children[i]);
+        grounded_params.reserve(pool.argument_count(id));
+        size_t arg_index = 0;
+        for (ExprID arg_id : pool.arguments(id)) {
+            const ExprNode& arg = pool.get(arg_id);
             if (!std::holds_alternative<std::string>(arg.payload)) {
                 throw std::runtime_error("Non-symbol argument in grounded fluent: " + fluent_name);
             }
             const Type* param_type = nullptr;
-            if (i - 1 < fluent_def->parameters().size()) {
-                param_type = fluent_def->parameters()[i - 1].type();
+            if (arg_index < fluent_def->parameters().size()) {
+                param_type = fluent_def->parameters()[arg_index].type();
             }
             if (!param_type) {
                 param_type = problem_->find_type("object");
             }
             grounded_params.emplace_back(std::get<std::string>(arg.payload), param_type);
+            ++arg_index;
         }
 
         Fluent grounded_fluent(fluent_def->name(), fluent_def->value_type(), grounded_params);
@@ -227,11 +228,11 @@ z3::expr GroundedEncodingVisitor::convert_node(ExprID id) {
     if (kind == ExprKind::FUNCTION_APPLICATION) {
         auto op = static_cast<ExprOperator>(node.op);
 
-        // Recursively convert arguments (children[1..], skipping function symbol)
+        // Recursively convert arguments
         std::vector<z3::expr> z3_args;
-        z3_args.reserve(node.children.size() - 1);
-        for (size_t i = 1; i < node.children.size(); ++i) {
-            z3_args.push_back(convert_node(node.children[i]));
+        z3_args.reserve(pool.argument_count(id));
+        for (ExprID arg : pool.arguments(id)) {
+            z3_args.push_back(convert_node(arg));
         }
 
         // Dispatch to existing handlers

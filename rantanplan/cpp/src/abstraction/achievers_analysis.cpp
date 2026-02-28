@@ -140,12 +140,12 @@ void AchieversAnalysis::extract_cnf_literals(ExprID eid, std::vector<ExprID>& li
     const auto& pool = problem_->pool();
     if (pool.is_and(eid)) {
         // AND expression - extract literals from each conjunct recursively
-        for (ExprID child : pool.children(eid)) {
+        for (ExprID child : pool.arguments(eid)) {
             extract_cnf_literals(child, literals);
         }
     } else {
         // Base case: this is a literal (atomic or disjunctive)
-        if (!pool.is_fluent_symbol(eid)) {
+        if (!pool.is_fluent_symbol(eid) && !pool.is_function_symbol(eid)) {
             literals.push_back(eid);
         }
     }

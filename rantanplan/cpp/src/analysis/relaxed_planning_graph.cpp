@@ -192,13 +192,8 @@ void RelaxedPlanningGraph::extract_goal_conditions() {
 void RelaxedPlanningGraph::extract_cnf_conditions(ExprID eid, std::vector<ExprID>& conditions) const {
     const auto& pool = problem_.pool();
     if (pool.is_and(eid)) {
-        // In ExprPool, FUNCTION_APPLICATION nodes store the operator symbol as
-        // children[0] (e.g. the "and" FUNCTION_SYMBOL). Actual operands start at
-        // index 1, consistent with how grounded_encoding_visitor and other visitors
-        // traverse children.
-        const auto& kids = pool.children(eid);
-        for (size_t i = 1; i < kids.size(); ++i) {
-            extract_cnf_conditions(kids[i], conditions);
+        for (ExprID arg : pool.arguments(eid)) {
+            extract_cnf_conditions(arg, conditions);
         }
     } else {
         // Filter out both FLUENT_SYMBOL and FUNCTION_SYMBOL leaves — only emit
@@ -354,15 +349,16 @@ int RelaxedPlanningGraph::find_grounded_fluent_id(ExprID eid) const {
 
 ExprID RelaxedPlanningGraph::get_inner_condition(ExprID negated_eid) const {
     const auto& pool = problem_.pool();
-    // For (not condition), return the condition being negated
-    // The structure is: children[0] = 'not', children[1] = condition
+    if (pool.has_head_and_arguments(negated_eid) && pool.argument_count(negated_eid) >= 1) {
+        return pool.argument(negated_eid, 0);
+    }
+
     const auto& kids = pool.children(negated_eid);
-    if (kids.size() >= 2) {
-        return kids[1];
-    } else {
-        // Fallback to original behavior if structure is unexpected
+    if (!kids.empty()) {
         return kids[0];
     }
+
+    return EXPR_NULL;
 }
 
 bool RelaxedPlanningGraph::is_fact_in_layer(ExprID condition_eid, int layer_index) const {

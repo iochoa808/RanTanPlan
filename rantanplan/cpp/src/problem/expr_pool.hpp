@@ -8,6 +8,7 @@
 #include <memory>
 #include <functional>
 #include <cassert>
+#include <span>
 #include "expr_enums.hpp"
 
 // Optional Improvements
@@ -70,6 +71,28 @@ struct ExprNode {
 /// Problem instances in a transformation pipeline.
 class ExprPool {
 public:
+    // ------------------------------------------------------------------------
+    // Expression child-layout conventions
+    //
+    // Most expression kinds expose their full child list directly via
+    // children()/child()/child_count().
+    //
+    // Two kinds use a "head+arguments" layout:
+    //   - ExprKind::FUNCTION_APPLICATION
+    //   - ExprKind::STATE_VARIABLE
+    //
+    // For these, children[0] is the head symbol (operator/fluent symbol), and
+    // children[1..] are semantic arguments.
+    //
+    // Use the application helpers when you mean semantic arguments/head:
+    //   - has_head_and_arguments(id)
+    //   - argument_count(id), argument(id, i), arguments(id)
+    //   - head_symbol_id(id), head_symbol_node(id)
+    //
+    // Use raw child access when you need the exact structural tree layout
+    // including the head symbol (e.g., generic traversals, serialization,
+    // structural formatting/debug output).
+    // ------------------------------------------------------------------------
     ExprPool() = default;
 
     /// Intern a fully-constructed ExprNode. Returns existing ID if structurally
@@ -138,6 +161,47 @@ public:
         const auto& c = get(id).children;
         assert(index < c.size());
         return c[index];
+    }
+
+    // ========================================================================
+    // Head+arguments accessors
+    //
+    // In this codebase, both FUNCTION_APPLICATION and STATE_VARIABLE encode a
+    // head symbol at children[0] and arguments at children[1..].
+    // ========================================================================
+
+    bool has_head_and_arguments(ExprID id) const {
+        ExprKind k = kind(id);
+        return k == ExprKind::FUNCTION_APPLICATION || k == ExprKind::STATE_VARIABLE;
+    }
+
+    size_t argument_count(ExprID id) const {
+        assert(has_head_and_arguments(id));
+        size_t n = child_count(id);
+        assert(n > 0);
+        return n - 1;
+    }
+
+    ExprID argument(ExprID id, size_t index) const {
+        assert(index < argument_count(id));
+        return child(id, index + 1);
+    }
+
+    std::span<const ExprID> arguments(ExprID id) const {
+        assert(has_head_and_arguments(id));
+        const auto& kids = children(id);
+        assert(!kids.empty());
+        return std::span<const ExprID>(kids.data() + 1, kids.size() - 1);
+    }
+
+    ExprID head_symbol_id(ExprID id) const {
+        assert(has_head_and_arguments(id));
+        assert(child_count(id) > 0);
+        return child(id, 0);
+    }
+
+    const ExprNode& head_symbol_node(ExprID id) const {
+        return get(head_symbol_id(id));
     }
 
     // ========================================================================

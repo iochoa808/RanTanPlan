@@ -22,9 +22,8 @@ void FluentPolarityCollector::collect_from_id(ExprID eid) {
         bool old_negation = in_negation_context_;
         in_negation_context_ = !in_negation_context_;
 
-        auto children = pool.children(eid);
-        for (size_t i = 1; i < children.size(); ++i) {
-            collect_from_id(children[i]);
+        for (ExprID arg : pool.arguments(eid)) {
+            collect_from_id(arg);
         }
 
         in_negation_context_ = old_negation;

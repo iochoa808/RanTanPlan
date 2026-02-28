@@ -36,14 +36,12 @@ ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
     }
 
     // Function application — classify based on operator
-    // In ExprPool, FUNCTION_APPLICATION nodes have children[0] = operator symbol.
-    // Actual operands start at index 1, so a binary op has 3 children total.
     ExprOperator op = static_cast<ExprOperator>(node.op);
 
-    // Classify operand children only (skip children[0] which is the operator symbol)
+    // Classify operand children only
     ValueKind max_child = ValueKind::CONSTANT;
-    for (size_t i = 1; i < node.children.size(); ++i) {
-        ValueKind ck = classify_value_kind(node.children[i], pool);
+    for (ExprID arg : pool.arguments(value_id)) {
+        ValueKind ck = classify_value_kind(arg, pool);
         max_child = std::max(max_child, ck);
     }
 
@@ -61,10 +59,9 @@ ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
         case ExprOperator::MULTIPLY: {
             // Multiplication: constant × X preserves X's kind.
             // linear × linear (or higher) = nonlinear.
-            // Binary multiply has 3 children: [0]=op, [1]=lhs, [2]=rhs
-            if (node.children.size() == 3) {
-                ValueKind lhs = classify_value_kind(node.children[1], pool);
-                ValueKind rhs = classify_value_kind(node.children[2], pool);
+            if (pool.argument_count(value_id) == 2) {
+                ValueKind lhs = classify_value_kind(pool.argument(value_id, 0), pool);
+                ValueKind rhs = classify_value_kind(pool.argument(value_id, 1), pool);
                 if (lhs == ValueKind::CONSTANT) return rhs;
                 if (rhs == ValueKind::CONSTANT) return lhs;
             }
@@ -73,11 +70,10 @@ ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
 
         case ExprOperator::DIVIDE: {
             // Division by constant preserves kind. Division by non-constant is nonlinear.
-            // Binary divide has 3 children: [0]=op, [1]=numerator, [2]=divisor
-            if (node.children.size() == 3) {
-                ValueKind divisor = classify_value_kind(node.children[2], pool);
+            if (pool.argument_count(value_id) == 2) {
+                ValueKind divisor = classify_value_kind(pool.argument(value_id, 1), pool);
                 if (divisor == ValueKind::CONSTANT) {
-                    return classify_value_kind(node.children[1], pool);
+                    return classify_value_kind(pool.argument(value_id, 0), pool);
                 }
             }
             return ValueKind::NONLINEAR;

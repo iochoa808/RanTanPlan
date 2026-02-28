@@ -240,8 +240,7 @@ z3::expr LiftedEncodingVisitor::convert_node_pool(ExprID id) {
 
     // ---- State variable (fluent application) ----
     if (kind == ExprKind::STATE_VARIABLE) {
-        // children[0] = fluent symbol, children[1..] = arguments
-        const ExprNode& fluent_sym = pool.get(node.children[0]);
+        const ExprNode& fluent_sym = pool.head_symbol_node(id);
         if (!std::holds_alternative<std::string>(fluent_sym.payload)) {
             throw std::runtime_error("STATE_VARIABLE first child is not a symbol");
         }
@@ -249,9 +248,9 @@ z3::expr LiftedEncodingVisitor::convert_node_pool(ExprID id) {
 
         // Convert argument children to Z3
         std::vector<z3::expr> z3_args;
-        z3_args.reserve(node.children.size() - 1);
-        for (size_t i = 1; i < node.children.size(); ++i) {
-            z3_args.push_back(convert_node_pool(node.children[i]));
+        z3_args.reserve(pool.argument_count(id));
+        for (ExprID arg : pool.arguments(id)) {
+            z3_args.push_back(convert_node_pool(arg));
         }
 
         // Add timestep as final argument if temporal encoding is enabled
@@ -275,11 +274,11 @@ z3::expr LiftedEncodingVisitor::convert_node_pool(ExprID id) {
     if (kind == ExprKind::FUNCTION_APPLICATION) {
         auto op = static_cast<ExprOperator>(node.op);
 
-        // Recursively convert arguments (children[1..], skipping function symbol)
+        // Recursively convert arguments
         std::vector<z3::expr> z3_args;
-        z3_args.reserve(node.children.size() - 1);
-        for (size_t i = 1; i < node.children.size(); ++i) {
-            z3_args.push_back(convert_node_pool(node.children[i]));
+        z3_args.reserve(pool.argument_count(id));
+        for (ExprID arg : pool.arguments(id)) {
+            z3_args.push_back(convert_node_pool(arg));
         }
 
         switch (op) {
@@ -296,8 +295,8 @@ z3::expr LiftedEncodingVisitor::convert_node_pool(ExprID id) {
             case ExprOperator::MULTIPLY:      return handle_multiply(z3_args);
             case ExprOperator::DIVIDE:        return handle_divide(z3_args);
             default: {
-                // Get function name from first child
-                const ExprNode& func_sym = pool.get(node.children[0]);
+                // Get function name from head symbol
+                const ExprNode& func_sym = pool.head_symbol_node(id);
                 std::string func_name = std::holds_alternative<std::string>(func_sym.payload)
                     ? std::get<std::string>(func_sym.payload)
                     : "unknown_func";
