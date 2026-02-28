@@ -203,15 +203,17 @@ public:
         }
 
         // Handle arithmetic operations
-        if (pool.is_plus(eid) && pool.child_count(eid) == 2) {
-            return evaluate_expression(pool.child(eid, 0), pool) + evaluate_expression(pool.child(eid, 1), pool);
+        // In ExprPool, FUNCTION_APPLICATION nodes have children[0] = operator symbol,
+        // so binary ops have 3 children and operands are at indices 1 and 2.
+        if (pool.is_plus(eid) && pool.child_count(eid) == 3) {
+            return evaluate_expression(pool.child(eid, 1), pool) + evaluate_expression(pool.child(eid, 2), pool);
         }
-        if (pool.is_minus(eid) && pool.child_count(eid) == 2) {
-            return evaluate_expression(pool.child(eid, 0), pool) - evaluate_expression(pool.child(eid, 1), pool);
+        if (pool.is_minus(eid) && pool.child_count(eid) == 3) {
+            return evaluate_expression(pool.child(eid, 1), pool) - evaluate_expression(pool.child(eid, 2), pool);
         }
-        if (pool.is_multiply(eid) && pool.child_count(eid) == 2) {
-            Interval left = evaluate_expression(pool.child(eid, 0), pool);
-            Interval right = evaluate_expression(pool.child(eid, 1), pool);
+        if (pool.is_multiply(eid) && pool.child_count(eid) == 3) {
+            Interval left = evaluate_expression(pool.child(eid, 1), pool);
+            Interval right = evaluate_expression(pool.child(eid, 2), pool);
             if ((left.lower() == 0.0 && left.upper() == 0.0 && right.upper() > 0.0) ||
                 (right.lower() == 0.0 && right.upper() == 0.0 && left.upper() > 0.0)) {
                 double nonzero_val = (left.upper() > 0.0) ? left.upper() : right.upper();
@@ -241,30 +243,32 @@ public:
         }
 
         // Handle logical operations
+        // In ExprPool, children[0] is the operator symbol; operands start at index 1.
         if (pool.is_and(eid)) {
-            for (ExprID child : pool.children(eid)) {
-                if (!satisfies_condition(child, pool)) return false;
+            const auto& kids = pool.children(eid);
+            for (size_t i = 1; i < kids.size(); ++i) {
+                if (!satisfies_condition(kids[i], pool)) return false;
             }
             return true;
         }
         if (pool.is_or(eid)) {
-            for (ExprID child : pool.children(eid)) {
-                if (satisfies_condition(child, pool)) return true;
+            const auto& kids = pool.children(eid);
+            for (size_t i = 1; i < kids.size(); ++i) {
+                if (satisfies_condition(kids[i], pool)) return true;
             }
             return false;
         }
-        if (pool.is_not(eid) && pool.child_count(eid) == 1) {
-            return !satisfies_condition(pool.child(eid, 0), pool);
+        // NOT has 2 children: children[0] = "not" symbol, children[1] = operand
+        if (pool.is_not(eid) && pool.child_count(eid) == 2) {
+            return !satisfies_condition(pool.child(eid, 1), pool);
         }
 
         // Handle numeric comparisons
+        // Binary comparisons have 3 children: children[0] = operator, [1] = left, [2] = right
         size_t nchildren = pool.child_count(eid);
-        if (nchildren >= 2) {
-            size_t left_idx = (nchildren == 3) ? 1 : 0;
-            size_t right_idx = (nchildren == 3) ? 2 : 1;
-
-            Interval left = evaluate_expression(pool.child(eid, left_idx), pool);
-            Interval right = evaluate_expression(pool.child(eid, right_idx), pool);
+        if (nchildren >= 3) {
+            Interval left = evaluate_expression(pool.child(eid, 1), pool);
+            Interval right = evaluate_expression(pool.child(eid, 2), pool);
 
             if (pool.is_greater_equal(eid)) return (left - right).lower() >= 0.0;
             if (pool.is_greater_than(eid)) return (left - right).lower() > 0.0;

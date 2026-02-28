@@ -36,16 +36,18 @@ ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
     }
 
     // Function application — classify based on operator
+    // In ExprPool, FUNCTION_APPLICATION nodes have children[0] = operator symbol.
+    // Actual operands start at index 1, so a binary op has 3 children total.
     ExprOperator op = static_cast<ExprOperator>(node.op);
 
-    // First, classify all children
+    // Classify operand children only (skip children[0] which is the operator symbol)
     ValueKind max_child = ValueKind::CONSTANT;
-    for (ExprID child_id : node.children) {
-        ValueKind ck = classify_value_kind(child_id, pool);
+    for (size_t i = 1; i < node.children.size(); ++i) {
+        ValueKind ck = classify_value_kind(node.children[i], pool);
         max_child = std::max(max_child, ck);
     }
 
-    // If all children are constant, result is constant regardless of operator
+    // If all operands are constant, result is constant regardless of operator
     if (max_child == ValueKind::CONSTANT) {
         return ValueKind::CONSTANT;
     }
@@ -59,9 +61,10 @@ ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
         case ExprOperator::MULTIPLY: {
             // Multiplication: constant × X preserves X's kind.
             // linear × linear (or higher) = nonlinear.
-            if (node.children.size() == 2) {
-                ValueKind lhs = classify_value_kind(node.children[0], pool);
-                ValueKind rhs = classify_value_kind(node.children[1], pool);
+            // Binary multiply has 3 children: [0]=op, [1]=lhs, [2]=rhs
+            if (node.children.size() == 3) {
+                ValueKind lhs = classify_value_kind(node.children[1], pool);
+                ValueKind rhs = classify_value_kind(node.children[2], pool);
                 if (lhs == ValueKind::CONSTANT) return rhs;
                 if (rhs == ValueKind::CONSTANT) return lhs;
             }
@@ -70,10 +73,11 @@ ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
 
         case ExprOperator::DIVIDE: {
             // Division by constant preserves kind. Division by non-constant is nonlinear.
-            if (node.children.size() == 2) {
-                ValueKind divisor = classify_value_kind(node.children[1], pool);
+            // Binary divide has 3 children: [0]=op, [1]=numerator, [2]=divisor
+            if (node.children.size() == 3) {
+                ValueKind divisor = classify_value_kind(node.children[2], pool);
                 if (divisor == ValueKind::CONSTANT) {
-                    return classify_value_kind(node.children[0], pool);
+                    return classify_value_kind(node.children[1], pool);
                 }
             }
             return ValueKind::NONLINEAR;

@@ -192,11 +192,18 @@ void RelaxedPlanningGraph::extract_goal_conditions() {
 void RelaxedPlanningGraph::extract_cnf_conditions(ExprID eid, std::vector<ExprID>& conditions) const {
     const auto& pool = problem_.pool();
     if (pool.is_and(eid)) {
-        for (ExprID child : pool.children(eid)) {
-            extract_cnf_conditions(child, conditions);
+        // In ExprPool, FUNCTION_APPLICATION nodes store the operator symbol as
+        // children[0] (e.g. the "and" FUNCTION_SYMBOL). Actual operands start at
+        // index 1, consistent with how grounded_encoding_visitor and other visitors
+        // traverse children.
+        const auto& kids = pool.children(eid);
+        for (size_t i = 1; i < kids.size(); ++i) {
+            extract_cnf_conditions(kids[i], conditions);
         }
     } else {
-        if (!pool.is_fluent_symbol(eid)) {
+        // Filter out both FLUENT_SYMBOL and FUNCTION_SYMBOL leaves — only emit
+        // actual condition literals (STATE_VARIABLE, NOT, comparisons, etc.)
+        if (!pool.is_fluent_symbol(eid) && !pool.is_function_symbol(eid)) {
             conditions.push_back(eid);
         }
     }
