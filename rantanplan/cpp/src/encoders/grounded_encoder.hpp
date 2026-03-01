@@ -5,7 +5,6 @@
 #include "grounded_encoding_visitor.hpp"
 #include "z3_variable_factory.hpp"
 #include "parallelism/parallelism_strategy.hpp"
-#include "../symmetries/smt_symmetry_checker.hpp"
 #include <z3++.h>
 
 #include <vector>
@@ -73,12 +72,6 @@ protected:
     void build_epc_index();
 
     int layers_encoded_ = -1; // Tracks the highest layer for which transitions are encoded
-    
-    // Symmetry analysis (cached at construction time)
-    std::vector<ObjectSwap> detected_symmetries_;
-    std::unique_ptr<SMTSymmetryChecker> symmetry_checker_;
-    
-    void analyze_symmetries();
 
 private:
     // Helper methods for plan extraction (moved from SequentialPlanner)

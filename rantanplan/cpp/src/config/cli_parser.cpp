@@ -111,6 +111,10 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--formula-output requires a filename");
             }
         }
+        // Symmetry options
+        else if (arg == "--symmetries") {
+            config.symmetry.enable_symmetries = true;
+        }
         // Logging options
         else if (arg == "--log-file") {
             if (i + 1 < argc) {

@@ -1,7 +1,6 @@
 #include "grounded_encoder.hpp"
 #include "parallelism/interference_analysis.hpp"
 #include "../util/stats.hpp"
-#include "../symmetries/smt_symmetry_checker.hpp"
 #include "../config/config.hpp"
 #include <iostream>
 #include <functional>
@@ -13,9 +12,6 @@ GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
     : problem_(problem), ctx_(ctx), variable_factory_(ctx), grounded_visitor_(ctx_, &problem_, &variable_factory_) {
     layers_encoded_ = -1;
     build_epc_index();
-    analyze_symmetries();
-
-    // Parallelism strategy will be set by the caller
 }
 
 z3::expr GroundedEncoder::convert_expr_id_to_z3(ExprID id, int timestep) {
@@ -260,68 +256,49 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_prefix_monotone(int t) {
 }
 
 std::shared_ptr<z3::expr> GroundedEncoder::encode_symmetries(int t) {
-    auto& config = Config::instance();
     auto& stats = Stats::instance();
-    
-    // Only run symmetry breaking if enabled or something to break
-    if (!config.symmetry.detect_symmetries || detected_symmetries_.empty()) {
-            return std::make_shared<z3::expr>(ctx_.bool_val(true));
+
+    if (symmetry_data_.empty()) {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
     }
-   
+
     z3::expr_vector symmetry_constraints(ctx_);
     int ordering_constraints_count = 0;
-    
-    // For each detected symmetry, create symmetry breaking constraints
-    for (size_t i = 0; i < detected_symmetries_.size(); i++) {
-        const auto& swap = detected_symmetries_[i];
-        // Get variable and action pairs for this symmetry from cached checker
-        auto variable_pairs = symmetry_checker_->get_variable_pairs_for_swap(swap.obj1_name, swap.obj2_name);
-        auto action_pairs = symmetry_checker_->get_action_pairs_for_swap(swap.obj1_name, swap.obj2_name);
-        
-        // Create the symmetry breaking constraint for this timestep
-        // LHS: Check if all variable pairs have the same value (symmetric state)
+
+    for (const auto& sym : symmetry_data_) {
+        // LHS: all variable pairs have the same value (symmetric state)
         z3::expr_vector variable_equality_constraints(ctx_);
-        
-        for (const auto& [var1_eid, var2_eid] : variable_pairs) {
+        for (const auto& [var1_eid, var2_eid] : sym.variable_pairs) {
             z3::expr var1_z3 = convert_expr_id_to_z3(var1_eid, t);
             z3::expr var2_z3 = convert_expr_id_to_z3(var2_eid, t);
             variable_equality_constraints.push_back(var1_z3 == var2_z3);
         }
-        
-        // RHS: Lexicographic ordering constraint on action pairs
-        z3::expr_vector action_ordering_constraints(ctx_);
-        // Generate action ordering constraints 
-        for (size_t j = 0; j < action_pairs.size(); j++) {
-            const auto& action_pair = action_pairs[j];
 
-            // Get action variables
+        // RHS: lexicographic ordering on action pairs
+        z3::expr_vector action_ordering_constraints(ctx_);
+        for (const auto& action_pair : sym.action_pairs) {
             z3::expr action1_var = variable_factory_.get_action_variable(*action_pair.action1, t);
             z3::expr action2_var = variable_factory_.get_action_variable(*action_pair.action2, t);
-            
-            // Create ordering constraint
+
             std::string name1 = variable_factory_.get_action_var_name(*action_pair.action1);
             std::string name2 = variable_factory_.get_action_var_name(*action_pair.action2);
             z3::expr ordering_constraint = (name1 < name2) ?
-                z3::implies(action1_var, action2_var) : // If action1 should come first lexicographically
-                z3::implies(action2_var, action1_var);  // Otherwise action2 should come first
+                z3::implies(action1_var, action2_var) :
+                z3::implies(action2_var, action1_var);
             action_ordering_constraints.push_back(ordering_constraint);
             ordering_constraints_count++;
         }
-        
-        // Create the complete symmetry breaking constraint:
+
         // (all variables are symmetric) => (lexicographic ordering on actions)
         if (!variable_equality_constraints.empty() && !action_ordering_constraints.empty()) {
             z3::expr lhs = z3::mk_and(variable_equality_constraints);
             z3::expr rhs = z3::mk_and(action_ordering_constraints);
-            z3::expr symmetry_breaking_constraint = z3::implies(lhs, rhs);
-            symmetry_constraints.push_back(symmetry_breaking_constraint);
+            symmetry_constraints.push_back(z3::implies(lhs, rhs));
         }
-    } // end for loop over object_swaps
-    
-    // Record the statistic
+    }
+
     stats.add("encoder.symmetry_ordering_constraints", ordering_constraints_count);
-    
-    // Combine all symmetry constraints
+
     if (symmetry_constraints.empty()) {
         return std::make_shared<z3::expr>(ctx_.bool_val(true));
     }
@@ -464,23 +441,5 @@ std::vector<const Action*> GroundedEncoder::topologically_sort_actions(
     
     return analyzer->topological_sort_actions(actions);
 }
-
-void GroundedEncoder::analyze_symmetries() {
-    auto& config = Config::instance();
-
-    // Only analyze symmetries if symmetry detection is enabled
-    if (!config.symmetry.detect_symmetries) {
-        if (config.is_debug()) {
-            std::cout << "Symmetry detection disabled - skipping analysis" << std::endl;
-        }
-        return;
-    }
-
-    // Create symmetry checker and perform analysis once
-    symmetry_checker_ = std::make_unique<SMTSymmetryChecker>(&problem_, ctx_);
-    detected_symmetries_ = symmetry_checker_->detect_all_object_swaps();
-
-}
-
 
 } // namespace rantanplan

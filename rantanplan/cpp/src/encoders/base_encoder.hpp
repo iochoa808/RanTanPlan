@@ -3,12 +3,14 @@
 #include "../problem/problem.hpp"
 #include "../problem/plan.hpp"
 #include "../problem/effect_expression.hpp"
+#include "../symmetries/smt_symmetry_checker.hpp"
 #include "z3_variable_factory.hpp"
 #include "parallelism/parallelism_strategy.hpp"
 #include <z3++.h>
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace rantanplan {
 
@@ -16,6 +18,9 @@ namespace rantanplan {
 class BaseEncoder {
 public:
     virtual ~BaseEncoder() = default;
+
+    // Pipeline data (set once before search, used by encode_symmetries)
+    virtual void set_symmetry_data(std::vector<SymmetryInfo> data) { symmetry_data_ = std::move(data); }
 
     // Encoding steps
     virtual std::shared_ptr<z3::expr> encode_initial_state() = 0;
@@ -57,6 +62,9 @@ public:
     
     // Plan extraction from Z3 model
     virtual Plan extract_plan(const z3::model& model, int max_timestep) const = 0;
+
+protected:
+    std::vector<SymmetryInfo> symmetry_data_;
 };
 
 } // namespace rantanplan

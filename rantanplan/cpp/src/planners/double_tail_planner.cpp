@@ -61,16 +61,9 @@ std::shared_ptr<z3::expr> DoubleTailPlanner::create_link_constraints(int forward
 }
 
 void DoubleTailPlanner::add_timestep_constraints(int t) {
-    auto& config = Config::instance();
-
-    // Add action and frame constraints for timestep t (transition t → t+1)
     solver_.add(*encoder_.encode_actions(t));
     solver_.add(*encoder_.encode_frames(t));
-
-    // Add symmetry breaking constraints if enabled
-    if (config.symmetry.detect_symmetries) {
-        solver_.add(*encoder_.encode_symmetries(t));
-    }
+    solver_.add(*encoder_.encode_symmetries(t));
 
     // Only add parallelism constraints if propagator doesn't manage them
     if (!propagator_strategy_->manages_parallelism_constraints()) {

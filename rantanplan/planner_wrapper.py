@@ -34,7 +34,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         self._strategy = options.get('strategy', 'seq')
         self._max_steps = options.get('max_steps')  # None if not specified
         self._no_persist_clauses = options.get('no_persist_clauses', False)
-        self._detect_symmetries = options.get('detect_symmetries', False)
+        self._symmetries = options.get('symmetries', False)
         self._stats_file = options.get('stats_file')  # None if not specified
         # allow disabling CNF normalization via planner params (default: enabled)
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
@@ -246,8 +246,8 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
             if self._no_persist_clauses:
                 command.append("--no-persist-clauses")
 
-            if self._detect_symmetries:
-                command.append("--detect-symmetries")
+            if self._symmetries:
+                command.append("--symmetries")
 
             if self._stats_file is not None:
                 command.extend(["--stats-file", self._stats_file])

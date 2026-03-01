@@ -46,7 +46,7 @@ public:
     } planner;
     
     struct Symmetry {
-        bool detect_symmetries = false;  // Enable symmetry detection
+        bool enable_symmetries = false;  // Enable symmetry detection
     } symmetry;
 
     struct FormulaExport {

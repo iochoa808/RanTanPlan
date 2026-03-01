@@ -1,7 +1,9 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include "../problem/problem.hpp"
+#include "../symmetries/smt_symmetry_checker.hpp"
 
 namespace rantanplan {
 
@@ -16,6 +18,7 @@ struct PipelineResult {
     bool proven_unsolvable = false;     ///< True if any pass proved unsolvability
     std::string unsolvable_reason;      ///< Name of the pass that proved unsolvability
     int lower_bound = 0;                ///< Max lower bound across all passes so far
+    std::vector<SymmetryInfo> symmetry_data; ///< Symmetry data from SymmetryPass (empty if disabled)
 };
 
 /**

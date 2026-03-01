@@ -121,6 +121,7 @@ add_executable(rantanplan
     src/passes/pipeline.cpp
     src/passes/boolean_rpg_pass.cpp
     src/passes/numeric_rpg_pass.cpp
+    src/passes/symmetry_pass.cpp
 )
 
 # Define proto files and generate C++ sources

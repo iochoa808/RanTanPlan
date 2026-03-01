@@ -17,12 +17,12 @@
 #include "util/memory_tracker.hpp"
 #include "util/stats.hpp"
 #include "util/logger.hpp"
-#include "symmetries/smt_symmetry_checker.hpp"
 #include "arpg/arpg.hpp"
 #include "abstraction/achievers_analysis.hpp"
 #include "passes/pipeline.hpp"
 #include "passes/boolean_rpg_pass.hpp"
 #include "passes/numeric_rpg_pass.hpp"
+#include "passes/symmetry_pass.hpp"
 
 #include "z3++.h"
 
@@ -101,34 +101,28 @@ int export_formula_and_exit(const rantanplan::Problem& problem) {
     }
 }
 
-// Function to print the complete planning problem structure using enhanced planning classes
-PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem) {
+PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
+                                            const rantanplan::PipelineResult& pipeline_result) {
     auto& config = rantanplan::Config::instance();
-    
-    // Memory tracking is always enabled
-    
+
     PlanGenerationResult result;
     auto* log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
 
-        // Create Z3 context
     z3::context ctx;
 
-    // Create strategy
     auto strategy = rantanplan::StrategyRegistry::create(config.planner.strategy);
-
     rantanplan::Logger::instance().info("Using strategy: " + strategy->get_name());
 
-    // Create encoder, parallelism, and interference analyzer using strategy
     auto encoder = strategy->create_encoder(problem, ctx);
     auto parallelism = strategy->create_parallelism();
     auto interference = strategy->create_interference(problem);
 
-    // Inject interference analyzer into parallelism strategy
     parallelism->set_interference_analyzer(std::move(interference));
-
-    // Set parallelism strategy on encoder
     encoder->set_parallelism_strategy(std::move(parallelism));
+
+    // Set pipeline data on encoder
+    encoder->set_symmetry_data(pipeline_result.symmetry_data);
 
     // Create planner using strategy (strategy decides which planner to use!)
     auto planner = strategy->create_planner(problem, *encoder, ctx);
@@ -221,15 +215,20 @@ int main(int argc, char* argv[]) {
         return export_formula_and_exit(planning_problem);
     }
 
-    // === PREPROCESSING PIPELINE: GOAL REACHABILITY, ACTION REMOVAL, LOWER BOUND ===
+    // === PREPROCESSING PIPELINE ===
     rantanplan::BooleanRPGPass boolean_rpg_pass;
     rantanplan::NumericRPGPass numeric_rpg_pass;
+    rantanplan::SymmetryPass symmetry_pass;
     std::vector<const rantanplan::Pass*> passes;
 
     if (config.global.enable_action_removal) {
         passes.push_back(config.global.use_numeric_rpg
                          ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
                          : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
+    }
+
+    if (config.symmetry.enable_symmetries) {
+        passes.push_back(&symmetry_pass);
     }
 
     auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);
@@ -247,8 +246,8 @@ int main(int argc, char* argv[]) {
         return write_result_and_exit(result, argv[2]);
     }
 
-    // Solve the planning problem using configuration
-    PlanGenerationResult result = solve_planning_problem(planning_problem);
+    // Solve the planning problem using pipeline result
+    PlanGenerationResult result = solve_planning_problem(planning_problem, pipeline_result);
 
     // Print statistics if in debug mode, and optionally write to file
     if (config.is_debug()) {

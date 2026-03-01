@@ -58,21 +58,10 @@ void SequentialPlanner::collect_statistics() {
 }
 
 void SequentialPlanner::add_timestep_constraints(int timestep) {
-    auto& config = Config::instance();
-
     solver_.add(*encoder_.encode_actions(timestep));
     solver_.add(*encoder_.encode_frames(timestep));
-
-    // Front-loading symmetry-breaking: (∀a. ¬a@t) → (∀a. ¬a@(t+1))
-    // Forces all active action steps to be contiguous at the front of the horizon.
-    // This is what allows a single goal literal at the scheduled horizon h to
-    // witness any plan of length <= h in the current batch.
     solver_.add(*encoder_.encode_prefix_monotone(timestep));
-
-    // Add symmetry breaking constraints if enabled
-    if (config.symmetry.detect_symmetries) {
-        solver_.add(*encoder_.encode_symmetries(timestep));
-    }
+    solver_.add(*encoder_.encode_symmetries(timestep));
 
     // Only add parallelism constraints if propagator doesn't manage them
     if (!propagator_strategy_->manages_parallelism_constraints()) {
