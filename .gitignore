@@ -200,3 +200,6 @@ pddl/pb-test
 
 # plots
 *.png
+
+# results
+*.csv

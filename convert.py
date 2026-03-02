@@ -35,7 +35,7 @@ def initialize_fluents(task):
     for fe in uninitialized_fluents:
         task.set_initial_value(fe, task.initial_defaults[fe.type])
 
-def compile_problem(problem):
+def compile_problem(problem, naive_grounding=False):
     """Apply compilation pipeline (quantifier removal + grounding)."""
     current_problem = problem
 
@@ -47,9 +47,15 @@ def compile_problem(problem):
         current_problem = quantifier_result.problem
 
     # Step 2: Ground the problem
-    print("Applying grounding...")
-    grounder = Grounder()
-    grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
+    if naive_grounding:
+        print("Applying naive grounding (cross-product)...")
+        grounder = Grounder()
+        grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
+    else:
+        print("Applying smart grounding (reachability analysis)...")
+        from rantanplan.reachability_grounder import ReachabilityGrounder
+        smart_grounder = ReachabilityGrounder()
+        grounding_result = smart_grounder.ground(current_problem, CompilationKind.GROUNDING)
     current_problem = grounding_result.problem
 
     return current_problem
@@ -59,6 +65,8 @@ def main():
     parser.add_argument('-d', '--domain', required=True, help='Path to PDDL domain file')
     parser.add_argument('-p', '--problem', required=True, help='Path to PDDL problem file')
     parser.add_argument('-o', '--output', required=True, help='Output protobuf file path')
+    parser.add_argument('--naive-grounding', action='store_true',
+                        help='Use naive cross-product grounding instead of smart reachability-based grounding')
 
     args = parser.parse_args()
 
@@ -85,7 +93,7 @@ def main():
 
         # Compile problem
         print("Compiling problem...")
-        compiled_problem = compile_problem(problem)
+        compiled_problem = compile_problem(problem, naive_grounding=args.naive_grounding)
 
         # Convert to protobuf
         print("Converting to protobuf...")

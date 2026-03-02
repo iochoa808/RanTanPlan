@@ -87,6 +87,10 @@ Use --list-strategies to see available strategies and their descriptions.
                             "'doubling' doubles each batch, 'geometric' multiplies by 1.5, "
                             "'arithmetic' adds 5 each batch.")
 
+    parser.add_argument('--naive-grounding', action='store_true',
+                        help='Use naive cross-product grounding instead of smart '
+                             'reachability-based grounding (default: smart grounding)')
+
     
     parser.add_argument(
         "--version",
@@ -139,6 +143,8 @@ def solve_problem(problem, args):
         planner_params['horizon_schedule'] = args.horizon_schedule
     if args.log_file:
         planner_params['log_file'] = args.log_file
+    if args.naive_grounding:
+        planner_params['naive_grounding'] = True
 
     # Handle verbosity
     if args.silent:

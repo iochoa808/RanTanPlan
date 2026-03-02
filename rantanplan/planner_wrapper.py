@@ -43,6 +43,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         self._numeric_rpg = options.get('numeric_rpg', False)
         self._horizon_schedule = options.get('horizon_schedule')  # None → C++ default ("linear")
         self._log_file = options.get('log_file')  # None if not specified
+        self._naive_grounding = options.get('naive_grounding', False)
 
     def _find_executable(self, provided_path):
         """Find the rantanplan executable, trying various locations."""
@@ -437,9 +438,15 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
             print(f"  CNF normalization skipped due to error: {e}")
         
         # Step 3: Ground the problem
-        print("  Applying grounding...")
-        grounder = Grounder()
-        grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
+        if self._naive_grounding:
+            print("  Applying naive grounding (cross-product)...")
+            grounder = Grounder()
+            grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
+        else:
+            print("  Applying smart grounding (reachability analysis)...")
+            from .reachability_grounder import ReachabilityGrounder
+            smart_grounder = ReachabilityGrounder()
+            grounding_result = smart_grounder.ground(current_problem, CompilationKind.GROUNDING)
         current_problem = grounding_result.problem
         compilation_maps.append(grounding_result)
         print("  Grounding completed.")
