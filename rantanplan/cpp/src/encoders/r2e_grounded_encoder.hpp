@@ -67,10 +67,6 @@ private:
     z3::expr apply_substitution(const z3::expr& expr, const std::unordered_map<ExprID, z3::expr>& substitution, int timestep);
     z3::expr create_effect_value_z3(const EffectExpression& eff_expr, const z3::expr& fluent_z3,
                                    const std::unordered_map<ExprID, z3::expr>& prev_substitution, int timestep);
-    z3::expr encode_single_effect_with_carry_forward(const Effect& effect,
-                                                   const std::unordered_map<ExprID, z3::expr>& prev_substitution,
-                                                   const std::unordered_map<ExprID, z3::expr>& modi_substitution,
-                                                   int timestep, int action_index, const z3::expr& action_var);
     
     // Chain variable management
     std::string get_chain_variable_name(ExprID var_eid, int timestep, int action_index) const;

@@ -102,7 +102,6 @@ bool RelaxedPlanningGraph::build() {
     });
 
     //print_debug_info();
-    //print_reachability_analysis();
 
     return goals_reachable;
 }
@@ -111,7 +110,11 @@ void RelaxedPlanningGraph::initialize_fact_layer() {
     fact_layers_.emplace_back();
     const auto& pool = problem_.pool();
 
-    // Process all initial assignments (complete initial state)
+    // Populate layer 0 from the complete initial state.
+    // Each Boolean fluent contributes EITHER a positive OR a negative fact
+    // (not both), reflecting whether it starts true or false.  Numeric
+    // fluents always contribute a positive fact (their value is irrelevant
+    // to the Boolean RPG — we just record that the fluent "exists").
     for (size_t i = 0; i < problem_.initial_assignment_count(); ++i) {
         const auto& assignment = problem_.initial_assignment(i);
         int fluent_id = find_grounded_fluent_id(assignment.fluent_id());
@@ -122,17 +125,19 @@ void RelaxedPlanningGraph::initialize_fact_layer() {
 
         if (pool.is_constant(val_eid) && pool.payload_is_bool(val_eid)) {
             if (pool.payload_bool(val_eid)) {
-                // Boolean fluent set to true: add positive fact
+                // Boolean fluent set to true → positive fact (fluent_id)
                 fact_layers_[0].insert(fluent_id);
                 achievability_layer_[fluent_id] = 0;
             } else {
-                // Boolean fluent set to false: add negative fact
+                // Boolean fluent set to false → negative fact (-(fluent_id+2))
+                // This lets preconditions like NOT(p) be satisfied at layer 0.
                 int negative_fluent_id = encode_negative_fact_id(fluent_id);
                 fact_layers_[0].insert(negative_fluent_id);
                 achievability_layer_[negative_fluent_id] = 0;
             }
         } else {
-            // Numeric fluent: always add as positive fact
+            // Numeric fluent → always positive fact (value doesn't matter
+            // for the Boolean RPG — we only need to know the fluent is "active").
             fact_layers_[0].insert(fluent_id);
             achievability_layer_[fluent_id] = 0;
         }
@@ -231,15 +236,143 @@ bool RelaxedPlanningGraph::are_preconditions_satisfied(const Action& action, int
     return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Condition satisfaction checking — the core of positive/negative handling.
+//
+// Preconditions arrive in CNF form (see cnf_condition_compiler.py).  The
+// top-level AND has already been split by extract_cnf_conditions(), so each
+// call here receives one clause, which may be:
+//
+//   (a) A positive Boolean literal          →  look up positive fact ID
+//   (b) NOT(Boolean literal)                →  look up negative fact ID
+//   (c) EQUALS(c1, c2)                      →  syntactic constant comparison
+//   (d) NOT(EQUALS(c1, c2))                 →  negated constant comparison
+//   (e) OR(l1, l2, ...)  (CNF clause)       →  true if any disjunct satisfied
+//   (f) AND(l1, l2, ...)                    →  all conjuncts must hold
+//   (g) Numeric comparison (>=, <=, >, <)   →  assume true (sound relaxation)
+//   (h) NOT(AND(...)), NOT(OR(...))         →  assume true (sound relaxation)
+//
+// The guiding principle: returning "true" (satisfiable) is always safe in
+// an RPG because it only keeps actions alive.  Returning "false" must be
+// provably correct — otherwise we'd incorrectly prune a reachable action.
+// ═══════════════════════════════════════════════════════════════════════════
 bool RelaxedPlanningGraph::is_condition_satisfied(ExprID condition_eid, int layer_index) const {
     const auto& pool = problem_.pool();
-    // Handle Boolean conditions (positive and negative)
-    if (problem_.is_bool_type(condition_eid) || pool.is_not(condition_eid)) {
+
+    // --- Case (c): EQUALS(a, b) between ground terms ---
+    // For two constants, ExprPool interning gives same ExprID iff identical.
+    // For non-constant operands (state variables), assume true.
+    if (pool.is_equals(condition_eid)) {
+        return evaluate_ground_equality(condition_eid);
+    }
+
+    // --- Cases (b), (d), (h): NOT(...) ---
+    if (pool.is_not(condition_eid)) {
+        ExprID inner = get_inner_condition(condition_eid);
+        if (!inner.valid()) return true; // Can't evaluate — assume satisfiable
+
+        // Case (d): NOT(EQUALS(const, const)) — negate the syntactic check
+        if (pool.is_equals(inner)) {
+            return !evaluate_ground_equality(inner);
+        }
+
+        // NOT(NOT(x)) — double negation elimination → recurse on x
+        if (pool.is_not(inner)) {
+            ExprID double_neg = get_inner_condition(inner);
+            if (double_neg.valid()) {
+                return is_condition_satisfied(double_neg, layer_index);
+            }
+            return true;
+        }
+
+        // Case (h): NOT(AND(...)) ≡ OR(NOT(...)) — a disjunction of negations.
+        // At least one negation might hold, so assume true (sound relaxation;
+        // precisely evaluating would require checking each negated conjunct).
+        if (pool.is_and(inner)) {
+            return true;
+        }
+
+        // Case (h): NOT(OR(...)) ≡ AND(NOT(...)) — a conjunction of negations.
+        // We'd need all inner literals to be false; assume true (sound relaxation).
+        if (pool.is_or(inner)) {
+            return true;
+        }
+
+        // Case (b): NOT(fluent) — a negated Boolean literal.
+        // find_grounded_fluent_id recognises the NOT wrapper and returns the
+        // *negative* fact ID (-(fluent_id+2)).  We then check whether that
+        // negative fact ID exists in the current layer.
+        if (pool.is_state_variable(inner) || problem_.is_bool_type(inner)) {
+            int fid = find_grounded_fluent_id(condition_eid);  // returns negative fact ID
+            return fid != -1 && fact_layers_[layer_index].contains(fid);
+        }
+
+        // NOT(numeric comparison) or other unrecognised form — assume satisfiable
+        return true;
+    }
+
+    // --- Case (e): OR (disjunction from CNF / quantifier expansion) ---
+    // A CNF clause like (p ∨ ¬q ∨ r).  True if any disjunct is satisfied.
+    // If none is provably satisfied, we still return true because the RPG
+    // must not falsely prune actions (soundness > precision).
+    if (pool.is_or(condition_eid)) {
+        const auto& args = pool.has_head_and_arguments(condition_eid)
+                           ? pool.arguments(condition_eid)
+                           : pool.children(condition_eid);
+        for (ExprID arg : args) {
+            if (is_condition_satisfied(arg, layer_index)) {
+                return true;
+            }
+        }
+        // No disjunct provably satisfied — conservatively assume satisfiable
+        // (returning false could prune a genuinely reachable action).
+        return true;
+    }
+
+    // --- Case (f): AND (conjunction) ---
+    // Rarely appears as a nested node (most ANDs are split by extract_cnf_conditions),
+    // but can occur inside an OR clause or when CNF expansion is disabled.
+    if (pool.is_and(condition_eid)) {
+        const auto& args = pool.has_head_and_arguments(condition_eid)
+                           ? pool.arguments(condition_eid)
+                           : pool.children(condition_eid);
+        for (ExprID arg : args) {
+            if (!is_condition_satisfied(arg, layer_index)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // --- Case (a): Positive Boolean literal (ground state variable) ---
+    // find_grounded_fluent_id returns the positive fact ID, and we check
+    // whether it appears in the current layer.
+    if (pool.is_state_variable(condition_eid) || problem_.is_bool_type(condition_eid)) {
         return is_fact_in_layer(condition_eid, layer_index);
     }
 
-    // For numeric conditions: assume always satisfiable in relaxed planning graph
+    // --- Case (g): Anything else (numeric comparisons, IMPLIES, etc.) ---
+    // The Boolean RPG cannot evaluate these, so assume satisfiable.
     return true;
+}
+
+// Evaluate an equality expression syntactically.
+// With ExprPool interning, two constants are identical iff they share the same
+// ExprID.  For non-constant operands (state variables, function applications
+// like (= (xl ?l) (x)) or (= (fuel plane1) 0)), the equality depends on
+// runtime values that the RPG doesn't track — returning true is sound because
+// it keeps the action alive rather than incorrectly pruning it.
+bool RelaxedPlanningGraph::evaluate_ground_equality(ExprID equals_eid) const {
+    const auto& pool = problem_.pool();
+    const auto& args = pool.has_head_and_arguments(equals_eid)
+                       ? pool.arguments(equals_eid)
+                       : pool.children(equals_eid);
+    if (args.size() != 2) return true; // Malformed — assume true (sound)
+
+    if (!pool.is_constant(args[0]) || !pool.is_constant(args[1])) {
+        return true; // Non-constant operands — assume satisfiable (sound relaxation)
+    }
+    return args[0] == args[1];  // Same ExprID ⟺ same constant
 }
 
 void RelaxedPlanningGraph::add_effects_to_layer(const Action& action, int target_layer_index) {
@@ -272,24 +405,38 @@ void RelaxedPlanningGraph::add_effects_to_layer(const Action& action, int target
     }
 }
 
+// Apply a single atomic effect to the target layer.
+//
+// Boolean effects produce either a positive or negative fact:
+//   (assign fluent true)  → inserts positive fact ID (fluent_id)
+//   (assign fluent false) → inserts negative fact ID (-(fluent_id+2))
+//
+// This is the key mechanism that makes negated preconditions work in the RPG:
+// an action whose effect sets fluent to false creates a negative fact, which
+// can then satisfy a NOT(fluent) precondition of another action in a later
+// layer.  Both the positive and negative facts coexist monotonically — the
+// RPG never retracts a previously added fact.
+//
+// Numeric effects just insert the positive fluent ID (acting as a
+// "this fluent has been modified" marker).
 void RelaxedPlanningGraph::add_simple_effect_to_layer(const Effect& effect, int target_layer_index) {
     const EffectExpression& eff_expr = effect.effect_expression();
     const auto& pool = problem_.pool();
     ExprID fluent_eid = eff_expr.fluent_id();
     ExprID val_eid = eff_expr.value_id();
 
-    // Handle both positive and negative Boolean effects
     if (pool.is_constant(val_eid) && pool.payload_is_bool(val_eid)) {
         int fluent_id = find_grounded_fluent_id(fluent_eid);
         assert(fluent_id != -1 && "Effect fluent not recognised");
         if (pool.payload_bool(val_eid)) {
-            // Positive effect: add the positive fact
+            // Positive Boolean effect: (assign fluent true) → positive fact
             fact_layers_[target_layer_index].insert(fluent_id);
             if (achievability_layer_.find(fluent_id) == achievability_layer_.end()) {
                 achievability_layer_[fluent_id] = target_layer_index;
             }
         } else {
-            // Negative effect: add the negative fact
+            // Negative Boolean effect: (assign fluent false) → negative fact
+            // This enables NOT(fluent) preconditions in subsequent layers.
             int negative_fluent_id = encode_negative_fact_id(fluent_id);
             fact_layers_[target_layer_index].insert(negative_fluent_id);
             if (achievability_layer_.find(negative_fluent_id) == achievability_layer_.end()) {
@@ -297,12 +444,12 @@ void RelaxedPlanningGraph::add_simple_effect_to_layer(const Effect& effect, int 
             }
         }
     } else {
-        // Numeric effect - add the fluent as potentially modified
+        // Numeric effect — record that this fluent has been modified.
+        // The RPG doesn't track numeric values; it only cares that the
+        // fluent is "active" so numeric preconditions are assumed satisfiable.
         int fluent_id = find_grounded_fluent_id(fluent_eid);
         assert(fluent_id != -1 && "Effect fluent not recognised");
         fact_layers_[target_layer_index].insert(fluent_id);
-
-        // Track achievability (first occurrence only)
         if (achievability_layer_.find(fluent_id) == achievability_layer_.end()) {
             achievability_layer_[fluent_id] = target_layer_index;
         }
@@ -332,17 +479,25 @@ bool RelaxedPlanningGraph::is_fixpoint_reached() const {
 
 
 
+// Map an ExprID to an integer fact ID used in the fact layers.
+//
+// For a positive expression (state variable like `at(robot, city1)`):
+//   → returns the fluent's grounded index (0, 1, 2, ...)
+//
+// For a negated expression (`NOT(at(robot, city1))`):
+//   → strips the NOT wrapper, looks up the inner fluent's grounded index,
+//     and returns the negative encoding: -(fluent_id + 2) = -2, -3, -4, ...
+//
+// Returns -1 if the expression doesn't correspond to any known grounded fluent.
 int RelaxedPlanningGraph::find_grounded_fluent_id(ExprID eid) const {
     const auto& pool = problem_.pool();
-    // Handle negated expressions
     if (pool.is_not(eid)) {
+        // Negated literal: unwrap NOT, find the positive fluent, encode as negative
         ExprID inner_eid = get_inner_condition(eid);
-        // Use O(1) hash map lookup for the positive fluent ID and return the negative encoding
         int fluent_id = problem_.find_grounded_fluent_index(inner_eid);
         return (fluent_id != -1) ? encode_negative_fact_id(fluent_id) : -1;
     }
-
-    // Handle positive expressions - use O(1) hash map lookup
+    // Positive literal: direct lookup
     return problem_.find_grounded_fluent_index(eid);
 }
 

@@ -57,6 +57,18 @@ public:
     EffectExpression() : kind_(Kind::ASSIGN), value_kind_(ValueKind::CONSTANT) {}
     EffectExpression(const pb::EffectExpression& pb_effect_expr, Problem* problem);
 
+    /// Construct a ground effect expression directly (used by the grounder).
+    EffectExpression(Kind kind, ExprID fluent_id, ExprID value_id,
+                     ExprID condition_id, const ExprPool* pool)
+        : kind_(kind)
+        , value_kind_(pool ? classify_value_kind(value_id, *pool) : ValueKind::CONSTANT)
+        , fluent_id_(fluent_id)
+        , value_id_(value_id)
+        , condition_id_(condition_id)
+        , has_condition_(condition_id != EXPR_NULL)
+        , pool_(pool)
+    {}
+
     // Accessors
     Kind kind() const { return kind_; }
     ValueKind value_kind() const { return value_kind_; }

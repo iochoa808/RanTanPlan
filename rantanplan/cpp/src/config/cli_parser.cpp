@@ -71,15 +71,23 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--horizon-schedule requires a value (linear|arithmetic|geometric|doubling)");
             }
         }
-        // Action removal options
+        // Action removal / grounding options
         else if (arg == "--no-action-removal") {
             config.global.enable_action_removal = false;
         }
+        else if (arg == "--up-grounding") {
+            // Use Unified Planning grounding (Python side) instead of C++ grounding.
+            // This disables C++ grounding and enables RPG-based action removal.
+            config.global.reachability_grounding = false;
+            config.global.enable_action_removal = true;
+        }
         else if (arg == "--boolean-rpg") {
             config.global.use_numeric_rpg = false;
+            config.global.enable_action_removal = true;
         }
         else if (arg == "--numeric-rpg") {
             config.global.use_numeric_rpg = true;
+            config.global.enable_action_removal = true;
         }
         // Z3 solver options
         else if (arg == "--no-persist-clauses") {

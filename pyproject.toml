@@ -21,9 +21,6 @@ dependencies = [
     "z3-solver"
 ]
 
-[project.optional-dependencies]
-grounding = ["up-fast-downward>=0.5"]
-
 [project.scripts]
 rantanplan = "rantanplan.cli:main"
 

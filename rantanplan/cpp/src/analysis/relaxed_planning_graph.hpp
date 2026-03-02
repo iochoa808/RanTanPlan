@@ -11,21 +11,55 @@
 namespace rantanplan {
 
 /**
- * @brief RelaxedPlanningGraph
+ * @brief RelaxedPlanningGraph — monotone reachability analysis for action removal.
  *
  * Layer-by-layer relaxed planning graph implementation using traditional fixpoint computation.
  *
- * Features:
- * - Syntactic achievability check for Boolean fluents
- * - Simplified numeric handling: any modification of a numeric variable enables any condition containing it
- * - Layer-by-layer construction until fixpoint is reached (always runs to fixpoint for soundness)
- * - Independent from ARPG and current achievers analysis
+ * ## Positive and Negative Literal Handling
  *
- * The relaxed planning graph ignores delete effects and negative interactions,
- * providing an optimistic view of what's achievable for heuristic computation.
+ * Unlike a classical delete-relaxation (which only tracks positive facts and ignores
+ * delete effects), this RPG tracks BOTH positive and negative facts. This is necessary
+ * because grounded preconditions can require negative literals, e.g. NOT(at(robot, city1)).
  *
- * Note: This Boolean RPG always runs to fixpoint (no early termination) for soundness.
- * The more precise NumericRelaxedPlanningGraph can use early termination safely.
+ * **Fact ID encoding:**
+ *   - Positive facts use the fluent's grounded index directly: 0, 1, 2, ...
+ *   - Negative facts use `encode_negative_fact_id(fluent_id) = -(fluent_id + 2)`: -2, -3, -4, ...
+ *   - The value -1 is reserved as the "not found" sentinel.
+ *
+ * **Monotonicity (the relaxation):**
+ *   Both positive and negative facts accumulate monotonically across layers. Once a fact
+ *   is added, it persists in all subsequent layers (each new layer starts as a copy of the
+ *   previous one). A fluent can be simultaneously positive AND negative in the same layer
+ *   — e.g., both `at(robot, city1)` and `NOT(at(robot, city1))` can coexist. This is the
+ *   relaxation: we never retract a fact, so we over-approximate what's reachable.
+ *
+ * **Initial state:** Boolean fluents assigned true produce positive facts; those assigned
+ *   false produce negative facts. Numeric fluents always produce positive facts.
+ *
+ * **Effects:** An action with `(assign fluent true)` adds the positive fact; `(assign
+ *   fluent false)` adds the negative fact. Numeric effects add the fluent as positive.
+ *
+ * **Precondition checking (`is_condition_satisfied`):**
+ *   - Positive Boolean literal `p` → look up positive fact ID in the layer.
+ *   - Negated Boolean literal `NOT(p)` → look up negative fact ID in the layer.
+ *   - `EQUALS(c1, c2)` between constants → syntactic comparison via ExprID interning.
+ *   - `NOT(EQUALS(...))` → negate the equality result.
+ *   - `OR(...)` (from CNF / quantifier expansion) → true if any disjunct satisfied;
+ *     if none is provably satisfied, assume true (sound over-approximation).
+ *   - `AND(...)` → all conjuncts must be satisfied.
+ *   - Numeric comparisons, `NOT(AND)`, `NOT(OR)` → assume true (sound relaxation).
+ *
+ * **Soundness guarantee:** Since the RPG only over-approximates reachability, any action
+ *   it deems unreachable is genuinely unreachable and safe to remove. The only risk is
+ *   keeping actions that turn out to be unreachable (not harmful, just less pruning).
+ *
+ * ## Other Features
+ *   - Simplified numeric handling: any modification of a numeric variable enables any
+ *     condition referencing it.
+ *   - Always runs to fixpoint (no early termination) for soundness.
+ *   - Independent from ARPG and current achievers analysis.
+ *
+ * Note: The more precise NumericRelaxedPlanningGraph can use early termination safely.
  */
 class RelaxedPlanningGraph {
 public:
@@ -113,13 +147,18 @@ public:
 private:
     const Problem& problem_;
 
-    // Layer-based storage using grounded fluent IDs for efficiency
-    // Fact encoding: positive facts use fluent_id (0, 1, 2, ...),
-    // negative facts use -(fluent_id + 1) (-1, -2, -3, ...)
+    // Layer-based storage using grounded fluent IDs for efficiency.
+    // Fact encoding (see encode_negative_fact_id / decode_negative_fact_id):
+    //   positive facts → fluent_id directly:          0,  1,  2, ...
+    //   negative facts → -(fluent_id + 2):           -2, -3, -4, ...
+    //   -1 is the "not found" sentinel (never stored in a layer).
+    // Both positive and negative facts grow monotonically: once added to a
+    // layer, they persist in all subsequent layers (the delete-relaxation).
     std::vector<std::unordered_set<int>> fact_layers_;                   // IDs of facts (positive and negative) true at each layer
-    std::vector<std::vector<const Action*>> action_layers_;               // Pointers to actions applicable at each layer
+    std::vector<std::vector<const Action*>> action_layers_;              // Pointers to actions applicable at each layer
 
-    // Achievability tracking using fluent IDs (same encoding as fact_layers_)
+    // Achievability tracking — same fact-ID encoding as fact_layers_.
+    // Records the earliest layer at which each fact first becomes true.
     std::unordered_map<int, int> achievability_layer_;                   // Maps fact_id -> first layer it's achievable
 
 
@@ -168,12 +207,21 @@ private:
 
     /**
      * Check if a single condition is satisfied at a given layer.
-     * Handles both positive and negated conditions.
+     * Handles positive/negated fluent conditions, equality between constants,
+     * NOT(equality), and OR clauses produced by quantifier removal + CNF.
      * @param condition The condition to check (may be negated)
      * @param layer_index The layer to check against
      * @return true if the condition is satisfied
      */
     bool is_condition_satisfied(ExprID condition_eid, int layer_index) const;
+
+    /**
+     * Evaluate a ground equality expression between constants.
+     * Uses ExprPool interning: same ExprID ⟹ structurally identical.
+     * @param equals_eid An ExprID whose operator is EQUALS
+     * @return true if the two arguments are identical constants
+     */
+    bool evaluate_ground_equality(ExprID equals_eid) const;
 
     /**
      * Add effects of an action to the next fact layer.
@@ -231,17 +279,18 @@ private:
 
     /**
      * Encode a positive fluent ID as a negative fact ID.
+     * Uses -(fluent_id + 2) to avoid collision with -1 sentinel (not found).
      * @param fluent_id The positive fluent ID (0, 1, 2, ...)
-     * @return negative fact ID (-(fluent_id + 1))
+     * @return negative fact ID (-2, -3, -4, ...)
      */
-    static int encode_negative_fact_id(int fluent_id) { return -(fluent_id + 1); }
+    static int encode_negative_fact_id(int fluent_id) { return -(fluent_id + 2); }
 
     /**
      * Decode a negative fact ID to get the original positive fluent ID.
-     * @param negative_fact_id The negative fact ID (-1, -2, -3, ...)
+     * @param negative_fact_id The negative fact ID (-2, -3, -4, ...)
      * @return original positive fluent ID
      */
-    static int decode_negative_fact_id(int negative_fact_id) { return -(negative_fact_id + 1); }
+    static int decode_negative_fact_id(int negative_fact_id) { return -(negative_fact_id + 2); }
 };
 
 } // namespace rantanplan

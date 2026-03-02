@@ -15,6 +15,9 @@ R2EGroundedEncoder::R2EGroundedEncoder(const Problem& problem, z3::context& ctx,
     build_variable_modifiers();
     build_rho_mappings();
     build_prev_mappings();
+    if (Config::instance().is_debug()) {
+        debug_print_structures();
+    }
 }
 
 void R2EGroundedEncoder::build_action_ordering() {
@@ -201,6 +204,9 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_effect_constraints(int t) {
     z3::expr_vector constraints(ctx_);
 
     // Equation (2): a^t_i → Eff^t_ai σ^t_modi σ^t_prev(i)
+    // Effects are grouped by fluent_id to produce ONE chain equation per (action, fluent) pair.
+    // This correctly handles actions with multiple effects on the same fluent (e.g., one
+    // unconditional and one conditional from forall/when expansion).
     for (size_t i = 0; i < global_action_order_.size(); ++i) {
         const Action* action = global_action_order_[i];
         int action_index = i + 1;
@@ -208,53 +214,58 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_effect_constraints(int t) {
         if (action->effects().empty()) continue;
 
         z3::expr action_var = variable_factory_.get_action_variable(*action, t);
-        z3::expr_vector effect_constraints(ctx_);
 
         // Create substitutions once per action
         auto prev_substitution = create_prev_substitution(action_index, t);
         auto modi_substitution = create_modi_substitution(action_index, t);
 
-        // Process each effect with both execution and carry-forward logic
+        // Group effects by fluent_id
+        std::unordered_map<ExprID, std::vector<const Effect*>> effects_by_fluent;
         for (const Effect& effect : action->effects()) {
-            z3::expr effect_constraint = encode_single_effect_with_carry_forward(
-                effect, prev_substitution, modi_substitution, t, action_index, action_var);
-            effect_constraints.push_back(effect_constraint);
+            effects_by_fluent[effect.effect_expression().fluent_id()].push_back(&effect);
         }
 
-        // Add all effect constraints directly (no implication needed since it's handled in the constraint)
-        for (const auto& constraint : effect_constraints) {
-            constraints.push_back(constraint);
+        // Create one chain equation per modified fluent
+        for (const auto& [fluent_id, effects] : effects_by_fluent) {
+            z3::expr chain_var = modi_substitution.at(fluent_id);
+            z3::expr prev_value = get_prev_variable_or_chain(fluent_id, t, action_index);
+
+            // Determine the executed value by combining effects on this fluent.
+            // An unconditional effect always fires and dominates conditional ones.
+            // Multiple conditional effects chain as nested ITEs.
+            z3::expr executed_value = prev_value;
+            bool has_unconditional = false;
+
+            for (const Effect* eff : effects) {
+                if (!eff->is_conditional()) {
+                    executed_value = create_effect_value_z3(
+                        eff->effect_expression(), prev_value, prev_substitution, t);
+                    has_unconditional = true;
+                    break;  // Unconditional dominates — no need to check further
+                }
+            }
+
+            if (!has_unconditional) {
+                // All effects are conditional — chain them as nested ITEs:
+                // ITE(cond_n, val_n, ITE(cond_{n-1}, val_{n-1}, ... ITE(cond_1, val_1, prev)))
+                for (const Effect* eff : effects) {
+                    z3::expr condition_z3 = convert_expr_id_to_z3(
+                        eff->effect_expression().condition_id(), t);
+                    z3::expr substituted_condition = apply_substitution(
+                        condition_z3, prev_substitution, t);
+                    z3::expr new_value = create_effect_value_z3(
+                        eff->effect_expression(), prev_value, prev_substitution, t);
+                    executed_value = z3::ite(substituted_condition, new_value, executed_value);
+                }
+            }
+
+            constraints.push_back(chain_var == z3::ite(action_var, executed_value, prev_value));
         }
     }
 
     return constraints.empty() ?
         std::make_shared<z3::expr>(ctx_.bool_val(true)) :
         std::make_shared<z3::expr>(z3::mk_and(constraints));
-}
-
-z3::expr R2EGroundedEncoder::encode_single_effect_with_carry_forward(const Effect& effect,
-                                                                   const std::unordered_map<ExprID, z3::expr>& prev_substitution,
-                                                                   const std::unordered_map<ExprID, z3::expr>& modi_substitution,
-                                                                   int timestep, int action_index, const z3::expr& action_var) {
-    const EffectExpression& eff_expr = effect.effect_expression();
-
-    // Get chain variable (LHS - what gets assigned to) and previous value
-    z3::expr chain_var = modi_substitution.at(eff_expr.fluent_id());
-    z3::expr prev_value = get_prev_variable_or_chain(eff_expr.fluent_id(), timestep, action_index);
-    // New value when effect executes (RHS)
-    z3::expr new_value = create_effect_value_z3(eff_expr, prev_value, prev_substitution, timestep);
-
-    // Handle conditional vs unconditional effects
-    z3::expr executed_value = prev_value;
-    if (effect.is_conditional()) {
-        z3::expr condition_z3 = convert_expr_id_to_z3(effect.effect_expression().condition_id(), timestep);
-        z3::expr substituted_condition = apply_substitution(condition_z3, prev_substitution, timestep);
-        executed_value = z3::ite(substituted_condition, new_value, prev_value);
-    } else {
-        executed_value = new_value;
-    }
-
-    return (chain_var == z3::ite(action_var, executed_value, prev_value));
 }
 
 std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_linking_constraints(int t) {

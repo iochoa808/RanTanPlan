@@ -35,8 +35,13 @@ def initialize_fluents(task):
     for fe in uninitialized_fluents:
         task.set_initial_value(fe, task.initial_defaults[fe.type])
 
-def compile_problem(problem, naive_grounding=False):
-    """Apply compilation pipeline (quantifier removal + grounding)."""
+def compile_problem(problem, grounding_mode='up'):
+    """Apply compilation pipeline (quantifier removal + optional grounding).
+
+    Args:
+        problem: The UP problem to compile.
+        grounding_mode: 'up' (cross-product via UP), or 'none' (lifted).
+    """
     current_problem = problem
 
     # Step 1: Remove quantifiers if present
@@ -46,16 +51,14 @@ def compile_problem(problem, naive_grounding=False):
         quantifier_result = quantifier_remover.compile(current_problem, CompilationKind.QUANTIFIERS_REMOVING)
         current_problem = quantifier_result.problem
 
-    # Step 2: Ground the problem
-    if naive_grounding:
-        print("Applying naive grounding (cross-product)...")
-        grounder = Grounder()
-        grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
-    else:
-        print("Applying smart grounding (reachability analysis)...")
-        from rantanplan.reachability_grounder import ReachabilityGrounder
-        smart_grounder = ReachabilityGrounder()
-        grounding_result = smart_grounder.ground(current_problem, CompilationKind.GROUNDING)
+    if grounding_mode == 'none':
+        print("Skipping grounding (lifted output).")
+        return current_problem
+
+    # Step 2: Ground the problem using UP's cross-product grounder
+    print("Applying UP grounding (cross-product)...")
+    grounder = Grounder()
+    grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
     current_problem = grounding_result.problem
 
     return current_problem
@@ -65,10 +68,19 @@ def main():
     parser.add_argument('-d', '--domain', required=True, help='Path to PDDL domain file')
     parser.add_argument('-p', '--problem', required=True, help='Path to PDDL problem file')
     parser.add_argument('-o', '--output', required=True, help='Output protobuf file path')
-    parser.add_argument('--naive-grounding', action='store_true',
-                        help='Use naive cross-product grounding instead of smart reachability-based grounding')
+    grounding = parser.add_mutually_exclusive_group()
+    grounding.add_argument('--up-grounding', action='store_true',
+                           help='Use UP cross-product grounding (default)')
+    grounding.add_argument('--no-grounding', action='store_true',
+                           help='Skip grounding entirely — output a lifted protobuf (for C++ grounder)')
 
     args = parser.parse_args()
+
+    # Determine grounding mode
+    if args.no_grounding:
+        grounding_mode = 'none'
+    else:
+        grounding_mode = 'up'
 
     # Check input files exist
     if not os.path.exists(args.domain):
@@ -93,7 +105,7 @@ def main():
 
         # Compile problem
         print("Compiling problem...")
-        compiled_problem = compile_problem(problem, naive_grounding=args.naive_grounding)
+        compiled_problem = compile_problem(problem, grounding_mode=grounding_mode)
 
         # Convert to protobuf
         print("Converting to protobuf...")

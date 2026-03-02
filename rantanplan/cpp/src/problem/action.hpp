@@ -48,6 +48,8 @@ public:
     void add_parameter(const Parameter& param);
     void set_parameters(const std::vector<Parameter>& parameters);
     void add_effect(const Effect& effect) { effects_.push_back(effect); }
+    void set_precondition_id(ExprID id) { precondition_id_ = id; has_precondition_ = (id != EXPR_NULL); }
+    void set_pool(const ExprPool* pool) { pool_ = pool; }
 
     // String representation
     std::string to_string() const;

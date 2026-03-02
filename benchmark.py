@@ -167,15 +167,21 @@ def discover_pddl_instances(root_dir):
     return dict(instances_by_domain)
 
 
-def generate_job_commands(instances_by_domain, strategy_names, timeout, verbose=False):
+def generate_job_commands(instances_by_domain, strategy_names, timeout, verbose=False,
+                         extra_flags=None):
     """
     Generates individual solver commands for GNU parallel execution.
+
+    Args:
+        extra_flags: Additional CLI flags to append to every planner invocation.
 
     Returns:
         List of (command, job_id, domain, config, instance_name) tuples
     """
     commands = []
     job_id = 0
+    if extra_flags is None:
+        extra_flags = []
     
     for domain_name, instances in instances_by_domain.items():
         for domain_file, problem_file in instances:
@@ -197,6 +203,9 @@ def generate_job_commands(instances_by_domain, strategy_names, timeout, verbose=
                 
                 if verbose:
                     cmd.append("-v")
+
+                # Append any extra flags (grounding, RPG, passthrough)
+                cmd.extend(extra_flags)
                 
                 commands.append((cmd, current_job_id, domain_name, config_name, instance_name))
                 job_id += 1
@@ -495,7 +504,40 @@ def main():
         "--configs",
         help="JSON file with custom configuration list (overrides default)"
     )
-    
+
+    # Grounding options
+    parser.add_argument(
+        "--up-grounding",
+        action="store_true",
+        help="Use Unified Planning cross-product grounding instead of C++ reachability-based grounding"
+    )
+
+    # RPG / action removal options
+    parser.add_argument(
+        "--no-action-removal",
+        action="store_true",
+        help="Disable RPG-based action removal optimization"
+    )
+    parser.add_argument(
+        "--boolean-rpg",
+        action="store_true",
+        help="Use Boolean RPG for action removal (faster, less precise)"
+    )
+    parser.add_argument(
+        "--numeric-rpg",
+        action="store_true",
+        help="Use Numeric RPG for action removal (slower, more precise)"
+    )
+
+    # Generic passthrough for any additional planner flags
+    parser.add_argument(
+        "--extra-args",
+        nargs=argparse.REMAINDER,
+        default=[],
+        help="Extra arguments passed through to the planner verbatim "
+             "(e.g. --extra-args --no-persist-clauses --symmetries)"
+    )
+
     args = parser.parse_args()
     
     # Load strategies
@@ -530,8 +572,24 @@ def main():
     print_info(f"Found {len(instances_by_domain)} domains with {total_instances} total instances")
     print_info(f"Total benchmark jobs: {total_jobs}")
     
+    # Build extra flags from grounding/RPG options + passthrough
+    extra_flags = []
+    if args.up_grounding:
+        extra_flags.append("--up-grounding")
+    if args.no_action_removal:
+        extra_flags.append("--no-action-removal")
+    if args.boolean_rpg:
+        extra_flags.append("--boolean-rpg")
+    if args.numeric_rpg:
+        extra_flags.append("--numeric-rpg")
+    extra_flags.extend(args.extra_args)
+
+    if extra_flags:
+        print_info(f"Extra planner flags: {' '.join(extra_flags)}")
+
     # Generate job commands
-    commands = generate_job_commands(instances_by_domain, valid_strategies, args.timeout, args.verbose)
+    commands = generate_job_commands(instances_by_domain, valid_strategies, args.timeout, args.verbose,
+                                    extra_flags=extra_flags)
     
     # Run parallel benchmark
     success_counts, detailed_results = run_parallel_benchmark(commands, args.jobs, args.results_dir, args.timeout)
