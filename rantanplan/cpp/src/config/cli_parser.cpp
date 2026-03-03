@@ -8,6 +8,10 @@
 namespace rantanplan {
 
 void CLIParser::parse(Config& config, int argc, char* argv[]) {
+    // Track whether --no-action-removal was given so it can override
+    // --up-grounding / --boolean-rpg / --numeric-rpg regardless of flag order.
+    bool explicit_no_action_removal = false;
+
     for (int i = 3; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -71,15 +75,24 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--horizon-schedule requires a value (linear|arithmetic|geometric|doubling)");
             }
         }
-        // Action removal options
+        // Action removal / grounding options
+        else if (arg == "--up-grounding") {
+            // Use Unified Planning grounding (Python side) instead of C++ grounding.
+            // This disables C++ grounding and enables RPG-based action removal.
+            config.global.reachability_grounding = false;
+            config.global.enable_action_removal = true;
+        }
         else if (arg == "--no-action-removal") {
             config.global.enable_action_removal = false;
+            explicit_no_action_removal = true;
         }
         else if (arg == "--boolean-rpg") {
             config.global.use_numeric_rpg = false;
+            config.global.enable_action_removal = true;
         }
         else if (arg == "--numeric-rpg") {
             config.global.use_numeric_rpg = true;
+            config.global.enable_action_removal = true;
         }
         // Z3 solver options
         else if (arg == "--no-persist-clauses") {
@@ -123,6 +136,11 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--log-file requires a filename");
             }
         }
+    }
+
+    // --no-action-removal takes precedence over any flag that enables it.
+    if (explicit_no_action_removal) {
+        config.global.enable_action_removal = false;
     }
 }
 

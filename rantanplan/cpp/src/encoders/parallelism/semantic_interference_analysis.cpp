@@ -49,11 +49,14 @@ bool SemanticInterferenceAnalysis::has_interference(int node_id1, int node_id2) 
 bool SemanticInterferenceAnalysis::action_affects_semantically(const Action& a1, const Action& a2) const {
     bool affects = false; // by default a1 does not affect a2
 
-    // Create directional cache key for "affects" relationship
-    std::string cache_key = a1.name() + " affects " + a2.name();
+    // Use action IDs as cache key (unique per ground action instance).
+    // Names alone are not unique — e.g. C++ grounding produces multiple
+    // ground actions all named "pick" with different parameters.
+    auto cache_key = std::make_pair(a1.id(), a2.id());
     
     // Check if result is already cached
-    if (semantic_cache_.contains(cache_key)) return semantic_cache_.at(cache_key);
+    auto cache_it = semantic_cache_.find(cache_key);
+    if (cache_it != semantic_cache_.end()) return cache_it->second;
     
     // Based on Definition 3.9 from the paper:
     // Action a affects action b if either:

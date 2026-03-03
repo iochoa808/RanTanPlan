@@ -23,6 +23,8 @@
 #include "passes/boolean_rpg_pass.hpp"
 #include "passes/numeric_rpg_pass.hpp"
 #include "passes/symmetry_pass.hpp"
+#include "passes/grounding_pass.hpp"
+#include "passes/cwa_initial_state_pass.hpp"
 
 #include "z3++.h"
 
@@ -219,13 +221,32 @@ int main(int argc, char* argv[]) {
     rantanplan::BooleanRPGPass boolean_rpg_pass;
     rantanplan::NumericRPGPass numeric_rpg_pass;
     rantanplan::SymmetryPass symmetry_pass;
+    rantanplan::GroundingPass grounding_pass;
+    rantanplan::CWAInitialStatePass cwa_pass;
     std::vector<const rantanplan::Pass*> passes;
 
-    if (config.global.enable_action_removal) {
+    if (config.global.reachability_grounding) {
+        // C++ grounding performs reachability-based instantiation.
+        // RPG seems redundant after C++ grounding
+        // so it is disabled by default. Use --boolean-rpg or --numeric-rpg
+        // to explicitly re-enable it.
+        passes.push_back(&grounding_pass);
+        if (config.global.enable_action_removal) {
+            passes.push_back(config.global.use_numeric_rpg
+                             ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
+                             : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
+        }
+    } else if (config.global.enable_action_removal) {
+        // When using UP grounding (--up-grounding), RPG is enabled by default
+        // to prune unreachable actions from the cross-product grounding.
         passes.push_back(config.global.use_numeric_rpg
                          ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
                          : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
     }
+
+    // CWA pass ensures all grounded fluents have explicit initial assignments.
+    // No-op when Python/UP already provides complete initial state.
+    passes.push_back(&cwa_pass);
 
     if (config.symmetry.enable_symmetries) {
         passes.push_back(&symmetry_pass);
@@ -234,6 +255,19 @@ int main(int argc, char* argv[]) {
     auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);
     planning_problem = std::move(pipeline_result.problem);
     config.planner.start_timestep = pipeline_result.lower_bound;
+
+    // Debug: dump problem info after pipeline
+    if (config.is_debug()) {
+        rantanplan::Logger::instance().info("After pipeline: " +
+                    std::to_string(planning_problem.actions().size()) + " actions, " +
+                    std::to_string(planning_problem.grounded_fluents().size()) + " grounded fluents, " +
+                    std::to_string(planning_problem.initial_state().size()) + " initial assignments, " +
+                    std::to_string(planning_problem.goals().size()) + " goals");
+        rantanplan::Logger::instance().info("Grounded fluents:");
+        for (const auto& gf : planning_problem.grounded_fluents()) {
+            rantanplan::Logger::instance().info("  " + planning_problem.pool().to_string(gf));
+        }
+    }
 
     if (pipeline_result.proven_unsolvable) {
         PlanGenerationResult result;

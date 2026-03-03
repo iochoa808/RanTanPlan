@@ -56,8 +56,15 @@ private:
     mutable std::unique_ptr<GroundedEncodingVisitor> grounded_visitor_;
     
     // Cache for semantic interference results to avoid recomputation
-    // Uses string key based on action names for simplicity
-    mutable std::unordered_map<std::string, bool> semantic_cache_;
+    // Keyed by (action_id_1, action_id_2) pair for correct per-instance caching
+    struct PairHash {
+        std::size_t operator()(const std::pair<int,int>& p) const {
+            auto h1 = std::hash<int>{}(p.first);
+            auto h2 = std::hash<int>{}(p.second);
+            return h1 ^ (h2 * 2654435761u);
+        }
+    };
+    mutable std::unordered_map<std::pair<int,int>, bool, PairHash> semantic_cache_;
     
     
     /**

@@ -87,7 +87,10 @@ Use --list-strategies to see available strategies and their descriptions.
                             "'doubling' doubles each batch, 'geometric' multiplies by 1.5, "
                             "'arithmetic' adds 5 each batch.")
 
-    
+    parser.add_argument('--up-grounding', action='store_true',
+                        help='Use Unified Planning grounding instead of '
+                             'the default reachability-based grounding')
+
     parser.add_argument(
         "--version",
         action="version",
@@ -139,7 +142,8 @@ def solve_problem(problem, args):
         planner_params['horizon_schedule'] = args.horizon_schedule
     if args.log_file:
         planner_params['log_file'] = args.log_file
-
+    if args.up_grounding:
+        planner_params['up_grounding'] = True
     # Handle verbosity
     if args.silent:
         planner_params['verbosity'] = "silent"
@@ -216,22 +220,26 @@ def main():
     if not result:
         sys.exit(1)
 
-    # Print result
-    print(f"Status: {result.status}")
+    # Print result (unless --silent)
+    if not args.silent:
+        print(f"Status: {result.status}")
     if result.plan and hasattr(result.plan, 'actions'):
-        print(f"Plan found with {len(result.plan.actions)} actions")
-        for i, action in enumerate(result.plan.actions):
-            params = ", ".join(map(str, action.actual_parameters))
-            print(f"  {i+1}. {action.action.name}({params})")
+        if not args.silent:
+            print(f"Plan found with {len(result.plan.actions)} actions")
+            for i, action in enumerate(result.plan.actions):
+                params = ", ".join(map(str, action.actual_parameters))
+                print(f"  {i+1}. {action.action.name}({params})")
 
         if args.output_plan:
             with open(args.output_plan, 'w') as f:
                 for i, action in enumerate(result.plan.actions):
                     params = ", ".join(map(str, action.actual_parameters))
                     f.write(f"{i+1}. {action.action.name}({params})\n")
-            print(f"Plan saved to: {args.output_plan}")
+            if not args.silent:
+                print(f"Plan saved to: {args.output_plan}")
     else:
-        print("No plan found")
+        if not args.silent:
+            print("No plan found")
         sys.exit(1)
 
 

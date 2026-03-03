@@ -15,6 +15,9 @@ R2EGroundedEncoder::R2EGroundedEncoder(const Problem& problem, z3::context& ctx,
     build_variable_modifiers();
     build_rho_mappings();
     build_prev_mappings();
+    if (Config::instance().is_debug()) {
+        debug_print_structures();
+    }
 }
 
 void R2EGroundedEncoder::build_action_ordering() {
@@ -201,6 +204,9 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_effect_constraints(int t) {
     z3::expr_vector constraints(ctx_);
 
     // Equation (2): a^t_i → Eff^t_ai σ^t_modi σ^t_prev(i)
+    // Effects are grouped by fluent_id to produce ONE chain equation per (action, fluent) pair.
+    // This correctly handles actions with multiple effects on the same fluent (e.g., one
+    // unconditional and one conditional from forall/when expansion).
     for (size_t i = 0; i < global_action_order_.size(); ++i) {
         const Action* action = global_action_order_[i];
         int action_index = i + 1;
@@ -208,53 +214,87 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_effect_constraints(int t) {
         if (action->effects().empty()) continue;
 
         z3::expr action_var = variable_factory_.get_action_variable(*action, t);
-        z3::expr_vector effect_constraints(ctx_);
 
         // Create substitutions once per action
         auto prev_substitution = create_prev_substitution(action_index, t);
         auto modi_substitution = create_modi_substitution(action_index, t);
 
-        // Process each effect with both execution and carry-forward logic
+        // Group effects by fluent_id
+        std::unordered_map<ExprID, std::vector<const Effect*>> effects_by_fluent;
         for (const Effect& effect : action->effects()) {
-            z3::expr effect_constraint = encode_single_effect_with_carry_forward(
-                effect, prev_substitution, modi_substitution, t, action_index, action_var);
-            effect_constraints.push_back(effect_constraint);
+            effects_by_fluent[effect.effect_expression().fluent_id()].push_back(&effect);
         }
 
-        // Add all effect constraints directly (no implication needed since it's handled in the constraint)
-        for (const auto& constraint : effect_constraints) {
-            constraints.push_back(constraint);
+        // Create one chain equation per modified fluent
+        for (const auto& [fluent_id, effects] : effects_by_fluent) {
+            z3::expr chain_var = modi_substitution.at(fluent_id);
+            z3::expr prev_value = get_prev_variable_or_chain(fluent_id, t, action_index);
+
+            // Combine all effects on this fluent into a single executed_value.
+            //
+            // For ASSIGN (boolean or numeric):
+            //   - Unconditional: last one wins (they should agree; multiple
+            //     conflicting ASSIGNs is ill-formed PDDL).
+            //   - Conditional: nested ITEs selecting one winner.
+            //
+            // For INCREASE/DECREASE (numeric):
+            //   - Multiple effects must ACCUMULATE (sum of deltas), not
+            //     override each other.  This arises from forall/when expansion
+            //     producing multiple additive effects on the same fluent.
+            //   - Unconditional: chain through create_effect_value_z3 which
+            //     computes prev+delta, feeding each result as prev to the next.
+            //   - Conditional: add ite(cond, delta, 0) per effect.
+
+            // Partition into unconditional and conditional.
+            std::vector<const Effect*> unconditional, conditional;
+            for (const Effect* eff : effects) {
+                if (eff->is_conditional()) conditional.push_back(eff);
+                else unconditional.push_back(eff);
+            }
+
+            z3::expr executed_value = prev_value;
+
+            if (!unconditional.empty()) {
+                // Accumulate all unconditional effects. For ASSIGN the last
+                // one wins (single pass is fine). For INCREASE/DECREASE each
+                // call adds its delta onto the running value.
+                for (const Effect* eff : unconditional) {
+                    executed_value = create_effect_value_z3(
+                        eff->effect_expression(), executed_value, prev_substitution, t);
+                }
+            }
+
+            if (!conditional.empty()) {
+                // Conditional effects: behaviour depends on effect kind.
+                for (const Effect* eff : conditional) {
+                    z3::expr condition_z3 = convert_expr_id_to_z3(
+                        eff->effect_expression().condition_id(), t);
+                    z3::expr substituted_condition = apply_substitution(
+                        condition_z3, prev_substitution, t);
+
+                    if (eff->effect_expression().is_assign()) {
+                        // ASSIGN: ITE selects this value or keeps the running value.
+                        z3::expr new_value = create_effect_value_z3(
+                            eff->effect_expression(), executed_value, prev_substitution, t);
+                        executed_value = z3::ite(substituted_condition, new_value, executed_value);
+                    } else {
+                        // INCREASE/DECREASE: accumulate guarded delta.
+                        // create_effect_value_z3 returns (executed_value ± delta),
+                        // so ite(cond, that, executed_value) adds delta only when cond holds.
+                        z3::expr with_delta = create_effect_value_z3(
+                            eff->effect_expression(), executed_value, prev_substitution, t);
+                        executed_value = z3::ite(substituted_condition, with_delta, executed_value);
+                    }
+                }
+            }
+
+            constraints.push_back(chain_var == z3::ite(action_var, executed_value, prev_value));
         }
     }
 
     return constraints.empty() ?
         std::make_shared<z3::expr>(ctx_.bool_val(true)) :
         std::make_shared<z3::expr>(z3::mk_and(constraints));
-}
-
-z3::expr R2EGroundedEncoder::encode_single_effect_with_carry_forward(const Effect& effect,
-                                                                   const std::unordered_map<ExprID, z3::expr>& prev_substitution,
-                                                                   const std::unordered_map<ExprID, z3::expr>& modi_substitution,
-                                                                   int timestep, int action_index, const z3::expr& action_var) {
-    const EffectExpression& eff_expr = effect.effect_expression();
-
-    // Get chain variable (LHS - what gets assigned to) and previous value
-    z3::expr chain_var = modi_substitution.at(eff_expr.fluent_id());
-    z3::expr prev_value = get_prev_variable_or_chain(eff_expr.fluent_id(), timestep, action_index);
-    // New value when effect executes (RHS)
-    z3::expr new_value = create_effect_value_z3(eff_expr, prev_value, prev_substitution, timestep);
-
-    // Handle conditional vs unconditional effects
-    z3::expr executed_value = prev_value;
-    if (effect.is_conditional()) {
-        z3::expr condition_z3 = convert_expr_id_to_z3(effect.effect_expression().condition_id(), timestep);
-        z3::expr substituted_condition = apply_substitution(condition_z3, prev_substitution, timestep);
-        executed_value = z3::ite(substituted_condition, new_value, prev_value);
-    } else {
-        executed_value = new_value;
-    }
-
-    return (chain_var == z3::ite(action_var, executed_value, prev_value));
 }
 
 std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_linking_constraints(int t) {
@@ -331,30 +371,24 @@ z3::expr R2EGroundedEncoder::apply_substitution(const z3::expr& expr,
 
 z3::expr R2EGroundedEncoder::create_effect_value_z3(const EffectExpression& eff_expr, const z3::expr& fluent_z3,
                                                    const std::unordered_map<ExprID, z3::expr>& prev_substitution, int timestep) {
-    // Convert effect value with proper substitution
+    // Convert the delta/value expression and substitute any fluent references
+    // in it (e.g., "increase (fuel ?v) (distance ?from ?to)" — distance is a
+    // fluent reference inside the delta that must be resolved via prev_substitution).
     z3::expr value_z3 = convert_expr_id_to_z3(eff_expr.value_id(), timestep);
     z3::expr substituted_value = apply_substitution(value_z3, prev_substitution, timestep);
 
-    // Create the new value expression based on effect type
     switch (eff_expr.kind()) {
         case EffectExpression::Kind::ASSIGN:
             return substituted_value;
 
-        case EffectExpression::Kind::INCREASE: {
-            // Get the previous value for this fluent
-            ExprID fluent_eid = eff_expr.fluent_id();
-            z3::expr prev_value = (prev_substitution.contains(fluent_eid)) ?
-                                prev_substitution.at(fluent_eid) : fluent_z3;
-            return prev_value + substituted_value;
-        }
+        case EffectExpression::Kind::INCREASE:
+            // fluent_z3 is the running accumulated value passed by the caller.
+            // Using it (not prev_substitution[fluent]) ensures multiple
+            // INCREASE effects on the same fluent sum their deltas correctly.
+            return fluent_z3 + substituted_value;
 
-        case EffectExpression::Kind::DECREASE: {
-            // Get the previous value for this fluent
-            ExprID fluent_eid = eff_expr.fluent_id();
-            z3::expr prev_value = (prev_substitution.contains(fluent_eid)) ?
-                                prev_substitution.at(fluent_eid) : fluent_z3;
-            return prev_value - substituted_value;
-        }
+        case EffectExpression::Kind::DECREASE:
+            return fluent_z3 - substituted_value;
     }
 
     // Should never reach here

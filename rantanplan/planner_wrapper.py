@@ -43,6 +43,42 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         self._numeric_rpg = options.get('numeric_rpg', False)
         self._horizon_schedule = options.get('horizon_schedule')  # None → C++ default ("linear")
         self._log_file = options.get('log_file')  # None if not specified
+        self._up_grounding = options.get('up_grounding', False)
+
+    # ── Verbosity helpers ────────────────────────────────────────────────
+    # Verbosity levels: silent < info (default/None) < verbose < debug
+    #   _log        → printed at info level and above  (suppressed by --silent)
+    #   _log_verbose → printed at verbose/debug only
+    #   _log_warning → same as _log (warnings are info-level)
+    #   _log_error  → always printed, even in silent mode
+
+    @property
+    def _is_silent(self) -> bool:
+        return self._verbosity == "silent"
+
+    @property
+    def _is_verbose(self) -> bool:
+        return self._verbosity in ("verbose", "debug")
+
+    def _log(self, msg: str) -> None:
+        """Print an informational message (suppressed in silent mode)."""
+        if not self._is_silent:
+            print(msg)
+
+    def _log_verbose(self, msg: str) -> None:
+        """Print a verbose message (only in verbose/debug mode)."""
+        if self._is_verbose:
+            print(msg)
+
+    def _log_warning(self, msg: str) -> None:
+        """Print a warning (suppressed in silent mode)."""
+        if not self._is_silent:
+            print(msg)
+
+    @staticmethod
+    def _log_error(msg: str) -> None:
+        """Print an error message (always printed, even in silent mode)."""
+        print(msg, file=sys.stderr)
 
     def _find_executable(self, provided_path):
         """Find the rantanplan executable, trying various locations."""
@@ -112,13 +148,16 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         return problem_kind <= RantanPlanPlanner.supported_kind()
 
     def _stream_output(self, pipe, prefix=""):
-        """Stream output from subprocess pipe directly to stdout in real-time."""
+        """Stream output from subprocess pipe directly to stdout in real-time.
+        Suppressed entirely in silent mode."""
         if not pipe:
             return
         try:
             for line in iter(pipe.readline, b''):
                 if not line:
                     break
+                if self._is_silent:
+                    continue
                 line_str = line.decode('utf-8', errors='replace').rstrip()
                 if line_str:
                     print(f"{prefix}{line_str}")
@@ -145,20 +184,20 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
                 validation_result = validator.validate(problem, plan)  # type: ignore[attr-defined]
                 
                 if validation_result.status == ValidationResultStatus.VALID:
-                    print("Plan validation: VALID")
-                    print(f"  The plan with {len(plan.actions)} actions is correct and executable.")
+                    self._log("Plan validation: VALID")
+                    self._log(f"  The plan with {len(plan.actions)} actions is correct and executable.")
                     return True
                 else:
-                    print(f"Plan validation: {validation_result.status.name}")
+                    self._log_warning(f"Plan validation: {validation_result.status.name}")
                     if validation_result.log_messages:
                         for log_msg in validation_result.log_messages:
-                            print(f"  Validation {log_msg.level.name}: {log_msg.message}")
+                            self._log_warning(f"  Validation {log_msg.level.name}: {log_msg.message}")
                     else:
-                        print("  No detailed validation messages available.")
+                        self._log_warning("  No detailed validation messages available.")
                     return False
                     
         except Exception as e:
-            print(f"Plan validation failed with error: {e}")
+            self._log_error(f"Plan validation failed with error: {e}")
             return False
 
     def _initialize_fluents(self, task: Problem):
@@ -198,8 +237,8 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         
         if real_int_fluents_to_init:
             fluent_names = [str(f) for f in real_int_fluents_to_init]
-            print(f"WARNING: Initializing {len(real_int_fluents_to_init)} real/integer fluents to 0: {', '.join(fluent_names)}")
-            print("         This is not semantically correct but is done in practice for planning purposes.")
+            self._log_warning(f"WARNING: Initializing {len(real_int_fluents_to_init)} real/integer fluents to 0: {', '.join(fluent_names)}")
+            self._log_warning("         This is not semantically correct but is done in practice for planning purposes.")
         
         # update the initial values for the fluents that are not initialized.
         for fe in unintialized_fluents:
@@ -267,7 +306,10 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
             if self._log_file is not None:
                 command.extend(["--log-file", self._log_file])
 
-            print(f"Running planner: {' '.join(command)}")
+            if self._up_grounding:
+                command.append("--up-grounding")
+
+            self._log_verbose(f"Running planner: {' '.join(command)}")
 
             # Run the C++ planner with real-time output streaming
             process = subprocess.Popen(
@@ -292,7 +334,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
                 return_code = process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 process.kill()
-                print("Planner timed out.")
+                self._log("Planner timed out.")
                 return PlanGenerationResult(
                     PlanGenerationResultStatus.TIMEOUT, None, self.name,
                     log_messages=[LogMessage(level=LogLevel.INFO, message="Planner timed out.")]
@@ -308,7 +350,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
                 if return_code == -11:  # Specific check for SIGSEGV
                     error_msg += " - The error might be a segmentation fault (SIGSEGV)."
                 
-                print(f"ERROR: {error_msg}")
+                self._log_error(error_msg)
                 return PlanGenerationResult(
                     PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
                     log_messages=[LogMessage(level=LogLevel.ERROR, message=error_msg)]
@@ -344,13 +386,12 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
                     # Create SequentialPlan (empty if no actions)
                     final_plan = SequentialPlan(new_actions)
                 except Exception as e:
-                    print(f"Error mapping plan back: {e}")
+                    self._log_error(f"Error mapping plan back: {e}")
                     return PlanGenerationResult(
                         PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
                         log_messages=[LogMessage(level=LogLevel.ERROR, message=f"Error mapping plan back: {e}")]
                     )
-            #print(f"Plan found (after mapping): {final_plan is not None}")
-            print(f"Status from planner: {result_from_protobuf.status.name}")
+            self._log(f"Status from planner: {result_from_protobuf.status.name}")
 
             # Validate the plan if one was found
             if final_plan is not None and result_from_protobuf.status == PlanGenerationResultStatus.SOLVED_SATISFICING:
@@ -377,7 +418,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
             )
 
         except Exception as e:
-            print(f"An error occurred: {e}")
+            self._log_error(f"An error occurred: {e}")
             return PlanGenerationResult(
                 PlanGenerationResultStatus.INTERNAL_ERROR, None, self.name,
                 log_messages=[LogMessage(level=LogLevel.ERROR, message=str(e))]
@@ -405,46 +446,49 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         current_problem = problem
         compilation_maps = []
         
-        print("Starting problem compilation pipeline...")
+        self._log_verbose("Starting problem compilation pipeline...")
         
         # Step 1: Remove quantifiers if present
         quantifier_remover = QuantifiersRemover()
         
         if quantifier_remover.supports(current_problem.kind):
-            print("  Applying quantifier removal...")
+            self._log_verbose("  Applying quantifier removal...")
             quantifier_result = quantifier_remover.compile(current_problem, CompilationKind.QUANTIFIERS_REMOVING)
             current_problem = quantifier_result.problem
             compilation_maps.append(quantifier_result)
-            print("  Quantifier removal completed.")
+            self._log_verbose("  Quantifier removal completed.")
         else:
-            print("  Quantifier removal not needed for this problem type.")
+            self._log_verbose("  Quantifier removal not needed for this problem type.")
 
         # Step 2: CNF normalization of goals and preconditions (NNF + distribute)
         try:
             if not self._no_cnf_normalization:
                 cnf_compiler = CNFConditionCompiler()
                 if cnf_compiler.supports(current_problem.kind):
-                    print("  Applying CNF normalization (goals and preconditions)...")
+                    self._log_verbose("  Applying CNF normalization (goals and preconditions)...")
                     cnf_result = cnf_compiler.compile(current_problem, CompilationKind.GROUNDING)
                     current_problem = cnf_result.problem
                     compilation_maps.append(cnf_result)
-                    print("  CNF normalization completed.")
+                    self._log_verbose("  CNF normalization completed.")
                 else:
-                    print("  CNF normalization not needed for this problem type.")
+                    self._log_verbose("  CNF normalization not needed for this problem type.")
             else:
-                print("  CNF normalization disabled by configuration.")
+                self._log_verbose("  CNF normalization disabled by configuration.")
         except Exception as e:
-            print(f"  CNF normalization skipped due to error: {e}")
+            self._log_warning(f"  CNF normalization skipped due to error: {e}")
         
-        # Step 3: Ground the problem
-        print("  Applying grounding...")
-        grounder = Grounder()
-        grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
-        current_problem = grounding_result.problem
-        compilation_maps.append(grounding_result)
-        print("  Grounding completed.")
-        
-        print("Problem compilation pipeline completed.")
+        # Step 3: Ground the problem (unless C++ backend will handle it)
+        if self._up_grounding:
+            self._log_verbose("  Applying UP grounder ...")
+            grounder = Grounder()
+            grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
+            current_problem = grounding_result.problem
+            compilation_maps.append(grounding_result)
+            self._log_verbose("  Grounding completed.")
+        else:
+            self._log_verbose("  Skipping Python-side grounding (the backend will ground).")
+
+        self._log_verbose("Problem compilation pipeline completed.")
         
         # Create a combined compilation result that can map back through all steps
         class CombinedCompilationResult:

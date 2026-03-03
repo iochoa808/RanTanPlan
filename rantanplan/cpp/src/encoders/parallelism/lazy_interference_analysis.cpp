@@ -42,9 +42,10 @@ bool LazyInterferenceAnalysis::has_interference(int node_id1, int node_id2) cons
 }
 
 bool LazyInterferenceAnalysis::compute_interference(const Action& a1, const Action& a2) const {
-    // Create a directional cache key: "source_action -> target_action"
-    // This makes it clear that we're checking if source interferes with target
-    std::string cache_key = a1.name() + " interferes_with " + a2.name();
+    // Use action IDs as cache key (unique per ground action instance).
+    // Names alone are not unique — e.g. C++ grounding produces multiple
+    // ground actions all named "pick" with different parameters.
+    auto cache_key = std::make_pair(a1.id(), a2.id());
     
     // Check if result is already cached
     auto cache_it = interference_cache_.find(cache_key);

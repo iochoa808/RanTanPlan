@@ -2,221 +2,184 @@
 """
 Comprehensive test script for the RantanPlan planning system.
 
-This script discovers all PDDL problems in the `pddl/` directory and runs the
-RantanPlan planner against them with all available strategies. It then validates
-the resulting plans to ensure correctness.
+Discovers all PDDL problems in pddl/test/ and runs the planner with every
+available strategy, validating each resulting plan. Strategies are auto-
+discovered from the C++ binary via --list-strategies.
 
-Strategies are defined in the C++ backend and automatically discovered at runtime.
+Output style: one compact line per test, with a summary at the end.
 """
 import os
 import sys
 import argparse
+import subprocess
 from pathlib import Path
+
 import unified_planning as up
 from unified_planning.io import PDDLReader
 from unified_planning.shortcuts import OneshotPlanner, PlanValidator
 from unified_planning.engines.results import PlanGenerationResultStatus
 from unified_planning.engines import ValidationResultStatus
 
-# Import the planner wrapper
 from rantanplan.planner_wrapper import RantanPlanPlanner
-import subprocess
 
-# --- Test Configuration ---
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-# Add directories here for the --quick test
 QUICK_TEST_DIRS = [
     "pddl/test/zenotravel",
     "pddl/test/rover",
     "pddl/test/gripper-round-1-adl",
-    "pddl/test/hydropower"
+    "pddl/test/hydropower",
 ]
 
-# Get available strategies from C++ planner
-def get_available_strategies():
-    """Query the C++ planner for available strategies."""
+TIMEOUT = 60  # seconds per test
+
+# ---------------------------------------------------------------------------
+# ANSI helpers
+# ---------------------------------------------------------------------------
+
+class C:
+    GREEN  = '\033[92m'
+    RED    = '\033[91m'
+    YELLOW = '\033[93m'
+    BOLD   = '\033[1m'
+    END    = '\033[0m'
+
+
+# ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
+
+def get_strategies():
+    """Query the C++ binary for available strategies."""
     planner = RantanPlanPlanner()
     result = subprocess.run(
         [planner.executable_path, "/dev/null", "/dev/null", "--list-strategies"],
-        capture_output=True, text=True, check=True
+        capture_output=True, text=True, check=True,
     )
-    # Parse strategy names from output (format: "  strategy_name")
-    strategies = []
-    for line in result.stdout.strip().split('\n'):
-        line = line.strip()
-        # Skip header line and empty lines
-        if line and not line.startswith('Available'):
-            strategies.append(line)
-    return strategies
-
-# Test all available strategies
-TEST_STRATEGIES = get_available_strategies()
-
-# --- ANSI Color Codes for Output ---
-class Colors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-def print_pass(message):
-    print(f"{Colors.OKGREEN}[PASS]{Colors.ENDC} {message}")
-
-def print_fail(message):
-    print(f"{Colors.FAIL}[FAIL]{Colors.ENDC} {message}")
-
-def print_info(message):
-    print(f"{Colors.OKBLUE}[INFO]{Colors.ENDC} {message}")
-
-def print_header(message):
-    print(f"\n{Colors.HEADER}{Colors.BOLD}{message}{Colors.ENDC}")
+    return [
+        line.strip()
+        for line in result.stdout.strip().split('\n')
+        if line.strip() and not line.strip().startswith('Available')
+    ]
 
 
-def find_pddl_problems(root_dir="pddl/test", quick_test=False):
-    """
-    Finds all PDDL domain/problem pairs in the specified directory.
-    
-    Args:
-        root_dir: The directory to search for PDDL files.
-        quick_test: If True, only searches in the QUICK_TEST_DIRS.
-
-    Returns:
-        A list of tuples, where each tuple contains (problem_name, domain_path, problem_path).
-    """
-    problem_paths = []
-    search_dirs = QUICK_TEST_DIRS if quick_test else [root_dir]
-    
+def find_problems(quick=False):
+    """Return sorted list of (name, domain_path, problem_path)."""
+    problems = []
+    search_dirs = QUICK_TEST_DIRS if quick else ["pddl/test"]
     for search_dir in search_dirs:
         for dirpath, _, filenames in os.walk(search_dir):
-            domain_file = None
-            problem_file = None
-            
-            # Find domain and problem files in the current directory
-            for filename in filenames:
-                if "domain" in filename.lower() and filename.endswith(".pddl"):
-                    domain_file = Path(dirpath) / filename
-                elif "problem" in filename.lower() and filename.endswith(".pddl"):
-                    problem_file = Path(dirpath) / filename
-
-            if domain_file and problem_file:
-                problem_name = Path(dirpath).name
-                problem_paths.append((problem_name, domain_file, problem_file))
-                
-    if not problem_paths:
-        print(f"{Colors.WARNING}Warning: No PDDL problems found in the specified directories.{Colors.ENDC}")
-
-    return problem_paths
+            domain = problem = None
+            for f in filenames:
+                if "domain" in f.lower() and f.endswith(".pddl"):
+                    domain = Path(dirpath) / f
+                elif "problem" in f.lower() and f.endswith(".pddl"):
+                    problem = Path(dirpath) / f
+            if domain and problem:
+                problems.append((Path(dirpath).name, domain, problem))
+    return sorted(problems, key=lambda t: t[0])
 
 
-def run_test(problem_name, domain_file, problem_file, strategy_name, verbose=False):
-    """
-    Runs a single planning test case with strategy preset.
-    """
-    test_id = f"{problem_name} ({strategy_name})"
-    print_info(f"Running test: {test_id}")
+# ---------------------------------------------------------------------------
+# Single test
+# ---------------------------------------------------------------------------
 
+def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False):
+    """Run one test. Returns (passed: bool, detail: str)."""
     try:
-        # 1. Parse the problem
         reader = PDDLReader()
-        problem = reader.parse_problem(str(domain_file), str(problem_file))
+        prob = reader.parse_problem(str(domain), str(problem))
 
-        # 2. Configure and run the planner
-        planner_params = {
-            'strategy': strategy_name
+        params = {
+            'strategy': strategy,
+            'verbosity': 'info' if verbose else 'silent',
         }
+        if up_grounding:
+            params['up_grounding'] = True
 
-        # Set verbosity level based on verbose flag
-        if verbose:
-            planner_params['verbosity'] = 'info'  # Enable verbose output
+        with OneshotPlanner(name='RantanPlan', params=params) as planner:
+            result = planner.solve(prob, timeout=TIMEOUT)
+
+        if result.status != PlanGenerationResultStatus.SOLVED_SATISFICING:
+            return False, result.status.name
+
+        if result.plan is None:
+            return False, "NO_PLAN"
+
+        val = PlanValidator()
+        vr = val.validate(prob, result.plan)
+        if vr.status == ValidationResultStatus.VALID:
+            return True, f"{len(result.plan.actions)} actions"
         else:
-            planner_params['verbosity'] = 'silent'  # Suppress output
-
-        with OneshotPlanner(name='RantanPlan', params=planner_params) as planner:
-            result = planner.solve(problem, timeout=60)
-
-            # 3. Check the result status
-            if result.status != PlanGenerationResultStatus.SOLVED_SATISFICING:
-                print_fail(f"{test_id} - Planner did not find a solution. Status: {result.status.name}")
-                return False
-
-            if result.plan is None:
-                print_fail(f"{test_id} - Status was SOLVED_SATISFICING but no plan was returned.")
-                return False
-
-            # 4. Validate the plan
-            validator = PlanValidator()
-            validation_result = validator.validate(problem, result.plan)
-            
-            if validation_result.status == ValidationResultStatus.VALID:
-                print_pass(f"{test_id} - Plan is valid.")
-                return True
-            else:
-                print_fail(f"{test_id} - Plan is INVALID. Validator status: {validation_result.status.name}")
-                return False
+            return False, "INVALID_PLAN"
 
     except Exception as e:
-        print_fail(f"{test_id} - An unexpected error occurred: {e}")
-        return False
+        return False, str(e)[:80]
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
-    """Main entry point for the test script."""
-    parser = argparse.ArgumentParser(description="Test script for the RantanPlan planner.")
-    parser.add_argument(
-        "--quick",
-        action="store_true",
-        help="Run only a small subset of tests for a quick check."
-    )
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Enable verbose output from the planner."
-    )
+    parser = argparse.ArgumentParser(description="RantanPlan test suite")
+    parser.add_argument("--quick", action="store_true",
+                        help="Test only a small subset of domains")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Show planner output")
+    parser.add_argument("--up-grounding", action="store_true",
+                        help="Use UP cross-product grounding instead of C++ grounding")
     args = parser.parse_args()
 
-    print_header("--- Starting RantanPlan Test Suite ---")
-    if args.quick:
-        print_info("Running in --quick mode. Using a subset of problems.")
+    strategies = get_strategies()
+    problems = find_problems(quick=args.quick)
 
-    # Find problems to test
-    problems = find_pddl_problems(quick_test=args.quick)
     if not problems:
+        print("No PDDL problems found.")
         sys.exit(1)
-        
-    print_info(f"Found {len(problems)} problems to test against {len(TEST_STRATEGIES)} strategies.")
 
-    total_tests = 0
-    passed_tests = 0
-    failed_tests = 0
+    total = len(problems) * len(strategies)
+    print(f"\n{C.BOLD}RantanPlan Test Suite{C.END}")
+    print(f"{len(problems)} domains x {len(strategies)} strategies = {total} tests\n")
 
-    # Run tests
-    for problem_name, domain_file, problem_file in problems:
-        for strategy_name in TEST_STRATEGIES:
-            total_tests += 1
-            if run_test(problem_name, domain_file, problem_file, strategy_name, args.verbose):
-                passed_tests += 1
+    passed = failed = 0
+    failures = []
+    test_num = 0
+
+    for name, domain, problem_file in problems:
+        for strategy in strategies:
+            test_num += 1
+            label = f"{name} / {strategy}"
+            print(f"  [{test_num}/{total}] {label}... ", end="", flush=True)
+
+            ok, detail = run_test(name, domain, problem_file, strategy,
+                                  verbose=args.verbose, up_grounding=args.up_grounding)
+            if ok:
+                passed += 1
+                print(f"{C.GREEN}PASS{C.END} ({detail})")
             else:
-                failed_tests += 1
+                failed += 1
+                failures.append((label, detail))
+                print(f"{C.RED}FAIL{C.END} ({detail})")
 
-    # Print summary
-    print_header("--- Test Summary ---")
-    print(f"Total tests run: {total_tests}")
-    print(f"{Colors.OKGREEN}Passed: {passed_tests}{Colors.ENDC}")
-    print(f"{Colors.FAIL}Failed: {failed_tests}{Colors.ENDC}")
+    # Summary
+    print(f"\n{'=' * 60}")
+    print(f"{C.BOLD}Test Summary{C.END}")
+    print(f"{'=' * 60}")
+    print(f"  Total:  {passed + failed}")
+    print(f"  Passed: {C.GREEN}{passed}{C.END}")
+    print(f"  Failed: {C.RED}{failed}{C.END}")
 
-    if failed_tests > 0:
-        sys.exit(1)
-    else:
-        sys.exit(0)
+    if failures:
+        print(f"\n{C.RED}Failed tests:{C.END}")
+        for label, detail in failures:
+            print(f"  {label}: {detail}")
+
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":
-    # Ensure the rantanplan module is in the Python path
-    # This allows running the script from the root directory
     sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
     main()

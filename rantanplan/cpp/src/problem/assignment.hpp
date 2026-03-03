@@ -18,6 +18,8 @@ public:
     // Constructors
     Assignment() = default;
     Assignment(const pb::Assignment& pb_assignment, Problem* problem);
+    Assignment(ExprID fluent_id, ExprID value_id, const ExprPool* pool)
+        : fluent_id_(fluent_id), value_id_(value_id), pool_(pool) {}
 
     // Accessors
     ExprID fluent_id() const { return fluent_id_; }

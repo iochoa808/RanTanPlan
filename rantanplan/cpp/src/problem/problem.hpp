@@ -88,7 +88,27 @@ public:
      * @return New Problem without the specified actions
      */
     Problem without_actions(const std::vector<size_t>& removed_indices) const;
-    
+
+    /**
+     * Returns a new Problem with the given actions replacing the current ones.
+     * Action IDs are re-assigned contiguously [0..N-1].
+     * ExprPool and types vector are shared (not copied) via shared_ptr.
+     * All other data (objects, fluents, initial state, goals) is copied.
+     * Grounded fluents are re-collected from the new action set.
+     * @param new_actions The complete set of (ground) actions
+     * @return New Problem with the given actions
+     */
+    Problem with_actions(std::vector<Action> new_actions) const;
+
+    /**
+     * Returns a new Problem with extra assignments appended to the initial state.
+     * ExprPool and types vector are shared (not copied) via shared_ptr.
+     * All other data (objects, fluents, actions, goals, grounded fluents) is copied.
+     * @param extra_assignments Additional assignments to append
+     * @return New Problem with the extended initial state
+     */
+    Problem with_additional_initial_state(const std::vector<Assignment>& extra_assignments) const;
+
     // Initial state access
     const std::vector<Assignment>& initial_state() const { return initial_state_; }
     size_t initial_assignment_count() const { return initial_state_.size(); }

@@ -184,6 +184,7 @@ output_solution.pb
 output.smt2
 plan_model.txt
 CLAUDE.md
+.claude
 TODO.md
 out.txt
 stats.txt
@@ -200,3 +201,6 @@ pddl/pb-test
 
 # plots
 *.png
+
+# results
+*.csv

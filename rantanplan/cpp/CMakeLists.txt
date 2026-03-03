@@ -122,6 +122,13 @@ add_executable(rantanplan
     src/passes/boolean_rpg_pass.cpp
     src/passes/numeric_rpg_pass.cpp
     src/passes/symmetry_pass.cpp
+    src/passes/grounding_pass.cpp
+    src/passes/cwa_initial_state_pass.cpp
+    src/problem/substitution.cpp
+    src/grounding/fact_index.cpp
+    src/grounding/binding_matcher.cpp
+    src/grounding/action_instantiator.cpp
+    src/grounding/reachability_grounder.cpp
 )
 
 # Define proto files and generate C++ sources
@@ -151,6 +158,7 @@ target_include_directories(rantanplan PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/abstraction/     # abstraction headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/analysis/        # analysis headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/passes/          # pass system headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/grounding/       # grounding headers
     ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
     ${Z3_INCLUDE_DIR}                                # Z3 headers
 )

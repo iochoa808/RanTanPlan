@@ -23,7 +23,7 @@ public:
         int timeout = 3600;
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
-        bool enable_action_removal = true;  // Enable RPG-based action removal optimization
+        bool enable_action_removal = false;  // Enable RPG-based action removal (disabled by default; enabled automatically for --up-grounding)
         bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
         double epsilon = 1e-6;  // Numerical tolerance for floating-point comparisons
         // IMPORTANT: Early termination is UNSOUND for action removal with Numeric RPG!
@@ -36,6 +36,7 @@ public:
         bool rpg_early_termination = false;  // Stop RPG construction when goals are reachable (DEFAULT: false - required for sound action removal)
         bool use_numeric_rpg = false;  // Use NumericRelaxedPlanningGraph (true) or RelaxedPlanningGraph (false) for action removal
         bool compare_rpgs = false;  // Run RPG comparison tool to debug action removal differences
+        bool reachability_grounding = true;  // C++ reachability grounding is the default; --up-grounding disables this
     } global;
     
     struct Planner {
