@@ -9,6 +9,7 @@
 #include <chrono>
 #include <sstream>
 #include <limits>
+#include <vector>
 
 namespace rantanplan {
 
@@ -20,7 +21,9 @@ Supporter::Supporter(const std::string& name, const std::string& affected_variab
       source_action_(source_action), effect_(effect), problem_(&problem) {}
 
 bool Supporter::is_applicable(const RelaxedState& state) const {
-    // Check if action preconditions are satisfied in the relaxed state
+    // A supporter is applicable whenever its source action precondition is
+    // satisfiable in the relaxed state. This follows the ARPG-style relaxed
+    // semantics where condition checks are optimistic/existential over intervals.
     return state.satisfies_condition(source_action_.precondition_id(), problem_->pool());
 }
 
@@ -45,6 +48,11 @@ void Supporter::apply_effect(RelaxedState& state) const {
 }
 
 Interval Supporter::compute_effect_interval(double current_value) const {
+    // Midpoint-based transfer currently used in this implementation:
+    // - INCREASE widens upward from the current representative value.
+    // - DECREASE widens downward from the current representative value.
+    // - ASSIGN is approximated as [0, +inf).
+    // This is intentionally permissive and prioritizes relaxation safety.
     if (effect_.effect_expression().is_increase()) {
         // Increase effect: (current_value, +∞)
         return Interval(current_value, std::numeric_limits<double>::infinity());
@@ -90,6 +98,16 @@ bool ARPG::construct_graph() {
     ScopedTimer timer("arpg.build_time_ms");
     double start_memory = MemoryTracker::instance().get_current_memory_mb();
 
+    // Algorithm sketch (paper-inspired fixed-point construction):
+    // 1) Start from relaxed initial state s+_0.
+    // 2) Repeatedly apply all currently applicable, not-yet-used supporters.
+    // 3) Stop when goals are relaxed-satisfiable OR no new supporter applies.
+    //
+    // Invariants:
+    // - Boolean facts only accumulate (delete effects ignored in relaxation).
+    // - Numeric intervals only widen via convex union.
+    // - Widening preserves over-approximation needed for safe pruning.
+
     // Initialize with the initial relaxed state
     current_state_ = create_initial_state();
     used_supporters_.assign(supporters_.size(), false);
@@ -115,7 +133,8 @@ bool ARPG::construct_graph() {
         // Find applicable supporters that haven't been used
         auto applicable = find_applicable_supporters();
 
-        // If no new supporters, terminate
+        // If no new supporters are applicable, the construction reached a
+        // fixed point under this supporter set.
         if (applicable.empty()) {
             Logger::instance().debug("[ARPG] No more applicable supporters at iteration " + std::to_string(iteration_count_));
             break;
@@ -152,12 +171,20 @@ bool ARPG::construct_graph() {
         {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"}
     });
 
+    if (config.is_debug()) {
+        print_state_variable_bounds();
+    }
+
     return goal_reached_;
 }
 
 void ARPG::create_supporters() {
     supporters_.clear();
 
+    // Build one supporter per grounded effect.
+    // A supporter is an action-effect abstraction used by ARPG expansion.
+    // This implementation does not split effects by sign or asymptotic mode;
+    // it uses the direct effect form and midpoint-based transfer.
     const ExprPool& pool = problem_.pool();
     for (const auto& action : problem_.actions()) {
         for (const auto& effect : action.effects()) {
@@ -176,6 +203,9 @@ void ARPG::create_supporters() {
 std::vector<size_t> ARPG::find_applicable_supporters() const {
     std::vector<size_t> applicable;
 
+    // "used_supporters_" enforces one-shot supporter application in this model.
+    // This keeps expansion finite and deterministic in combination with max
+    // iteration protection, while still giving a relaxed over-approximation.
     for (size_t i = 0; i < supporters_.size(); ++i) {
         if (!used_supporters_[i] && supporters_[i].is_applicable(current_state_)) {
             applicable.push_back(i);
@@ -192,6 +222,8 @@ void ARPG::apply_supporters(const std::vector<size_t>& indices) {
 }
 
 bool ARPG::check_goal_satisfaction() const {
+    // Goal test uses relaxed/existential condition semantics from RelaxedState.
+    // If all goals are satisfiable in current s+, ARPG marks relaxed reachability.
     const ExprPool& pool = problem_.pool();
     for (const auto& goal_condition : problem_.goals()) {
         if (!current_state_.satisfies_condition(goal_condition.goal_id(), pool)) {
@@ -205,6 +237,10 @@ RelaxedState ARPG::create_initial_state() const {
     RelaxedState initial_state;
     const ExprPool& pool = problem_.pool();
 
+    // Initialize relaxed state from problem initial assignments.
+    // Numeric constants become point intervals [v, v].
+    // True booleans are inserted as propositions.
+    // Non-constant initial assignments are conservatively treated as true props.
     // Process all initial state assignments
     for (const auto& assignment : problem_.initial_state()) {
         std::string var_name = pool.to_string(assignment.fluent_id());
@@ -313,6 +349,33 @@ void ARPG::print_construction_steps() const {
 
     std::cout << "\nFinal result: Goal reachable = " << (goal_reached_ ? "YES" : "NO")
               << ", Iterations = " << iteration_count_ << std::endl;
+}
+
+void ARPG::print_state_variable_bounds() const {
+    std::vector<std::pair<std::string, Interval>> rows;
+    rows.reserve(problem_.grounded_fluents().size());
+
+    const ExprPool& pool = problem_.pool();
+    for (ExprID eid : problem_.grounded_fluents()) {
+        if (problem_.is_bool_type(eid)) {
+            continue;
+        }
+
+        std::string var_name = pool.to_string(eid);
+        auto interval_opt = current_state_.get_variable(var_name);
+        if (interval_opt.has_value()) {
+            rows.emplace_back(var_name, interval_opt.value());
+        }
+    }
+
+    std::sort(rows.begin(), rows.end(),
+              [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+
+    std::cout << "\n=== ARPG Numeric Bounds ===" << std::endl;
+    std::cout << "Variables with bounds: " << rows.size() << std::endl;
+    for (const auto& row : rows) {
+        std::cout << "  " << row.first << " -> " << row.second.to_string() << std::endl;
+    }
 }
 
 std::string ARPG::to_string() const {

@@ -368,6 +368,7 @@ public:
 
     // Debug output - keep for debugging issues
     void print_construction_steps() const;
+    void print_state_variable_bounds() const;
     std::string to_string() const;
 
 private:
