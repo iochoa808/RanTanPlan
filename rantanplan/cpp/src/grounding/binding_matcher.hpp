@@ -31,8 +31,11 @@ using PartialBinding = std::unordered_map<int, int>;
 ///
 /// 1. EXTRACT ATOMS: From the action's precondition ExprID tree, extract all
 ///    boolean fluent applications (STATE_VARIABLE nodes). These are the "tables"
-///    we join against. Both positive and negated atoms are extracted — they
-///    constrain which parameter bindings are valid.
+///    we join against. Both positive and negated atoms are extracted; positive
+///    atoms drive the join phase, while negated atoms are applied as a
+///    post-filter (since under delete-relaxation negated atoms are always
+///    satisfiable during the join, but we still prune bindings where a negated
+///    atom is actually present in the fact index).
 ///
 /// 2. ORDER BY SELECTIVITY: Sort atoms so the most constraining one comes first.
 ///    "Most constraining" = fewest matching tuples in the FactIndex per new

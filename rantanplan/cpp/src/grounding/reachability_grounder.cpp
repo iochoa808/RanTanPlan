@@ -204,6 +204,12 @@ GroundingResult ReachabilityGrounder::ground() {
 
     int iteration = 0;
     int goal_reachable_layer = -1;
+
+    // Check goal reachability in the initial state (layer 0).
+    if (goals_reachable(facts)) {
+        goal_reachable_layer = 0;
+    }
+
     bool changed = true;
 
     while (changed) {
