@@ -371,30 +371,24 @@ z3::expr R2EGroundedEncoder::apply_substitution(const z3::expr& expr,
 
 z3::expr R2EGroundedEncoder::create_effect_value_z3(const EffectExpression& eff_expr, const z3::expr& fluent_z3,
                                                    const std::unordered_map<ExprID, z3::expr>& prev_substitution, int timestep) {
-    // Convert effect value with proper substitution
+    // Convert the delta/value expression and substitute any fluent references
+    // in it (e.g., "increase (fuel ?v) (distance ?from ?to)" — distance is a
+    // fluent reference inside the delta that must be resolved via prev_substitution).
     z3::expr value_z3 = convert_expr_id_to_z3(eff_expr.value_id(), timestep);
     z3::expr substituted_value = apply_substitution(value_z3, prev_substitution, timestep);
 
-    // Create the new value expression based on effect type
     switch (eff_expr.kind()) {
         case EffectExpression::Kind::ASSIGN:
             return substituted_value;
 
-        case EffectExpression::Kind::INCREASE: {
-            // Get the previous value for this fluent
-            ExprID fluent_eid = eff_expr.fluent_id();
-            z3::expr prev_value = (prev_substitution.contains(fluent_eid)) ?
-                                prev_substitution.at(fluent_eid) : fluent_z3;
-            return prev_value + substituted_value;
-        }
+        case EffectExpression::Kind::INCREASE:
+            // fluent_z3 is the running accumulated value passed by the caller.
+            // Using it (not prev_substitution[fluent]) ensures multiple
+            // INCREASE effects on the same fluent sum their deltas correctly.
+            return fluent_z3 + substituted_value;
 
-        case EffectExpression::Kind::DECREASE: {
-            // Get the previous value for this fluent
-            ExprID fluent_eid = eff_expr.fluent_id();
-            z3::expr prev_value = (prev_substitution.contains(fluent_eid)) ?
-                                prev_substitution.at(fluent_eid) : fluent_z3;
-            return prev_value - substituted_value;
-        }
+        case EffectExpression::Kind::DECREASE:
+            return fluent_z3 - substituted_value;
     }
 
     // Should never reach here
