@@ -1,6 +1,7 @@
 #include "grounding_pass.hpp"
 #include "../grounding/reachability_grounder.hpp"
 #include "../util/logger.hpp"
+#include "../util/stats.hpp"
 
 namespace rantanplan {
 
@@ -12,6 +13,9 @@ void GroundingPass::apply(PipelineResult& result) const {
 
     // Update pipeline result.
     result.problem = std::move(gr.grounded_problem);
+
+    // Record ground action count in stats for external analysis.
+    Stats::instance().set("grounding.ground_actions", static_cast<double>(gr.ground_action_count));
 
     if (gr.lower_bound > result.lower_bound) {
         result.lower_bound = gr.lower_bound;

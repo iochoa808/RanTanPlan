@@ -231,6 +231,16 @@ int main(int argc, char* argv[]) {
         // so it is disabled by default. Use --boolean-rpg or --numeric-rpg
         // to explicitly re-enable it.
         passes.push_back(&grounding_pass);
+    }
+
+    // CWA pass ensures all grounded fluents have explicit initial assignments.
+    // Must run BEFORE any RPG pass so that NumericRPG's initialize_layer_0()
+    // sees a fully-defined initial state (implicit-false booleans and
+    // implicit-zero numerics are filled in here).
+    // No-op when Python/UP already provides complete initial state.
+    passes.push_back(&cwa_pass);
+
+    if (config.global.reachability_grounding) {
         if (config.global.enable_action_removal) {
             passes.push_back(config.global.use_numeric_rpg
                              ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
@@ -244,10 +254,6 @@ int main(int argc, char* argv[]) {
                          : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
     }
 
-    // CWA pass ensures all grounded fluents have explicit initial assignments.
-    // No-op when Python/UP already provides complete initial state.
-    passes.push_back(&cwa_pass);
-
     if (config.symmetry.enable_symmetries) {
         passes.push_back(&symmetry_pass);
     }
@@ -255,6 +261,10 @@ int main(int argc, char* argv[]) {
     auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);
     planning_problem = std::move(pipeline_result.problem);
     config.planner.start_timestep = pipeline_result.lower_bound;
+
+    // Record final action count after all pipeline passes (used for grounding analysis).
+    rantanplan::Stats::instance().set("pipeline.final_actions",
+                                      static_cast<double>(planning_problem.actions().size()));
 
     // Debug: dump problem info after pipeline
     if (config.is_debug()) {
@@ -276,6 +286,11 @@ int main(int argc, char* argv[]) {
         auto* log_message = result.add_log_messages();
         log_message->set_level(LogMessage_LogLevel_INFO);
         log_message->set_message("Problem proven unsolvable: goals not reachable in " + pipeline_result.unsolvable_reason);
+
+        // Ensure stats are written even when exiting early due to unsolvability.
+        if (!config.global.stats_file.empty()) {
+            rantanplan::Stats::instance().write_to_file(config.global.stats_file);
+        }
 
         return write_result_and_exit(result, argv[2]);
     }
