@@ -4,6 +4,7 @@
 #include <unordered_set>
 #include <cstdint>
 #include <cstddef>
+#include <functional>
 #include "problem.hpp"
 
 namespace rantanplan {
@@ -84,16 +85,26 @@ private:
     /// Inner: each element is a tuple of object indices.
     std::vector<std::vector<std::vector<int>>> facts_by_fluent_;
 
-    /// Fast membership check: fluent_schema_id → set of hashed tuples.
-    /// We hash the argument tuple for O(1) contains() lookup.
-    std::vector<std::unordered_set<uint64_t>> fact_hashes_;
+    /// Fast membership check: fluent_schema_id → set of full tuples.
+    /// Previous implementation used hash-only (uint64_t) which could silently
+    /// drop distinct facts on collision, under-approximating reachability.
+    /// Now stores the full tuple with a custom hasher so collisions are
+    /// resolved by equality comparison.
+    struct VectorHash {
+        size_t operator()(const std::vector<int>& v) const {
+            // FNV-1a mixing — fast for short tuples (typical arity 1-3).
+            uint64_t h = 14695981039346656037ULL;
+            for (int x : v) {
+                h ^= static_cast<uint64_t>(static_cast<uint32_t>(x));
+                h *= 1099511628211ULL;
+            }
+            return static_cast<size_t>(h);
+        }
+    };
+    std::vector<std::unordered_set<std::vector<int>, VectorHash>> fact_sets_;
 
     /// An empty vector returned by get_facts() for out-of-range schema IDs.
     static const std::vector<std::vector<int>> empty_facts_;
-
-    /// Hash a ground argument tuple for fast set membership.
-    /// Uses FNV-1a mixing to combine the object indices.
-    static uint64_t hash_tuple(const std::vector<int>& object_indices);
 
     /// Given a STATE_VARIABLE ExprID, extract the fluent schema ID and the
     /// object indices for each argument.

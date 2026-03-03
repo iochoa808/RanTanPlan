@@ -12,7 +12,7 @@ FactIndex::FactIndex(const Problem& problem)
     // Allocate one bucket per fluent schema.
     size_t num_fluents = problem_.fluent_count();
     facts_by_fluent_.resize(num_fluents);
-    fact_hashes_.resize(num_fluents);
+    fact_sets_.resize(num_fluents);
 }
 
 void FactIndex::initialize_from_initial_state() {
@@ -46,15 +46,14 @@ bool FactIndex::add_fact(int fluent_schema_id, const std::vector<int>& object_in
     assert(fluent_schema_id >= 0 &&
            static_cast<size_t>(fluent_schema_id) < facts_by_fluent_.size());
 
-    uint64_t h = hash_tuple(object_indices);
-    auto& hash_set = fact_hashes_[fluent_schema_id];
+    auto& fact_set = fact_sets_[fluent_schema_id];
 
-    // O(1) check: if hash already present, the fact is known.
-    if (!hash_set.insert(h).second) {
+    // O(1) amortized check using full tuple equality (not hash-only).
+    if (!fact_set.insert(object_indices).second) {
         return false;  // already known
     }
 
-    // New fact — store the tuple.
+    // New fact — store the tuple for enumeration.
     facts_by_fluent_[fluent_schema_id].push_back(object_indices);
     ++total_facts_;
     return true;
@@ -62,11 +61,10 @@ bool FactIndex::add_fact(int fluent_schema_id, const std::vector<int>& object_in
 
 bool FactIndex::contains(int fluent_schema_id, const std::vector<int>& object_indices) const {
     if (fluent_schema_id < 0 ||
-        static_cast<size_t>(fluent_schema_id) >= fact_hashes_.size()) {
+        static_cast<size_t>(fluent_schema_id) >= fact_sets_.size()) {
         return false;
     }
-    uint64_t h = hash_tuple(object_indices);
-    return fact_hashes_[fluent_schema_id].count(h) > 0;
+    return fact_sets_[fluent_schema_id].count(object_indices) > 0;
 }
 
 const std::vector<std::vector<int>>& FactIndex::get_facts(int fluent_schema_id) const {
@@ -75,17 +73,6 @@ const std::vector<std::vector<int>>& FactIndex::get_facts(int fluent_schema_id) 
         return empty_facts_;
     }
     return facts_by_fluent_[fluent_schema_id];
-}
-
-uint64_t FactIndex::hash_tuple(const std::vector<int>& object_indices) {
-    // FNV-1a–style hash combining. Simple and fast for short tuples
-    // (typical arity is 1–3).
-    uint64_t h = 14695981039346656037ULL;  // FNV offset basis
-    for (int idx : object_indices) {
-        h ^= static_cast<uint64_t>(static_cast<uint32_t>(idx));
-        h *= 1099511628211ULL;  // FNV prime
-    }
-    return h;
 }
 
 bool FactIndex::decompose_state_variable(ExprID eid,

@@ -23,15 +23,20 @@ static std::vector<int> binding_fingerprint(const PartialBinding& binding,
     return fp;
 }
 
-/// Hash a fingerprint vector (FNV-1a).
-static uint64_t hash_fingerprint(const std::vector<int>& fp) {
-    uint64_t h = 14695981039346656037ULL;
-    for (int v : fp) {
-        h ^= static_cast<uint64_t>(static_cast<uint32_t>(v));
-        h *= 1099511628211ULL;
+/// Hash a fingerprint vector (FNV-1a).  Used as the hasher for the
+/// deduplication set below, which stores full fingerprints and resolves
+/// collisions via equality (previously only the 64-bit hash was stored,
+/// meaning a collision would silently skip a distinct binding).
+struct FingerprintHash {
+    size_t operator()(const std::vector<int>& fp) const {
+        uint64_t h = 14695981039346656037ULL;
+        for (int v : fp) {
+            h ^= static_cast<uint64_t>(static_cast<uint32_t>(v));
+            h *= 1099511628211ULL;
+        }
+        return static_cast<size_t>(h);
     }
-    return h;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -191,8 +196,8 @@ GroundingResult ReachabilityGrounder::ground() {
     Logger::instance().info("Grounding: initial facts = " + std::to_string(facts.total_fact_count()));
     Logger::instance().info("Grounding: action schemas = " + std::to_string(lifted_problem_.action_count()));
 
-    // Per-schema seen-binding sets for deduplication.
-    std::vector<std::unordered_set<uint64_t>> seen_hashes(lifted_problem_.action_count());
+    // Per-schema seen-binding sets for deduplication (full fingerprint, not hash-only).
+    std::vector<std::unordered_set<std::vector<int>, FingerprintHash>> seen_bindings(lifted_problem_.action_count());
 
     // Accumulate all ground actions across iterations.
     std::vector<Action> ground_actions;
@@ -217,9 +222,8 @@ GroundingResult ReachabilityGrounder::ground() {
 
             for (auto& binding : bindings) {
                 auto fp = binding_fingerprint(binding, schema.parameter_count());
-                uint64_t h = hash_fingerprint(fp);
 
-                if (!seen_hashes[schema_idx].insert(h).second) {
+                if (!seen_bindings[schema_idx].insert(fp).second) {
                     continue;  // Already instantiated this binding.
                 }
 

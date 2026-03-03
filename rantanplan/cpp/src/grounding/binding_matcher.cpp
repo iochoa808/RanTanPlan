@@ -98,15 +98,6 @@ std::vector<PartialBinding> BindingMatcher::find_bindings(const Action& action) 
         size_t pos_count = 0, neg_count = 0;
         for (const auto& a : atoms) { if (a.negated) ++neg_count; else ++pos_count; }
 
-        // Find unbound params count from first binding
-        size_t unbound = 0;
-        if (!bindings.empty()) {
-            const auto& first = bindings.front();
-            for (size_t i = 0; i < action.parameter_count(); i++) {
-                // Check the pre-fill state: we look at the atoms to figure out
-                // which params were bound by join
-            }
-        }
         // Count unbound params: those not appearing in any positive atom
         std::vector<bool> bound_by_atom(action.parameter_count(), false);
         for (const auto& a : atoms) {
@@ -115,7 +106,7 @@ std::vector<PartialBinding> BindingMatcher::find_bindings(const Action& action) 
                 if (pidx >= 0) bound_by_atom[pidx] = true;
             }
         }
-        unbound = 0;
+        size_t unbound = 0;
         for (bool b : bound_by_atom) { if (!b) ++unbound; }
 
         Logger::instance().debug(

@@ -267,9 +267,9 @@ Problem Problem::with_actions(std::vector<Action> new_actions) const {
     }
     result.build_action_mappings();
 
-    // Rebuild grounded fluents from the new action set (+ initial state)
+    // Rebuild grounded fluents from the new action set (+ initial state).
+    // collect_grounded_fluents() calls build_grounded_fluent_mappings() internally.
     result.collect_grounded_fluents();
-    result.build_grounded_fluent_mappings();
 
     return result;
 }

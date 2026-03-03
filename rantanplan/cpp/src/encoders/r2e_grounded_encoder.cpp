@@ -230,32 +230,61 @@ std::shared_ptr<z3::expr> R2EGroundedEncoder::encode_effect_constraints(int t) {
             z3::expr chain_var = modi_substitution.at(fluent_id);
             z3::expr prev_value = get_prev_variable_or_chain(fluent_id, t, action_index);
 
-            // Determine the executed value by combining effects on this fluent.
-            // An unconditional effect always fires and dominates conditional ones.
-            // Multiple conditional effects chain as nested ITEs.
-            z3::expr executed_value = prev_value;
-            bool has_unconditional = false;
+            // Combine all effects on this fluent into a single executed_value.
+            //
+            // For ASSIGN (boolean or numeric):
+            //   - Unconditional: last one wins (they should agree; multiple
+            //     conflicting ASSIGNs is ill-formed PDDL).
+            //   - Conditional: nested ITEs selecting one winner.
+            //
+            // For INCREASE/DECREASE (numeric):
+            //   - Multiple effects must ACCUMULATE (sum of deltas), not
+            //     override each other.  This arises from forall/when expansion
+            //     producing multiple additive effects on the same fluent.
+            //   - Unconditional: chain through create_effect_value_z3 which
+            //     computes prev+delta, feeding each result as prev to the next.
+            //   - Conditional: add ite(cond, delta, 0) per effect.
 
+            // Partition into unconditional and conditional.
+            std::vector<const Effect*> unconditional, conditional;
             for (const Effect* eff : effects) {
-                if (!eff->is_conditional()) {
+                if (eff->is_conditional()) conditional.push_back(eff);
+                else unconditional.push_back(eff);
+            }
+
+            z3::expr executed_value = prev_value;
+
+            if (!unconditional.empty()) {
+                // Accumulate all unconditional effects. For ASSIGN the last
+                // one wins (single pass is fine). For INCREASE/DECREASE each
+                // call adds its delta onto the running value.
+                for (const Effect* eff : unconditional) {
                     executed_value = create_effect_value_z3(
-                        eff->effect_expression(), prev_value, prev_substitution, t);
-                    has_unconditional = true;
-                    break;  // Unconditional dominates — no need to check further
+                        eff->effect_expression(), executed_value, prev_substitution, t);
                 }
             }
 
-            if (!has_unconditional) {
-                // All effects are conditional — chain them as nested ITEs:
-                // ITE(cond_n, val_n, ITE(cond_{n-1}, val_{n-1}, ... ITE(cond_1, val_1, prev)))
-                for (const Effect* eff : effects) {
+            if (!conditional.empty()) {
+                // Conditional effects: behaviour depends on effect kind.
+                for (const Effect* eff : conditional) {
                     z3::expr condition_z3 = convert_expr_id_to_z3(
                         eff->effect_expression().condition_id(), t);
                     z3::expr substituted_condition = apply_substitution(
                         condition_z3, prev_substitution, t);
-                    z3::expr new_value = create_effect_value_z3(
-                        eff->effect_expression(), prev_value, prev_substitution, t);
-                    executed_value = z3::ite(substituted_condition, new_value, executed_value);
+
+                    if (eff->effect_expression().is_assign()) {
+                        // ASSIGN: ITE selects this value or keeps the running value.
+                        z3::expr new_value = create_effect_value_z3(
+                            eff->effect_expression(), executed_value, prev_substitution, t);
+                        executed_value = z3::ite(substituted_condition, new_value, executed_value);
+                    } else {
+                        // INCREASE/DECREASE: accumulate guarded delta.
+                        // create_effect_value_z3 returns (executed_value ± delta),
+                        // so ite(cond, that, executed_value) adds delta only when cond holds.
+                        z3::expr with_delta = create_effect_value_z3(
+                            eff->effect_expression(), executed_value, prev_substitution, t);
+                        executed_value = z3::ite(substituted_condition, with_delta, executed_value);
+                    }
                 }
             }
 

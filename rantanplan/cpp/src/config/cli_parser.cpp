@@ -8,6 +8,10 @@
 namespace rantanplan {
 
 void CLIParser::parse(Config& config, int argc, char* argv[]) {
+    // Track whether --no-action-removal was given so it can override
+    // --up-grounding / --boolean-rpg / --numeric-rpg regardless of flag order.
+    bool explicit_no_action_removal = false;
+
     for (int i = 3; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -74,6 +78,7 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         // Action removal / grounding options
         else if (arg == "--no-action-removal") {
             config.global.enable_action_removal = false;
+            explicit_no_action_removal = true;
         }
         else if (arg == "--up-grounding") {
             // Use Unified Planning grounding (Python side) instead of C++ grounding.
@@ -131,6 +136,11 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--log-file requires a filename");
             }
         }
+    }
+
+    // --no-action-removal takes precedence over any flag that enables it.
+    if (explicit_no_action_removal) {
+        config.global.enable_action_removal = false;
     }
 }
 
