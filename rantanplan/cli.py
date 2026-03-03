@@ -91,7 +91,6 @@ Use --list-strategies to see available strategies and their descriptions.
                         help='Use Unified Planning grounding instead of '
                              'the default reachability-based grounding')
 
-    
     parser.add_argument(
         "--version",
         action="version",
@@ -145,7 +144,6 @@ def solve_problem(problem, args):
         planner_params['log_file'] = args.log_file
     if args.up_grounding:
         planner_params['up_grounding'] = True
-
     # Handle verbosity
     if args.silent:
         planner_params['verbosity'] = "silent"

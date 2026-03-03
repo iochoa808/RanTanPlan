@@ -76,15 +76,15 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
             }
         }
         // Action removal / grounding options
-        else if (arg == "--no-action-removal") {
-            config.global.enable_action_removal = false;
-            explicit_no_action_removal = true;
-        }
         else if (arg == "--up-grounding") {
             // Use Unified Planning grounding (Python side) instead of C++ grounding.
             // This disables C++ grounding and enables RPG-based action removal.
             config.global.reachability_grounding = false;
             config.global.enable_action_removal = true;
+        }
+        else if (arg == "--no-action-removal") {
+            config.global.enable_action_removal = false;
+            explicit_no_action_removal = true;
         }
         else if (arg == "--boolean-rpg") {
             config.global.use_numeric_rpg = false;

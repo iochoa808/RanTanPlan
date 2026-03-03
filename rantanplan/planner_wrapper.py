@@ -487,7 +487,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
             self._log_verbose("  Grounding completed.")
         else:
             self._log_verbose("  Skipping Python-side grounding (the backend will ground).")
-        
+
         self._log_verbose("Problem compilation pipeline completed.")
         
         # Create a combined compilation result that can map back through all steps
