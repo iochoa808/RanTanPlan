@@ -82,6 +82,9 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
             config.global.reachability_grounding = false;
             config.global.enable_action_removal = true;
         }
+        else if (arg == "--no-numeric-grounding") {
+            config.global.numeric_grounding = false;
+        }
         else if (arg == "--no-action-removal") {
             config.global.enable_action_removal = false;
             explicit_no_action_removal = true;

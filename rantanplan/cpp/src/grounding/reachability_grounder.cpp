@@ -1,8 +1,10 @@
 #include "reachability_grounder.hpp"
 #include "binding_matcher.hpp"
 #include "action_instantiator.hpp"
+#include "../config/config.hpp"
 #include "../util/logger.hpp"
 #include "../util/scoped_timer.hpp"
+#include "../util/stats.hpp"
 #include <unordered_set>
 #include <cassert>
 
@@ -107,10 +109,68 @@ size_t ReachabilityGrounder::collect_add_effects(const Action& ground_action,
 }
 
 // ---------------------------------------------------------------------------
+// collect_numeric_effects
+// ---------------------------------------------------------------------------
+
+bool ReachabilityGrounder::collect_numeric_effects(const Action& ground_action,
+                                                    NumericBoundsIndex& bounds) const {
+    bool any_changed = false;
+    const auto& pool = lifted_problem_.pool();
+
+    for (const auto& eff : ground_action.effects()) {
+        const auto& ee = eff.effect_expression();
+
+        // For conditional effects, assume the condition can hold (delete-relaxation
+        // over-approximation).  Skipping them would under-approximate the reachable
+        // interval — e.g. missing a fuel decrease keeps the lower bound too high,
+        // causing unsound pruning of refuel actions.
+
+        ExprID fluent_eid = ee.fluent_id();
+
+        // Decompose the fluent — only numeric fluents.
+        int schema_id = -1;
+        std::vector<int> obj_indices;
+        if (!bounds.decompose_numeric_state_variable(fluent_eid, schema_id, obj_indices)) {
+            continue;  // Boolean fluent or decomposition failed.
+        }
+
+        Interval old_bounds = bounds.get_bounds(schema_id, obj_indices);
+
+        Interval new_val(0.0);  // Will be overwritten.
+
+        if (ee.is_assign()) {
+            // ASSIGN X = Y: new reachable interval is eval(Y).
+            new_val = evaluate_interval(ee.value_id(), pool, bounds, lifted_problem_);
+        } else if (ee.is_increase()) {
+            // INCREASE X by Y: new reachable interval is [old.min + Y.min, old.max + Y.max].
+            Interval delta = evaluate_interval(ee.value_id(), pool, bounds, lifted_problem_);
+            new_val = old_bounds + delta;
+        } else if (ee.is_decrease()) {
+            // DECREASE X by Y: new reachable interval is [old.min - Y.max, old.max - Y.min].
+            Interval delta = evaluate_interval(ee.value_id(), pool, bounds, lifted_problem_);
+            new_val = old_bounds - delta;
+        } else {
+            continue;  // Unknown effect kind.
+        }
+
+        // Under delete-relaxation, update via convex union (old values still reachable).
+        if (bounds.update_bounds(schema_id, obj_indices, new_val)) {
+            any_changed = true;
+        }
+
+        // Apply widening to guarantee termination.
+        bounds.maybe_widen(schema_id, obj_indices);
+    }
+
+    return any_changed;
+}
+
+// ---------------------------------------------------------------------------
 // goals_reachable
 // ---------------------------------------------------------------------------
 
-bool ReachabilityGrounder::goals_reachable(const FactIndex& facts) const {
+bool ReachabilityGrounder::goals_reachable(const FactIndex& facts,
+                                            const NumericBoundsIndex* numeric_bounds) const {
     const auto& pool = lifted_problem_.pool();
 
     for (const auto& goal : lifted_problem_.goals()) {
@@ -120,7 +180,7 @@ bool ReachabilityGrounder::goals_reachable(const FactIndex& facts) const {
         // Only check boolean fluent atoms at top level.
         // Walk through ANDs.
         // For complex goals (OR, numeric), we can't prove unreachability easily,
-        // so we skip them (assume satisfiable).
+        // so we skip them (assume satisfiable) — unless numeric bounds are available.
         std::vector<ExprID> stack = {gid};
         while (!stack.empty()) {
             ExprID eid = stack.back();
@@ -172,8 +232,23 @@ bool ReachabilityGrounder::goals_reachable(const FactIndex& facts) const {
                 if (valid && !facts.contains(fluent_schema->id(), obj_indices)) {
                     return false;  // This goal atom is not reachable.
                 }
+                continue;
             }
-            // NOT, OR, numeric comparisons, etc. — skip (assume satisfiable).
+
+            // Numeric comparison in goal — check with interval bounds if available.
+            if (numeric_bounds && pool.is_function_application(eid)) {
+                ExprOperator op = pool.op(eid);
+                if (op == ExprOperator::LESS_EQUAL  || op == ExprOperator::LESS_THAN ||
+                    op == ExprOperator::GREATER_EQUAL || op == ExprOperator::GREATER_THAN ||
+                    op == ExprOperator::EQUALS) {
+                    if (!numeric_precondition_satisfiable(eid, pool, *numeric_bounds, lifted_problem_)) {
+                        return false;  // Numeric goal provably unreachable.
+                    }
+                    continue;
+                }
+            }
+
+            // NOT, OR, IMPLIES, IFF, etc. — skip (assume satisfiable).
         }
     }
 
@@ -188,10 +263,20 @@ GroundingResult ReachabilityGrounder::ground() {
     ScopedTimer timer("grounding_time");
 
     ExprPool& pool = *lifted_problem_.pool_ptr();
+    const bool use_numeric = Config::instance().global.numeric_grounding;
 
     // 1. Initialize FactIndex from initial state.
     FactIndex facts(lifted_problem_);
     facts.initialize_from_initial_state();
+
+    // 1b. Optionally initialize NumericBoundsIndex.
+    std::unique_ptr<NumericBoundsIndex> numeric_bounds;
+    if (use_numeric) {
+        numeric_bounds = std::make_unique<NumericBoundsIndex>(lifted_problem_);
+        numeric_bounds->initialize_from_initial_state();
+        numeric_bounds->precompute_freezes();
+        Logger::instance().info("Grounding: numeric interval bounds ENABLED");
+    }
 
     Logger::instance().info("Grounding: initial facts = " + std::to_string(facts.total_fact_count()));
     Logger::instance().info("Grounding: action schemas = " + std::to_string(lifted_problem_.action_count()));
@@ -205,8 +290,16 @@ GroundingResult ReachabilityGrounder::ground() {
     int iteration = 0;
     int goal_reachable_layer = -1;
 
+    // Track bindings that were numerically pruned — keyed by (schema_idx, fingerprint).
+    // Stores the action name for logging.  Entries are removed if the binding is
+    // later accepted after bounds widen.  What remains at fixpoint is permanently pruned.
+    std::vector<std::unordered_map<std::vector<int>, std::string, FingerprintHash>> numeric_pruned_bindings;
+    if (use_numeric) {
+        numeric_pruned_bindings.resize(lifted_problem_.action_count());
+    }
+
     // Check goal reachability in the initial state (layer 0).
-    if (goals_reachable(facts)) {
+    if (goals_reachable(facts, numeric_bounds.get())) {
         goal_reachable_layer = 0;
     }
 
@@ -220,6 +313,7 @@ GroundingResult ReachabilityGrounder::ground() {
 
         size_t new_actions_this_iter = 0;
         size_t new_facts_this_iter   = 0;
+        size_t pruned_this_iter      = 0;
 
         for (size_t schema_idx = 0; schema_idx < lifted_problem_.action_count(); ++schema_idx) {
             const Action& schema = lifted_problem_.action(schema_idx);
@@ -229,31 +323,102 @@ GroundingResult ReachabilityGrounder::ground() {
             for (auto& binding : bindings) {
                 auto fp = binding_fingerprint(binding, schema.parameter_count());
 
-                if (!seen_bindings[schema_idx].insert(fp).second) {
+                if (seen_bindings[schema_idx].count(fp)) {
                     continue;  // Already instantiated this binding.
                 }
 
                 // Instantiate the ground action.
                 Action ga = instantiate_action(pool, lifted_problem_, schema, binding);
+
+                // Numeric precondition check: prune if provably unsatisfiable.
+                // Do NOT add to seen_bindings yet — bounds may widen in a later
+                // iteration (e.g. after refuel increases fuel), so we must retry.
+                if (use_numeric && ga.has_precondition() &&
+                    !numeric_precondition_satisfiable(ga.precondition_id(), pool,
+                                                      *numeric_bounds, lifted_problem_)) {
+                    ++pruned_this_iter;
+                    // Record for permanent-prune tracking (only first time).
+                    if (!numeric_pruned_bindings[schema_idx].count(fp)) {
+                        std::string desc = ga.name() + "(";
+                        const auto& objects = lifted_problem_.objects();
+                        for (size_t pi = 0; pi < fp.size(); ++pi) {
+                            if (pi > 0) desc += ", ";
+                            desc += (fp[pi] >= 0 && fp[pi] < static_cast<int>(objects.size()))
+                                    ? objects[fp[pi]].name() : "?";
+                        }
+                        desc += ")";
+                        numeric_pruned_bindings[schema_idx][fp] = desc;
+                    }
+                    continue;
+                }
+
+                // Action passed all checks — mark as seen so we don't retry it.
+                seen_bindings[schema_idx].insert(fp);
+
+                // If this binding was previously pruned, it's no longer permanently pruned.
+                if (use_numeric) {
+                    numeric_pruned_bindings[schema_idx].erase(fp);
+                }
+
                 size_t nf = collect_add_effects(ga, facts);
                 if (nf > 0) {
                     new_facts_this_iter += nf;
                     changed = true;
                 }
+
+                // Collect numeric effects and update bounds.
+                if (use_numeric) {
+                    collect_numeric_effects(ga, *numeric_bounds);
+                }
+
                 ground_actions.push_back(std::move(ga));
                 ++new_actions_this_iter;
             }
         }
 
+        // Re-apply numeric effects of all accepted actions until bounds stabilize.
+        // Numeric effects are NOT idempotent: e.g. increment(c) adds rate_value(c)
+        // to value(c), and if rate_value widened since the action was first processed,
+        // value must widen too.  We iterate until no further change.
+        if (use_numeric) {
+            bool any_numeric_widened = false;
+            bool numeric_changed = true;
+            while (numeric_changed) {
+                numeric_changed = false;
+                for (const auto& ga : ground_actions) {
+                    if (collect_numeric_effects(ga, *numeric_bounds)) {
+                        numeric_changed = true;
+                        any_numeric_widened = true;
+                    }
+                }
+            }
+            // If there are still numerically-pruned bindings outstanding and
+            // bounds may have changed (either during initial effect collection
+            // from new actions, or during the inner fixpoint), re-check them.
+            if (new_actions_this_iter > 0 || any_numeric_widened) {
+                bool has_pruned = false;
+                for (const auto& m : numeric_pruned_bindings) {
+                    if (!m.empty()) { has_pruned = true; break; }
+                }
+                if (has_pruned) {
+                    changed = true;
+                }
+            }
+        }
+
         // Check goal reachability at this layer.
-        if (goal_reachable_layer < 0 && goals_reachable(facts)) {
+        if (goal_reachable_layer < 0 && goals_reachable(facts, numeric_bounds.get())) {
             goal_reachable_layer = iteration;
         }
 
-        Logger::instance().info("Grounding: iteration " + std::to_string(iteration) +
+        std::string log_msg = "Grounding: iteration " + std::to_string(iteration) +
                       " — new actions=" + std::to_string(new_actions_this_iter) +
                       ", new facts=" + std::to_string(new_facts_this_iter) +
-                      ", total facts=" + std::to_string(facts.total_fact_count()));
+                      ", total facts=" + std::to_string(facts.total_fact_count());
+        if (use_numeric && pruned_this_iter > 0) {
+            log_msg += ", numeric pruned=" + std::to_string(pruned_this_iter);
+        }
+        Logger::instance().info(log_msg);
     }
 
     // Build result.
@@ -267,6 +432,21 @@ GroundingResult ReachabilityGrounder::ground() {
                   " iterations, " + std::to_string(ground_actions.size()) +
                   " ground actions, " + std::to_string(facts.total_fact_count()) +
                   " reachable facts");
+
+    if (use_numeric) {
+        size_t permanently_pruned = 0;
+        for (size_t si = 0; si < numeric_pruned_bindings.size(); ++si) {
+            for (const auto& [fp, desc] : numeric_pruned_bindings[si]) {
+                Logger::instance().debug("Grounding: permanently pruned by numeric bounds — " + desc);
+                ++permanently_pruned;
+            }
+        }
+        if (permanently_pruned > 0) {
+            Logger::instance().info("Grounding: actions permanently pruned by numeric bounds = " +
+                          std::to_string(permanently_pruned));
+            Stats::instance().set("grounding_numeric_pruned", static_cast<int>(permanently_pruned));
+        }
+    }
 
     if (result.proven_unsolvable) {
         Logger::instance().info("Grounding: goal UNREACHABLE — problem proven unsolvable");

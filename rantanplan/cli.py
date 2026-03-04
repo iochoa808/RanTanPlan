@@ -90,6 +90,9 @@ Use --list-strategies to see available strategies and their descriptions.
     parser.add_argument('--up-grounding', action='store_true',
                         help='Use Unified Planning grounding instead of '
                              'the default reachability-based grounding')
+    parser.add_argument('--no-numeric-grounding', action='store_true',
+                        help='Disable numeric interval bounds in reachability '
+                             'grounder (enabled by default)')
 
     parser.add_argument(
         "--version",
@@ -144,6 +147,8 @@ def solve_problem(problem, args):
         planner_params['log_file'] = args.log_file
     if args.up_grounding:
         planner_params['up_grounding'] = True
+    if args.no_numeric_grounding:
+        planner_params['numeric_grounding'] = False
     # Handle verbosity
     if args.silent:
         planner_params['verbosity'] = "silent"

@@ -129,6 +129,8 @@ add_executable(rantanplan
     src/grounding/binding_matcher.cpp
     src/grounding/action_instantiator.cpp
     src/grounding/reachability_grounder.cpp
+    src/grounding/numeric_bounds_index.cpp
+    src/grounding/interval_evaluator.cpp
 )
 
 # Define proto files and generate C++ sources

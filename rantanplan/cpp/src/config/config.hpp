@@ -37,6 +37,7 @@ public:
         bool use_numeric_rpg = false;  // Use NumericRelaxedPlanningGraph (true) or RelaxedPlanningGraph (false) for action removal
         bool compare_rpgs = false;  // Run RPG comparison tool to debug action removal differences
         bool reachability_grounding = true;  // C++ reachability grounding is the default; --up-grounding disables this
+        bool numeric_grounding = true;  // Numeric interval bounds in reachability grounder (disable with --no-numeric-grounding)
     } global;
     
     struct Planner {

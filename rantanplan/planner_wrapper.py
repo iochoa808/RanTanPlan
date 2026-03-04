@@ -44,6 +44,7 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         self._horizon_schedule = options.get('horizon_schedule')  # None → C++ default ("linear")
         self._log_file = options.get('log_file')  # None if not specified
         self._up_grounding = options.get('up_grounding', False)
+        self._numeric_grounding = options.get('numeric_grounding', True)
 
     # ── Verbosity helpers ────────────────────────────────────────────────
     # Verbosity levels: silent < info (default/None) < verbose < debug
@@ -308,6 +309,9 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
 
             if self._up_grounding:
                 command.append("--up-grounding")
+
+            if not self._numeric_grounding:
+                command.append("--no-numeric-grounding")
 
             self._log_verbose(f"Running planner: {' '.join(command)}")
 

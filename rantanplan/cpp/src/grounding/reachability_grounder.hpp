@@ -1,6 +1,8 @@
 #pragma once
 
 #include "fact_index.hpp"
+#include "numeric_bounds_index.hpp"
+#include "interval_evaluator.hpp"
 #include "binding_matcher.hpp"
 #include "../problem/problem.hpp"
 
@@ -74,8 +76,15 @@ private:
     size_t collect_add_effects(const Action& ground_action,
                                FactIndex& facts) const;
 
-    /// Check if all positive boolean goal atoms are in the FactIndex.
-    bool goals_reachable(const FactIndex& facts) const;
+    /// Collect numeric effects from a ground action and update the
+    /// NumericBoundsIndex. Returns true if any bounds changed.
+    bool collect_numeric_effects(const Action& ground_action,
+                                 NumericBoundsIndex& bounds) const;
+
+    /// Check if all positive boolean goal atoms are in the FactIndex,
+    /// and (if numeric bounds are provided) numeric goals are achievable.
+    bool goals_reachable(const FactIndex& facts,
+                         const NumericBoundsIndex* numeric_bounds = nullptr) const;
 };
 
 } // namespace rantanplan
