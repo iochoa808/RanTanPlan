@@ -335,18 +335,18 @@ void NumericBoundsIndex::precompute_freezes() {
             std::to_string(upper_count) + " upper frozen, " +
             std::to_string(lower_count) + " lower frozen");
 
-        for (const auto& fluent : problem_.fluents()) {
-            if (!fluent.is_function()) continue;
-            bool fu = freeze_upper_.count(fluent.id());
-            bool fl = freeze_lower_.count(fluent.id());
-            if (fu || fl) {
-                std::string sides;
-                if (fu && fl) sides = "both";
-                else if (fu) sides = "upper";
-                else sides = "lower";
-                Logger::instance().verbose("  " + fluent.name() + ": " + sides + " frozen");
-            }
-        }
+        // for (const auto& fluent : problem_.fluents()) {
+        //     if (!fluent.is_function()) continue;
+        //     bool fu = freeze_upper_.count(fluent.id());
+        //     bool fl = freeze_lower_.count(fluent.id());
+        //     if (fu || fl) {
+        //         std::string sides;
+        //         if (fu && fl) sides = "both";
+        //         else if (fu) sides = "upper";
+        //         else sides = "lower";
+        //         Logger::instance().verbose("  " + fluent.name() + ": " + sides + " frozen");
+        //     }
+        // }
     }
 }
 

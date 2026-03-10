@@ -273,10 +273,10 @@ int main(int argc, char* argv[]) {
                     std::to_string(planning_problem.grounded_fluents().size()) + " grounded fluents, " +
                     std::to_string(planning_problem.initial_state().size()) + " initial assignments, " +
                     std::to_string(planning_problem.goals().size()) + " goals");
-        rantanplan::Logger::instance().info("Grounded fluents:");
-        for (const auto& gf : planning_problem.grounded_fluents()) {
-            rantanplan::Logger::instance().info("  " + planning_problem.pool().to_string(gf));
-        }
+        // rantanplan::Logger::instance().info("Grounded fluents:");
+        // for (const auto& gf : planning_problem.grounded_fluents()) {
+        //     rantanplan::Logger::instance().info("  " + planning_problem.pool().to_string(gf));
+        // }
     }
 
     if (pipeline_result.proven_unsolvable) {

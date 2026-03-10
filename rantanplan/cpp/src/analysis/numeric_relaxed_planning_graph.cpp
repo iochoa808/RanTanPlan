@@ -8,8 +8,68 @@
 #include <chrono>
 #include <algorithm>
 #include <sstream>
+#include <limits>
 
 namespace rantanplan {
+
+// ---------------------------------------------------------------------------
+// Static helper: evaluate a (possibly lifted) expression to an interval
+// using only constant fluent schema ranges. Used by precompute_freezes().
+// Mirrors evaluate_constant_expr_range from numeric_bounds_index.cpp.
+// ---------------------------------------------------------------------------
+
+static Interval evaluate_constant_expr_range(
+        ExprID eid,
+        const ExprPool& pool,
+        const Problem& problem,
+        const std::unordered_map<int, Interval>& constant_ranges) {
+    if (!eid.valid()) return Interval::unbounded();
+
+    if (pool.is_constant(eid)) {
+        if (pool.payload_is_double(eid))
+            return Interval(pool.payload_double(eid));
+        if (pool.payload_is_int(eid))
+            return Interval(static_cast<double>(pool.payload_int(eid)));
+        return Interval::unbounded();
+    }
+
+    if (pool.is_state_variable(eid)) {
+        ExprID head = pool.head_symbol_id(eid);
+        if (!pool.is_fluent_symbol(head)) return Interval::unbounded();
+        const std::string& fname = pool.payload_string(head);
+        const Fluent* fluent = problem.find_fluent(fname);
+        if (!fluent || fluent->is_predicate()) return Interval::unbounded();
+        auto it = constant_ranges.find(fluent->id());
+        if (it != constant_ranges.end()) return it->second;
+        return Interval::unbounded();  // Non-constant fluent.
+    }
+
+    if (pool.is_function_application(eid)) {
+        ExprOperator op = pool.op(eid);
+        size_t nargs = pool.argument_count(eid);
+
+        if (nargs == 2) {
+            Interval lhs = evaluate_constant_expr_range(
+                pool.argument(eid, 0), pool, problem, constant_ranges);
+            Interval rhs = evaluate_constant_expr_range(
+                pool.argument(eid, 1), pool, problem, constant_ranges);
+            switch (op) {
+                case ExprOperator::PLUS:     return lhs + rhs;
+                case ExprOperator::MINUS:    return lhs - rhs;
+                case ExprOperator::MULTIPLY: return lhs * rhs;
+                case ExprOperator::DIVIDE:   return lhs / rhs;
+                default: break;
+            }
+        }
+        if (nargs == 1 && op == ExprOperator::MINUS) {
+            Interval arg = evaluate_constant_expr_range(
+                pool.argument(eid, 0), pool, problem, constant_ranges);
+            return Interval(0.0) - arg;
+        }
+    }
+
+    return Interval::unbounded();
+}
 
 // ============================================================================
 // STATIC MEMBER INITIALIZATION
@@ -54,7 +114,6 @@ bool NumericRelaxedPlanningGraph::LayerState::operator==(const LayerState& other
 NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem, z3::context& ctx)
     : problem_(problem),
       ctx_(ctx),
-      z3_optimizer_(std::make_unique<z3::optimize>(ctx)),
       variable_factory_(ctx),
       grounded_visitor_(ctx, &problem, &variable_factory_),
       max_layers_(Config::instance().planner.max_steps),  // Read from config
@@ -72,6 +131,10 @@ NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem,
 
     // Classify fluents into Boolean vs numeric
     classify_fluents();
+
+    // Build ground fluent -> schema mapping and run freeze analysis
+    build_fluent_schema_map();
+    precompute_freezes();
 
     Logger::instance().debug("NumericRelaxedPlanningGraph initialized:");
     Logger::instance().debug("  - Total fluents: " + std::to_string(problem_.grounded_fluents().size()));
@@ -501,38 +564,46 @@ void NumericRelaxedPlanningGraph::compute_numeric_bounds(
     int prev_layer,
     int next_layer) {
 
-    auto& config = Config::instance();
     const auto& prev_state = layer_states_[prev_layer];
     auto& next_state = layer_states_[next_layer];
 
     // Start by copying previous layer's numeric bounds (frame axiom - persistence)
     next_state.numeric_bounds = prev_state.numeric_bounds;
 
-    // For each numeric fluent, compute new bounds considering all effects
+    // For each numeric fluent, compute new bounds via interval arithmetic
     for (int fluent_id : numeric_fluent_ids_) {
-        NumericBounds new_bounds = compute_single_variable_bounds(
-            fluent_id, applicable_actions, prev_layer, next_layer);
+        NumericBounds new_bounds = compute_single_variable_bounds_interval(
+            fluent_id, applicable_actions, prev_layer);
+
+        // Get previous bounds for widening comparison
+        NumericBounds prev_bounds(0.0);
+        auto it = prev_state.numeric_bounds.find(fluent_id);
+        if (it != prev_state.numeric_bounds.end()) {
+            prev_bounds = it->second;
+        }
+
+        // Apply directional widening (modifies new_bounds in place)
+        apply_widening(fluent_id, new_bounds, prev_bounds);
 
         next_state.numeric_bounds[fluent_id] = new_bounds;
     }
 
-    Logger::instance().debug("  Numeric bounds computed for " + std::to_string(numeric_fluent_ids_.size()) + " fluents");
+    Logger::instance().debug("  Numeric bounds computed for " + std::to_string(numeric_fluent_ids_.size()) + " fluents (interval arithmetic)");
 }
 
-NumericRelaxedPlanningGraph::NumericBounds NumericRelaxedPlanningGraph::compute_single_variable_bounds(
+NumericRelaxedPlanningGraph::NumericBounds NumericRelaxedPlanningGraph::compute_single_variable_bounds_interval(
     int fluent_id,
     const std::vector<const Action*>& applicable_actions,
-    int prev_layer,
-    int next_layer) const {
+    int prev_layer) const {
 
-    // Get current bounds (for persistence option)
-    NumericBounds current_bounds = NumericBounds(0.0);
+    // Get current bounds (persistence branch)
+    NumericBounds current_bounds(0.0);
     auto it = layer_states_[prev_layer].numeric_bounds.find(fluent_id);
     if (it != layer_states_[prev_layer].numeric_bounds.end()) {
         current_bounds = it->second;
     }
 
-    // Get all effects for this fluent
+    // Get all effects for this fluent from applicable actions
     std::vector<const EffectExpression*> effects = get_effects_for_fluent(fluent_id, applicable_actions);
 
     // If no effects, bounds persist (frame axiom)
@@ -540,108 +611,251 @@ NumericRelaxedPlanningGraph::NumericBounds NumericRelaxedPlanningGraph::compute_
         return current_bounds;
     }
 
-    // Query 1: Minimize fluent value
-    double lower_bound = compute_bound_optimization(fluent_id, effects, prev_layer, next_layer, true);
+    // Start with persistence: current bounds carry forward
+    Interval result(current_bounds.lower, current_bounds.upper);
+    Interval current_iv(current_bounds.lower, current_bounds.upper);
 
-    // Query 2: Maximize fluent value
-    double upper_bound = compute_bound_optimization(fluent_id, effects, prev_layer, next_layer, false);
-
-    return NumericBounds(lower_bound, upper_bound);
-}
-
-double NumericRelaxedPlanningGraph::compute_bound_optimization(
-    int fluent_id,
-    const std::vector<const EffectExpression*>& effects,
-    int prev_layer,
-    int next_layer,
-    bool minimize) const {
-
-    // Create a fresh optimizer for this query
-    z3::optimize optimizer(ctx_);
-
-    // Add previous layer state constraints
-    z3::solver dummy_solver(ctx_); // We need a solver for add_layer_constraints
-    add_layer_constraints(dummy_solver, prev_layer);
-
-    // Copy constraints from dummy solver to optimizer
-    z3::expr_vector assumptions = dummy_solver.assertions();
-    for (unsigned i = 0; i < assumptions.size(); ++i) {
-        optimizer.add(assumptions[i]);
-    }
-
-    // Get the fluent at the next layer
-    ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
-    z3::expr fluent_next = grounded_visitor_.convert_from_pool(fluent_eid, next_layer);
-
-    // Get current bounds for persistence
-    NumericBounds current_bounds = NumericBounds(0.0);
-    auto it = layer_states_[prev_layer].numeric_bounds.find(fluent_id);
-    if (it != layer_states_[prev_layer].numeric_bounds.end()) {
-        current_bounds = it->second;
-    }
-
-    // Build disjunction: fluent' = persistence OR effect1 OR effect2 OR ...
-    z3::expr_vector effect_options(ctx_);
-
-    // Option 1: Persistence (fluent' = fluent_current_value)
-    // Since we have bounds, we allow any value in the current bounds
-    z3::expr persist_lower = (fluent_next >= ctx_.real_val(std::to_string(current_bounds.lower).c_str()));
-    z3::expr persist_upper = (fluent_next <= ctx_.real_val(std::to_string(current_bounds.upper).c_str()));
-    effect_options.push_back(persist_lower && persist_upper);
-
-    // Option 2+: Each effect from applicable actions
+    // Evaluate each effect branch and take convex union
     for (const EffectExpression* effect_expr : effects) {
-        z3::expr effect_value = grounded_visitor_.convert_from_pool(effect_expr->value_id(), prev_layer);
-        
-        // Build the constraint based on effect kind
-        z3::expr effect_constraint = ctx_.bool_val(false);  // default: impossible
-        
+        Interval value_iv = evaluate_interval(effect_expr->value_id(), prev_layer);
+
+        Interval branch = Interval::unbounded();  // safe fallback
         switch (effect_expr->kind()) {
             case EffectExpression::Kind::ASSIGN:
-                // ASSIGN: fluent' = value
-                effect_constraint = (fluent_next == effect_value);
+                branch = value_iv;
                 break;
-                
-            case EffectExpression::Kind::INCREASE: {
-                // INCREASE: fluent' = fluent + value
-                z3::expr fluent_prev = grounded_visitor_.convert_from_pool(fluent_eid, prev_layer);
-                effect_constraint = (fluent_next == fluent_prev + effect_value);
+            case EffectExpression::Kind::INCREASE:
+                branch = current_iv + value_iv;
                 break;
-            }
-
-            case EffectExpression::Kind::DECREASE: {
-                // DECREASE: fluent' = fluent - value
-                z3::expr fluent_prev = grounded_visitor_.convert_from_pool(fluent_eid, prev_layer);
-                effect_constraint = (fluent_next == fluent_prev - effect_value);
+            case EffectExpression::Kind::DECREASE:
+                branch = current_iv - value_iv;
                 break;
-            }
         }
-        
-        effect_options.push_back(effect_constraint);
+
+        result = result.convex_union(branch);
     }
 
-    // Add the disjunction constraint
-    optimizer.add(z3::mk_or(effect_options));
+    return NumericBounds(result.lower, result.upper);
+}
 
-    // Set objective: minimize or maximize
-    z3::optimize::handle objective_handle = minimize ?
-        optimizer.minimize(fluent_next) :
-        optimizer.maximize(fluent_next);
+Interval NumericRelaxedPlanningGraph::evaluate_interval(ExprID eid, int layer) const {
+    const auto& pool = problem_.pool();
 
-    // Solve
-    total_optimization_queries_++;
-    z3::check_result result = optimizer.check();
+    if (!eid.valid()) return Interval::unbounded();
 
-    if (result == z3::sat) {
-        z3::model model = optimizer.get_model();
-        // For minimize: lower() gives minimum, for maximize: upper() gives maximum
-        z3::expr optimal_value = minimize ? optimizer.lower(objective_handle) : optimizer.upper(objective_handle);
+    // Constants -> point interval
+    if (pool.is_constant(eid)) {
+        if (pool.payload_is_double(eid))
+            return Interval(pool.payload_double(eid));
+        if (pool.payload_is_int(eid))
+            return Interval(static_cast<double>(pool.payload_int(eid)));
+        // Boolean or string constant — not numeric
+        return Interval::unbounded();
+    }
 
-        return extract_numeric_value(optimal_value);
-    } else {
-        // If UNSAT, return current bound (shouldn't happen in relaxed graph)
-        std::cerr << "Warning: UNSAT when computing numeric bounds for fluent " << fluent_id << std::endl;
-        return minimize ? current_bounds.lower : current_bounds.upper;
+    // State variables -> lookup in layer's numeric_bounds
+    if (pool.is_state_variable(eid)) {
+        int fluent_id = find_grounded_fluent_id(eid);
+        if (fluent_id >= 0 && numeric_fluent_ids_.count(fluent_id)) {
+            auto it = layer_states_[layer].numeric_bounds.find(fluent_id);
+            if (it != layer_states_[layer].numeric_bounds.end()) {
+                return Interval(it->second.lower, it->second.upper);
+            }
+        }
+        // Uninitialized numeric fluent defaults to [0, 0]
+        return Interval(0.0);
+    }
+
+    // Arithmetic operations
+    if (pool.is_function_application(eid)) {
+        ExprOperator op = pool.op(eid);
+        size_t nargs = pool.argument_count(eid);
+
+        if (nargs == 2) {
+            Interval lhs = evaluate_interval(pool.argument(eid, 0), layer);
+            Interval rhs = evaluate_interval(pool.argument(eid, 1), layer);
+            switch (op) {
+                case ExprOperator::PLUS:     return lhs + rhs;
+                case ExprOperator::MINUS:    return lhs - rhs;
+                case ExprOperator::MULTIPLY: return lhs * rhs;
+                case ExprOperator::DIVIDE:   return lhs / rhs;
+                default: break;
+            }
+        }
+        // Unary minus
+        if (nargs == 1 && op == ExprOperator::MINUS) {
+            Interval arg = evaluate_interval(pool.argument(eid, 0), layer);
+            return Interval(0.0) - arg;
+        }
+    }
+
+    return Interval::unbounded();
+}
+
+void NumericRelaxedPlanningGraph::apply_widening(
+    int fluent_id, NumericBounds& new_bounds, const NumericBounds& prev_bounds) {
+
+    // Track which side(s) actually moved
+    if (new_bounds.lower < prev_bounds.lower) {
+        lower_expansion_count_[fluent_id]++;
+    }
+    if (new_bounds.upper > prev_bounds.upper) {
+        upper_expansion_count_[fluent_id]++;
+    }
+
+    // Look up schema ID for freeze check
+    int schema_id = -1;
+    auto schema_it = fluent_schema_map_.find(fluent_id);
+    if (schema_it != fluent_schema_map_.end()) {
+        schema_id = schema_it->second;
+    }
+
+    // Widen lower if threshold exceeded and not frozen
+    if (schema_id < 0 || !freeze_lower_.count(schema_id)) {
+        auto count_it = lower_expansion_count_.find(fluent_id);
+        if (count_it != lower_expansion_count_.end() &&
+            count_it->second >= WIDENING_THRESHOLD &&
+            !std::isinf(new_bounds.lower)) {
+            new_bounds.lower = -std::numeric_limits<double>::infinity();
+        }
+    }
+
+    // Widen upper if threshold exceeded and not frozen
+    if (schema_id < 0 || !freeze_upper_.count(schema_id)) {
+        auto count_it = upper_expansion_count_.find(fluent_id);
+        if (count_it != upper_expansion_count_.end() &&
+            count_it->second >= WIDENING_THRESHOLD &&
+            !std::isinf(new_bounds.upper)) {
+            new_bounds.upper = std::numeric_limits<double>::infinity();
+        }
+    }
+}
+
+void NumericRelaxedPlanningGraph::build_fluent_schema_map() {
+    const auto& pool = problem_.pool();
+    int fluent_id = 0;
+    for (ExprID eid : problem_.grounded_fluents()) {
+        if (numeric_fluent_ids_.count(fluent_id)) {
+            // Extract schema ID from the ground state variable
+            if (pool.is_state_variable(eid)) {
+                ExprID head = pool.head_symbol_id(eid);
+                if (pool.is_fluent_symbol(head)) {
+                    const std::string& fname = pool.payload_string(head);
+                    const Fluent* fluent = problem_.find_fluent(fname);
+                    if (fluent && fluent->is_function()) {
+                        fluent_schema_map_[fluent_id] = fluent->id();
+                    }
+                }
+            }
+        }
+        fluent_id++;
+    }
+}
+
+void NumericRelaxedPlanningGraph::precompute_freezes() {
+    const auto& pool = problem_.pool();
+
+    // Step 1: Identify which fluent schemas are modified by any effect
+    std::unordered_set<int> modified_schemas;
+
+    struct EffectInfo {
+        EffectExpression::Kind kind;
+        ExprID value_id;
+    };
+    std::unordered_map<int, std::vector<EffectInfo>> effects_per_schema;
+
+    for (size_t si = 0; si < problem_.action_count(); ++si) {
+        const Action& schema = problem_.action(si);
+        for (const auto& eff : schema.effects()) {
+            const auto& ee = eff.effect_expression();
+            ExprID fluent_eid = ee.fluent_id();
+
+            // Extract schema ID
+            if (!pool.is_state_variable(fluent_eid)) continue;
+            ExprID head = pool.head_symbol_id(fluent_eid);
+            if (!pool.is_fluent_symbol(head)) continue;
+            const std::string& fname = pool.payload_string(head);
+            const Fluent* fluent = problem_.find_fluent(fname);
+            if (!fluent || fluent->is_predicate()) continue;
+
+            int fid = fluent->id();
+            modified_schemas.insert(fid);
+            effects_per_schema[fid].push_back({ee.kind(), ee.value_id()});
+        }
+    }
+
+    // Step 2: Compute ranges for constant fluent schemas from initial state
+    std::unordered_map<int, Interval> constant_ranges;
+    for (const auto& fluent : problem_.fluents()) {
+        if (fluent.is_function() && !modified_schemas.count(fluent.id())) {
+            constant_ranges.emplace(fluent.id(), Interval(0.0));
+        }
+    }
+
+    for (const auto& assignment : problem_.initial_state()) {
+        ExprID fluent_eid = assignment.fluent_id();
+        if (!pool.is_state_variable(fluent_eid)) continue;
+        ExprID head = pool.head_symbol_id(fluent_eid);
+        if (!pool.is_fluent_symbol(head)) continue;
+        const std::string& fname = pool.payload_string(head);
+        const Fluent* fluent = problem_.find_fluent(fname);
+        if (!fluent || fluent->is_predicate()) continue;
+
+        auto it = constant_ranges.find(fluent->id());
+        if (it != constant_ranges.end()) {
+            double val = 0.0;
+            ExprID vid = assignment.value_id();
+            if (pool.payload_is_double(vid))
+                val = pool.payload_double(vid);
+            else if (pool.payload_is_int(vid))
+                val = static_cast<double>(pool.payload_int(vid));
+            it->second = it->second.convex_union(Interval(val));
+        }
+    }
+
+    // Step 3: For each non-constant fluent schema, classify effects
+    // Use the same evaluate_constant_expr_range logic as the grounding layer
+    for (const auto& [fid, effects] : effects_per_schema) {
+        bool can_freeze_upper = true;
+        bool can_freeze_lower = true;
+
+        for (const auto& [kind, value_id] : effects) {
+            Interval val_range = evaluate_constant_expr_range(value_id, pool, problem_, constant_ranges);
+
+            if (kind == EffectExpression::Kind::ASSIGN) {
+                if (val_range.is_unbounded()) {
+                    can_freeze_upper = false;
+                    can_freeze_lower = false;
+                }
+            } else if (kind == EffectExpression::Kind::INCREASE) {
+                if (val_range.is_unbounded()) {
+                    can_freeze_upper = false;
+                    can_freeze_lower = false;
+                } else {
+                    if (val_range.upper > 0) can_freeze_upper = false;
+                    if (val_range.lower < 0) can_freeze_lower = false;
+                }
+            } else if (kind == EffectExpression::Kind::DECREASE) {
+                if (val_range.is_unbounded()) {
+                    can_freeze_upper = false;
+                    can_freeze_lower = false;
+                } else {
+                    if (val_range.upper > 0) can_freeze_lower = false;
+                    if (val_range.lower < 0) can_freeze_upper = false;
+                }
+            }
+
+            if (!can_freeze_upper && !can_freeze_lower) break;
+        }
+
+        if (can_freeze_upper) freeze_upper_.insert(fid);
+        if (can_freeze_lower) freeze_lower_.insert(fid);
+    }
+
+    if (!freeze_upper_.empty() || !freeze_lower_.empty()) {
+        Logger::instance().info("RPG.Numeric: freeze analysis — " +
+            std::to_string(freeze_upper_.size()) + " upper frozen, " +
+            std::to_string(freeze_lower_.size()) + " lower frozen");
     }
 }
 
@@ -784,14 +998,17 @@ void NumericRelaxedPlanningGraph::add_boolean_constraints(z3::solver& solver, in
 void NumericRelaxedPlanningGraph::add_numeric_constraints(z3::solver& solver, int layer) const {
     const auto& layer_state = layer_states_[layer];
 
-    // For each numeric fluent, add bound constraints
+    // For each numeric fluent, add bound constraints (skip infinite bounds)
     for (const auto& [fluent_id, bounds] : layer_state.numeric_bounds) {
         ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
         z3::expr fluent_z3 = grounded_visitor_.convert_from_pool(fluent_eid, layer);
 
-        // Add lower and upper bound constraints
-        solver.add(fluent_z3 >= ctx_.real_val(std::to_string(bounds.lower).c_str()));
-        solver.add(fluent_z3 <= ctx_.real_val(std::to_string(bounds.upper).c_str()));
+        if (!std::isinf(bounds.lower)) {
+            solver.add(fluent_z3 >= ctx_.real_val(std::to_string(bounds.lower).c_str()));
+        }
+        if (!std::isinf(bounds.upper)) {
+            solver.add(fluent_z3 <= ctx_.real_val(std::to_string(bounds.upper).c_str()));
+        }
     }
 }
 
