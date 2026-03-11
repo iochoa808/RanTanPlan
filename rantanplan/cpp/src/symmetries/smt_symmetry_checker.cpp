@@ -13,8 +13,6 @@ namespace rantanplan {
 
 SMTSymmetryChecker::SMTSymmetryChecker(const Problem* problem, z3::context& ctx)
     : problem_(problem), context_(ctx), symbol_table_(), visitor_(ctx, symbol_table_, problem) {
-    double current_memory = MemoryTracker::instance().get_current_memory_mb();
-    Logger::instance().info("Starting symmetry detection (memory: " + std::to_string(static_cast<int>(current_memory)) + "MB)");
 }
 
 std::string ActionSwap::to_string() const {
@@ -28,43 +26,47 @@ std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
 
     std::vector<ObjectSwap> detected_swaps;
 
-    // Clear previous results
-    detected_symmetries_.clear();
-
     // Group objects by type - only objects of same type can be symmetric
     auto objects_by_type = get_objects_by_type();
 
-
     // For each type with multiple objects, check for symmetries using SMT
     for (const auto& [type_name, objects] : objects_by_type) {
-        if (objects.size() < 2) {
-            continue; // Need at least 2 objects to have symmetry
-        }
+        if (objects.size() < 2) continue;
 
-
-        // Check all pairs of objects of this type using SMT
         for (size_t i = 0; i < objects.size(); i++) {
             for (size_t j = i + 1; j < objects.size(); j++) {
-                const std::string& obj1_name = objects[i]->name();
-                const std::string& obj2_name = objects[j]->name();
-
-                if (are_objects_symmetric(obj1_name, obj2_name)) {
-                    ObjectSwap swap{obj1_name, obj2_name, type_name};
-                    detected_swaps.push_back(swap);
-
-                    // Get and store the variable pairs and action pairs
-                    auto variable_pairs = get_symmetric_variable_pairs(obj1_name, obj2_name);
-                    auto action_pairs = get_symmetric_action_pairs(obj1_name, obj2_name);
-                    detected_symmetries_.emplace_back(swap, variable_pairs, action_pairs);
-
+                if (are_objects_symmetric(objects[i]->name(), objects[j]->name())) {
+                    detected_swaps.push_back({objects[i]->name(), objects[j]->name(), type_name});
                 }
             }
         }
     }
 
-    // Debug output: detailed symmetry information
-    if (detected_symmetries_.size() > 0) {
-        std::string debug_msg = "Detected " + std::to_string(detected_symmetries_.size()) + " symmetric object pairs:";
+    // Record stats
+    double memory_used = MemoryTracker::instance().get_current_memory_mb() - start_memory;
+    Stats::instance().set("symmetry.count", detected_swaps.size());
+    Stats::instance().set("symmetry.memory_mb", memory_used);
+
+    Logger::instance().component(VerbosityLevel::INFO, "SymDetect", {
+        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
+        {"detected", std::to_string(detected_swaps.size())},
+        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"}
+    });
+
+    return detected_swaps;
+}
+
+void SMTSymmetryChecker::compute_symmetry_pairs(const std::vector<ObjectSwap>& swaps) {
+    detected_symmetries_.clear();
+
+    for (const auto& swap : swaps) {
+        auto variable_pairs = get_symmetric_variable_pairs(swap.obj1_name, swap.obj2_name);
+        auto action_pairs = get_symmetric_action_pairs(swap.obj1_name, swap.obj2_name);
+        detected_symmetries_.emplace_back(swap, variable_pairs, action_pairs);
+    }
+
+    if (!detected_symmetries_.empty()) {
+        std::string debug_msg = "Symmetry pairs for " + std::to_string(detected_symmetries_.size()) + " swaps:";
         for (const auto& symmetry : detected_symmetries_) {
             debug_msg += "\n  " + symmetry.object_swap.to_string() + " -> " +
                         std::to_string(symmetry.variable_pairs.size()) + " variable pairs, " +
@@ -72,20 +74,6 @@ std::vector<ObjectSwap> SMTSymmetryChecker::detect_all_object_swaps() {
         }
         Logger::instance().debug(debug_msg);
     }
-
-    // Record stats
-    double memory_used = MemoryTracker::instance().get_current_memory_mb() - start_memory;
-    Stats::instance().set("symmetry.count", detected_symmetries_.size());
-    Stats::instance().set("symmetry.memory_mb", memory_used);
-
-    // Structured visual output
-    Logger::instance().component(VerbosityLevel::INFO, "Symmetry", {
-        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
-        {"detected", std::to_string(detected_symmetries_.size())},
-        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"}
-    });
-
-    return detected_swaps;
 }
 
 bool SMTSymmetryChecker::are_objects_symmetric(const std::string& obj1, const std::string& obj2) {
@@ -267,81 +255,32 @@ std::vector<ActionSwap> SMTSymmetryChecker::get_symmetric_action_pairs(
     return action_pairs;
 }
 
-bool SMTSymmetryChecker::are_actions_symmetric_by_signature(const Action& action1, const Action& action2, 
+bool SMTSymmetryChecker::are_actions_symmetric_by_signature(const Action& action1, const Action& action2,
                                                            const std::string& obj1, const std::string& obj2) const {
-    
-    // Extract parameters from grounded action name
-    // E.g. "board_person2_plane1_city0" -> ["person2", "plane1", "city0"]
-    auto extract_parameters = [](const std::string& grounded_name) -> std::vector<std::string> {
-        std::vector<std::string> params;
-        size_t start = grounded_name.find('_');
-        if (start == std::string::npos) {
-            return params; // No parameters
-        }
-        start++; // Skip the first underscore
-        
-        size_t pos = start;
-        while (pos < grounded_name.length()) {
-            size_t next_underscore = grounded_name.find('_', pos);
-            if (next_underscore == std::string::npos) {
-                // Last parameter
-                params.push_back(grounded_name.substr(pos));
-                break;
-            } else {
-                params.push_back(grounded_name.substr(pos, next_underscore - pos));
-                pos = next_underscore + 1;
-            }
-        }
-        return params;
-    };
-    
-    // Extract base action name (template name) from grounded action name
-    // E.g. "board_person2_plane1_city0" -> "board"
-    auto extract_base_name = [](const std::string& grounded_name) -> std::string {
-        size_t first_underscore = grounded_name.find('_');
-        if (first_underscore != std::string::npos) {
-            return grounded_name.substr(0, first_underscore);
-        }
-        return grounded_name; // No underscore found, return as-is
-    };
-    
-    std::string base_name1 = extract_base_name(action1.name());
-    std::string base_name2 = extract_base_name(action2.name());
-    
     // Actions must have the same base action name
-    if (base_name1 != base_name2) return false;
-    
-    // Extract parameters from action names
-    std::vector<std::string> params1 = extract_parameters(action1.name());
-    std::vector<std::string> params2 = extract_parameters(action2.name());
-    
-    // Actions must have the same number of parameters
+    if (action1.name() != action2.name()) return false;
+
+    // Use the actual parameter objects (not name parsing)
+    const auto& params1 = action1.parameters();
+    const auto& params2 = action2.parameters();
     if (params1.size() != params2.size()) return false;
-    
+
     // Check if parameters differ only by obj1<->obj2 swap
     bool has_symmetric_swap = false;
     for (size_t i = 0; i < params1.size(); i++) {
-        const std::string& param1 = params1[i];
-        const std::string& param2 = params2[i];
-        
-        if (param1 == param2) {
-            // Same parameter object, acceptable 
+        const std::string& name1 = params1[i].name();
+        const std::string& name2 = params2[i].name();
+
+        if (name1 == name2) {
             continue;
-        } else if ((param1 == obj1 && param2 == obj2) || (param1 == obj2 && param2 == obj1)) {
-            // This parameter position has the symmetric objects swapped
+        } else if ((name1 == obj1 && name2 == obj2) || (name1 == obj2 && name2 == obj1)) {
             has_symmetric_swap = true;
-            continue;
         } else {
-            // Parameters differ in a way that's not related to the obj1<->obj2 swap
             return false;
         }
     }
-    
-    // For actions to be symmetric, they must have at least one parameter position where obj1 and obj2 are swapped
-    if (!has_symmetric_swap) {
-        return false;
-    }
-    return true;
+
+    return has_symmetric_swap;
 }
 
 // ========================================================================

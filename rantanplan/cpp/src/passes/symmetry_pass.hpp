@@ -5,17 +5,29 @@
 namespace rantanplan {
 
 /**
- * @brief Detects object symmetries using SMT-based checking and stores
- *        them in PipelineResult for use by the encoder.
+ * @brief Detects symmetric object pairs using SMT-based checking.
  *
- * Creates a temporary Z3 context for detection, then discards it.
- * The detected SymmetryInfo structs (variable pairs, action pairs)
- * are self-contained and don't require Z3 at encoding time.
+ * Runs BEFORE grounding. Only does the expensive SMT equivalence check.
+ * Stores detected ObjectSwaps in PipelineResult::detected_object_swaps.
+ * Variable/action pairs are computed later by SymmetryCompletionPass.
  */
-class SymmetryPass : public Pass {
+class SymmetryDetectionPass : public Pass {
 public:
     void apply(PipelineResult& result) const override;
-    std::string name() const override { return "symmetries"; }
+    std::string name() const override { return "symmetry-detection"; }
+};
+
+/**
+ * @brief Computes variable pairs and action pairs for known symmetric objects.
+ *
+ * Runs AFTER grounding + CWA. Uses the grounded problem (with complete
+ * initial state) to compute variable pairs and action pairs for each
+ * ObjectSwap detected by SymmetryDetectionPass.
+ */
+class SymmetryCompletionPass : public Pass {
+public:
+    void apply(PipelineResult& result) const override;
+    std::string name() const override { return "symmetry-completion"; }
 };
 
 } // namespace rantanplan

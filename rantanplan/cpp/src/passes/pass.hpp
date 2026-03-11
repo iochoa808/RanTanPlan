@@ -18,7 +18,8 @@ struct PipelineResult {
     bool proven_unsolvable = false;     ///< True if any pass proved unsolvability
     std::string unsolvable_reason;      ///< Name of the pass that proved unsolvability
     int lower_bound = 0;                ///< Max lower bound across all passes so far
-    std::vector<SymmetryInfo> symmetry_data; ///< Symmetry data from SymmetryPass (empty if disabled)
+    std::vector<ObjectSwap> detected_object_swaps; ///< From SymmetryDetectionPass (pre-grounding)
+    std::vector<SymmetryInfo> symmetry_data; ///< From SymmetryCompletionPass (post-CWA)
 };
 
 /**

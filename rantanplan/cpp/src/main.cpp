@@ -220,10 +220,17 @@ int main(int argc, char* argv[]) {
     // === PREPROCESSING PIPELINE ===
     rantanplan::BooleanRPGPass boolean_rpg_pass;
     rantanplan::NumericRPGPass numeric_rpg_pass;
-    rantanplan::SymmetryPass symmetry_pass;
+    rantanplan::SymmetryDetectionPass symmetry_detection_pass;
+    rantanplan::SymmetryCompletionPass symmetry_completion_pass;
     rantanplan::GroundingPass grounding_pass;
     rantanplan::CWAInitialStatePass cwa_pass;
     std::vector<const rantanplan::Pass*> passes;
+
+    // Symmetry detection (SMT-based) runs BEFORE grounding — it only needs
+    // initial state + goals and is the expensive part of symmetry analysis.
+    if (config.symmetry.enable_symmetries) {
+        passes.push_back(&symmetry_detection_pass);
+    }
 
     if (config.global.reachability_grounding) {
         // C++ grounding performs reachability-based instantiation.
@@ -254,8 +261,10 @@ int main(int argc, char* argv[]) {
                          : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
     }
 
+    // Symmetry completion runs AFTER grounding + CWA to compute variable
+    // pairs (needs complete initial state) and action pairs (needs grounded actions).
     if (config.symmetry.enable_symmetries) {
-        passes.push_back(&symmetry_pass);
+        passes.push_back(&symmetry_completion_pass);
     }
 
     auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);

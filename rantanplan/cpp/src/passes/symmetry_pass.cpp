@@ -6,16 +6,26 @@
 
 namespace rantanplan {
 
-void SymmetryPass::apply(PipelineResult& result) const {
+void SymmetryDetectionPass::apply(PipelineResult& result) const {
     z3::context ctx;
     SMTSymmetryChecker checker(&result.problem, ctx);
-    checker.detect_all_object_swaps();
-
-    result.symmetry_data = checker.get_all_symmetries();
+    result.detected_object_swaps = checker.detect_all_object_swaps();
 
     Logger::instance().info("Symmetry detection: " +
-                            std::to_string(result.symmetry_data.size()) + " symmetric pairs");
-    Stats::instance().set("symmetries.pairs", static_cast<double>(result.symmetry_data.size()));
+                            std::to_string(result.detected_object_swaps.size()) + " symmetric pairs");
+    Stats::instance().set("symmetries.pairs",
+                          static_cast<double>(result.detected_object_swaps.size()));
+}
+
+void SymmetryCompletionPass::apply(PipelineResult& result) const {
+    if (result.detected_object_swaps.empty()) return;
+
+    // Use a throwaway Z3 context — compute_symmetry_pairs doesn't need SMT
+    z3::context ctx;
+    SMTSymmetryChecker checker(&result.problem, ctx);
+    checker.compute_symmetry_pairs(result.detected_object_swaps);
+
+    result.symmetry_data = checker.get_all_symmetries();
 }
 
 } // namespace rantanplan

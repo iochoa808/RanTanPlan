@@ -85,7 +85,15 @@ public:
      * @return Vector of detected object swaps
      */
     std::vector<ObjectSwap> detect_all_object_swaps();
-    
+
+    /**
+     * @brief Compute variable pairs and action pairs for already-known object swaps.
+     *
+     * Use this after grounding + CWA to fill in the pair data for swaps
+     * detected earlier (pre-grounding) by detect_all_object_swaps().
+     */
+    void compute_symmetry_pairs(const std::vector<ObjectSwap>& swaps);
+
     /**
      * @brief Check if two specific objects are symmetric using SMT
      * @param obj1 Name of first object
