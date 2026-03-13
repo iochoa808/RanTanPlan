@@ -185,6 +185,9 @@ public:
 
     // ExprID-based evaluation using ExprPool
     Interval evaluate_expression(ExprID eid, const ExprPool& pool) const {
+        // Null expression — return a neutral default
+        if (!eid.valid()) return Interval(0.0);
+
         // Handle constants
         if (pool.is_constant(eid)) {
             if (pool.payload_is_bool(eid)) return Interval(pool.payload_bool(eid) ? 1.0 : 0.0);
@@ -225,6 +228,9 @@ public:
 
     // ExprID-based condition satisfaction check using ExprPool
     bool satisfies_condition(ExprID eid, const ExprPool& pool) const {
+        // Null expression means no condition — always satisfied
+        if (!eid.valid()) return true;
+
         // Handle boolean constants
         if (pool.is_constant(eid) && pool.payload_is_bool(eid)) {
             return pool.payload_bool(eid);
