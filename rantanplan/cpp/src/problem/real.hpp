@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <string>
-#include "protobuf_aliases.hpp"
 
 namespace rantanplan {
 
@@ -19,7 +18,6 @@ public:
     Real() : numerator_(0), denominator_(1) {}
     Real(int64_t numerator, int64_t denominator = 1) : numerator_(numerator), denominator_(denominator) {}
     Real(double value);
-    Real(const pb::Real& pb_real);
     
     // Accessors (needed for Z3 conversion)
     int64_t numerator() const { return numerator_; }

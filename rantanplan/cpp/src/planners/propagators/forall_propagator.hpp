@@ -7,6 +7,7 @@
 #include "../../encoders/parallelism/graph.hpp"
 #include <z3++.h>
 #include <memory>
+#include <set>
 #include <unordered_map>
 
 namespace rantanplan {

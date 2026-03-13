@@ -1,12 +1,8 @@
 #pragma once
 
-#include "protobuf_aliases.hpp"
 #include "expr_pool.hpp"
 
 namespace rantanplan {
-
-// Forward declaration
-class Problem;
 
 /**
  * @brief Goal
@@ -17,11 +13,13 @@ class Goal {
 public:
     // Constructors
     Goal() = default;
-    Goal(const pb::Goal& pb_goal, Problem* problem);
+    Goal(ExprID goal_id, const ExprPool* pool)
+        : goal_id_(goal_id), pool_(pool) {}
 
     // Accessors
     ExprID goal_id() const { return goal_id_; }
     void set_goal_id(ExprID id) { goal_id_ = id; }
+    void set_pool(const ExprPool* pool) { pool_ = pool; }
 
     // String representation
     std::string to_string() const;

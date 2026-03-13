@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include "protobuf_aliases.hpp"
 #include "type.hpp"
 
 namespace rantanplan {
@@ -16,7 +15,6 @@ public:
     // Constructors
     Object() = default;
     Object(const std::string& name, const Type* type) : name_(name), type_(type) {}
-    Object(const pb::ObjectDeclaration& pb_object, const Type* type);
     
     // Accessors
     const std::string& name() const { return name_; }

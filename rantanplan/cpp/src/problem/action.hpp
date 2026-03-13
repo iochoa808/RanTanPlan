@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include "protobuf_aliases.hpp"
 #include "parameter.hpp"
 #include "effect.hpp"
 #include "expr_pool.hpp"
@@ -20,7 +19,8 @@ public:
     // Constructors
     Action() = default;
     Action(const std::string& name) : name_(name), id_(-1) {}
-    Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, Problem* problem);
+    Action(std::string name, std::vector<Parameter> parameters,
+           ExprID precondition_id, std::vector<Effect> effects, const ExprPool* pool);
 
     // Basic accessors
     const std::string& name() const { return name_; }

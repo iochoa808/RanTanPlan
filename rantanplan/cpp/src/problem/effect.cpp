@@ -2,8 +2,6 @@
 
 namespace rantanplan {
 
-Effect::Effect(const pb::Effect& pb_effect, Problem* problem)
-    : effect_expr_(pb_effect.effect(), problem) {
-}
+// All constructors are inline in header.
 
 } // namespace rantanplan

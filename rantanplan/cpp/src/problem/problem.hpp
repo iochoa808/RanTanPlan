@@ -4,7 +4,6 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
-#include "protobuf_aliases.hpp"
 #include "real.hpp"
 #include "atom.hpp"
 #include "parameter.hpp"
@@ -17,6 +16,9 @@
 #include "action.hpp"
 #include "type.hpp"
 #include "expr_pool.hpp"
+
+// Forward declaration of protobuf-generated Problem class (for friend access from protobuf_io)
+class Problem;
 
 namespace rantanplan {
 
@@ -33,12 +35,14 @@ namespace rantanplan {
  * such as whether it is a fluent application, function application, or an atom.
  */
 class Problem {
+    // Allow protobuf_io to access private members for deserialization
+    friend Problem load_problem_from_protobuf(const ::Problem& pb_problem);
+
 public:
     // Constructors
     Problem() = default;
     Problem(const std::string& domain_name, const std::string& problem_name)
         : domain_name_(domain_name), problem_name_(problem_name) {}
-    Problem(const pb::Problem& pb_problem);
     
     // Basic accessors
     const std::string& domain_name() const { return domain_name_; }
@@ -131,9 +135,6 @@ public:
     const ExprPool& pool() const { return *pool_; }
     std::shared_ptr<ExprPool> pool_ptr() const { return pool_; }
 
-    /// Intern a protobuf Expression directly into the pool (no Expression intermediary).
-    ExprID intern_from_protobuf(const pb::Expression& pb_expr);
-
     /// Check if an interned expression has boolean type (O(1) via ExprPool).
     bool is_bool_type(ExprID eid) const {
         const ExprNode& node = pool_->get(eid);
@@ -186,11 +187,7 @@ private:
     void build_grounded_fluent_mappings();
 
     void collect_grounded_fluents();
-    void load_types(const pb::RepeatedTypeDeclaration& pb_types);
     void resolve_type_hierarchy();
-    void load_objects(const pb::RepeatedObjectDeclaration& pb_objects);
-    void load_fluents(const pb::RepeatedFluent& pb_fluents);
-    void load_actions(const pb::RepeatedAction& pb_actions);
 };
 
 } // namespace rantanplan

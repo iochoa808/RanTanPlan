@@ -12,6 +12,7 @@
 #include "config/config.hpp"
 #include "config/strategy_registry.hpp"
 #include "problem/problem.hpp"
+#include "problem/protobuf_io.hpp"
 #include "planners/sequential.hpp"
 #include "planners/formula_exporter.hpp"
 #include "util/memory_tracker.hpp"
@@ -146,7 +147,7 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
         result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
         
         // Convert plan to protobuf and set it in the result
-        *result.mutable_plan() = plan.to_protobuf();
+        *result.mutable_plan() = rantanplan::plan_to_protobuf(plan);
         
         if (config.is_info()) {
             log_message = result.add_log_messages();
@@ -208,7 +209,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Create a Problem wrapper from the protobuf message
-    rantanplan::Problem planning_problem(problem_msg);
+    rantanplan::Problem planning_problem = rantanplan::load_problem_from_protobuf(problem_msg);
     //std::cout << planning_problem.to_string() << std::endl;
 
     // Check if formula export is requested

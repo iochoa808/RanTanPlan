@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include <optional>
-#include "protobuf_aliases.hpp"
 #include "parameter.hpp"
 #include "type.hpp"
 
@@ -23,8 +22,6 @@ public:
     Fluent(const std::string& name, const Type* value_type,
            const std::vector<Parameter>& parameters)
         : name_(name), value_type_(value_type), parameters_(parameters), id_(-1) {}
-    Fluent(const pb::Fluent& pb_fluent, const Type* value_type, const std::vector<Parameter>& parameters);
-    
     // Accessors
     const std::string& name() const { return name_; }
     int id() const { return id_; }

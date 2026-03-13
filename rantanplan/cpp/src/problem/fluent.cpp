@@ -3,9 +3,6 @@
 
 namespace rantanplan {
 
-Fluent::Fluent(const pb::Fluent& pb_fluent, const Type* value_type, const std::vector<Parameter>& parameters)
-    : name_(pb_fluent.name()), value_type_(value_type), parameters_(parameters) {}
-
 std::string Fluent::to_string() const {
     std::ostringstream oss;
     oss << name_;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "protobuf_aliases.hpp"
 #include "effect_expression.hpp"
 
 namespace rantanplan {
@@ -16,7 +15,6 @@ public:
     // Constructors
     Effect() = default;
     Effect(const EffectExpression& effect_expr) : effect_expr_(effect_expr) {}
-    Effect(const pb::Effect& pb_effect, Problem* problem);
 
     // Accessors
     const EffectExpression& effect_expression() const { return effect_expr_; }

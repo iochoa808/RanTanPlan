@@ -22,14 +22,6 @@ Real::Real(double value) {
     }
 }
 
-Real::Real(const pb::Real& pb_real) 
-    : numerator_(pb_real.numerator()), denominator_(pb_real.denominator()) {
-    // Ensure denominator is not zero
-    if (denominator_ == 0) {
-        denominator_ = 1;
-    }
-}
-
 double Real::to_double() const {
     return static_cast<double>(numerator_) / static_cast<double>(denominator_);
 }

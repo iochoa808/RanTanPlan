@@ -1,27 +1,6 @@
 #include "atom.hpp"
-#include <stdexcept>
 
 namespace rantanplan {
-
-Atom::Atom(const pb::Atom& pb_atom) {
-    switch (pb_atom.content_case()) {
-        case pb::Atom::kSymbol:
-            value_ = pb_atom.symbol();
-            break;
-        case pb::Atom::kInt:
-            value_ = pb_atom.int_();
-            break;
-        case pb::Atom::kReal:
-            value_ = Real(pb_atom.real());
-            break;
-        case pb::Atom::kBoolean:
-            value_ = pb_atom.boolean();
-            break;
-        default:
-            value_ = std::string("");
-            break;
-    }
-}
 
 std::string Atom::to_string() const {
     return std::visit([](const auto& value) -> std::string {

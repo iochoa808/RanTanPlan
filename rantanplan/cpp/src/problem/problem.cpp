@@ -7,97 +7,6 @@
 
 namespace rantanplan {
 
-// ============================================================================
-// Expression interning
-// ============================================================================
-
-ExprID Problem::intern_from_protobuf(const pb::Expression& pb_expr) {
-    ExprNode node;
-
-    // Convert kind
-    int kind_value = static_cast<int>(pb_expr.kind());
-    if (kind_value == 8) {
-        throw std::runtime_error("Unsupported expression kind CONTAINER_ID (8) in protobuf input");
-    }
-    node.kind = kind_value;
-
-    // Resolve type string to type_id
-    const std::string& type_str = pb_expr.type();
-    if (!type_str.empty()) {
-        std::string resolved = type_str;
-        if (type_str == "up:integer") resolved = "up:int";
-        else if (type_str == "up:boolean") resolved = "up:bool";
-
-        const Type* found_type = find_type(resolved);
-        if (!found_type && resolved != type_str) {
-            found_type = find_type(type_str);
-        }
-        if (found_type) {
-            for (size_t i = 0; i < types_->size(); ++i) {
-                if (&(*types_)[i] == found_type) {
-                    node.type_id = static_cast<int>(i);
-                    break;
-                }
-            }
-        }
-    }
-
-    if (pb_expr.has_atom()) {
-        // Atom expression — extract payload
-        const auto& pb_atom = pb_expr.atom();
-        ExprKind kind = static_cast<ExprKind>(pb_expr.kind());
-
-        if (pb_atom.has_symbol()) {
-            std::string symbol = pb_atom.symbol();
-            // Apply UP operator mapping for function/fluent symbols
-            if (kind == ExprKind::FUNCTION_SYMBOL || kind == ExprKind::FLUENT_SYMBOL) {
-                symbol = map_up_operator(symbol);
-            }
-            node.payload = symbol;
-            // Extract operator for function symbols
-            if (kind == ExprKind::FUNCTION_SYMBOL) {
-                node.op = static_cast<int>(string_to_expr_operator(symbol));
-            }
-        } else if (pb_atom.has_int_()) {
-            node.payload = pb_atom.int_();
-        } else if (pb_atom.has_real()) {
-            double val = static_cast<double>(pb_atom.real().numerator()) /
-                         static_cast<double>(pb_atom.real().denominator());
-            node.payload = val;
-        } else if (pb_atom.has_boolean()) {
-            node.payload = pb_atom.boolean();
-        }
-    }
-
-    if (pb_expr.list_size() > 0) {
-        // Compound expression — recursively intern children
-        ExprKind kind = static_cast<ExprKind>(pb_expr.kind());
-
-        node.children.reserve(pb_expr.list_size());
-        for (int i = 0; i < pb_expr.list_size(); ++i) {
-            const auto& child_pb = pb_expr.list(i);
-
-            // For the first child in function applications, apply operator mapping
-            if (i == 0 && kind == ExprKind::FUNCTION_APPLICATION &&
-                child_pb.has_atom() && child_pb.atom().has_symbol()) {
-                // Create a copy with mapped operator symbol
-                pb::Expression mapped_child = child_pb;
-                std::string mapped = map_up_operator(child_pb.atom().symbol());
-                mapped_child.mutable_atom()->set_symbol(mapped);
-                ExprID child_id = intern_from_protobuf(mapped_child);
-                node.children.push_back(child_id);
-
-                // Extract operator from first child
-                node.op = static_cast<int>(string_to_expr_operator(mapped));
-            } else {
-                node.children.push_back(intern_from_protobuf(child_pb));
-            }
-        }
-    }
-
-    return pool_->intern(std::move(node));
-}
-
 void Problem::collect_grounded_fluents() {
     // Collect ALL unique grounded fluent applications from:
     //   1. Initial state assignments
@@ -144,33 +53,6 @@ void Problem::collect_grounded_fluents() {
     std::sort(grounded_fluents_.begin(), grounded_fluents_.end());
 
     build_grounded_fluent_mappings();
-}
-
-Problem::Problem(const pb::Problem& pb_problem) {
-    load_types(pb_problem.types());
-    resolve_type_hierarchy();
-
-    // Load objects
-    load_objects(pb_problem.objects());
-
-    // Load fluents
-    load_fluents(pb_problem.fluents());
-
-    // Load actions (interns expressions via intern_from_protobuf)
-    load_actions(pb_problem.actions());
-
-    // Load initial state (interns expressions via intern_from_protobuf)
-    for (const auto& pb_assignment : pb_problem.initial_state()) {
-        initial_state_.emplace_back(pb_assignment, this);
-    }
-
-    // Load goals (interns expressions via intern_from_protobuf)
-    for (const auto& pb_goal : pb_problem.goals()) {
-        goals_.emplace_back(pb_goal, this);
-    }
-
-    // Collect grounded fluents from initial state assignments
-    collect_grounded_fluents();
 }
 
 bool Problem::has_object(const std::string& name) const {
@@ -375,26 +257,6 @@ void Problem::build_grounded_fluent_mappings() {
     }
 }
 
-void Problem::load_types(const pb::RepeatedTypeDeclaration& pb_types) {
-    types_->clear();
-    type_name_to_ptr_.clear();
-
-    // ensure basic types are present
-    types_->emplace_back("up:bool");
-    types_->emplace_back("up:int");
-    types_->emplace_back("up:real");
-
-    for (const auto& pb_type : pb_types) {
-        types_->emplace_back(pb_type.type_name());
-        types_->back().set_parent_name(pb_type.parent_type());
-    }
-
-    // Build the name to pointer mapping
-    for (auto& type : *types_) {
-        type_name_to_ptr_[type.name()] = &type;
-    }
-}
-
 void Problem::resolve_type_hierarchy() {
     for (auto& type : *types_) {
         if (!type.parent_name().empty()) {
@@ -404,51 +266,6 @@ void Problem::resolve_type_hierarchy() {
             }
         }
     }
-}
-
-void Problem::load_objects(const pb::RepeatedObjectDeclaration& pb_objects) {
-    objects_.clear();
-    for (const auto& pb_obj : pb_objects) {
-        const Type* type = find_type(pb_obj.type());
-        objects_.emplace_back(pb_obj.name(), type);
-    }
-    build_object_mappings();
-}
-
-void Problem::load_fluents(const pb::RepeatedFluent& pb_fluents) {
-    fluents_.clear();
-    for (const auto& pb_fluent : pb_fluents) {
-        std::vector<Parameter> params;
-        // Collect parameters for the fluent
-        for (const auto& pb_param : pb_fluent.parameters()) {
-            const Type* param_type = find_type(pb_param.type());
-            params.emplace_back(pb_param.name(), param_type);
-        }
-
-        // Find the value type for the fluent
-        const Type* value_type = find_type(pb_fluent.value_type());
-        if (!value_type) {
-            std::cerr << "ERROR: Could not find type '" << pb_fluent.value_type() 
-                << "' for fluent '" << pb_fluent.name() << "'" << std::endl;
-        }
-        fluents_.emplace_back(pb_fluent.name(), value_type, params);
-    }
-    build_fluent_mappings();
-}
-
-void Problem::load_actions(const pb::RepeatedAction& pb_actions) {
-    actions_.clear();
-    for (const auto& pb_action : pb_actions) {
-        std::vector<Parameter> params;
-        for (const auto& pb_param : pb_action.parameters()) {
-            const Type* param_type = find_type(pb_param.type());
-            params.emplace_back(pb_param.name(), param_type);
-        }
-        actions_.emplace_back(pb_action, params, this);
-        // Set the ID to match the vector index
-        actions_.back().set_id(actions_.size() - 1);
-    }
-    build_action_mappings();
 }
 
 int Problem::find_grounded_fluent_index(ExprID eid) const {

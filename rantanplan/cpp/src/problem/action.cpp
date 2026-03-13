@@ -1,53 +1,18 @@
 #include "action.hpp"
-#include "problem.hpp"
 #include <sstream>
 
 namespace rantanplan {
 
-Action::Action(const pb::Action& pb_action, const std::vector<Parameter>& parameters, Problem* problem)
-    : name_(pb_action.name()), id_(-1), parameters_(parameters) {
-
-    pool_ = &problem->pool();
-
-    // Create single precondition from repeated conditions using AND
-    if (pb_action.conditions().empty()) {
-        // No preconditions - create true constant
-        pb::Expression pb_true_expr;
-        pb_true_expr.mutable_atom()->set_boolean(true);
-        pb_true_expr.set_kind(pb::ExpressionKind::CONSTANT);
-        pb_true_expr.set_type("up:bool");
-        precondition_id_ = problem->intern_from_protobuf(pb_true_expr);
-        has_precondition_ = false;
-    } else if (pb_action.conditions().size() == 1) {
-        // Single precondition - use it directly
-        precondition_id_ = problem->intern_from_protobuf(pb_action.conditions(0).cond());
-        has_precondition_ = !pool_->is_true_constant(precondition_id_);
-    } else {
-        // Multiple preconditions - create AND expression
-        pb::Expression pb_and_expr;
-        pb_and_expr.set_kind(pb::ExpressionKind::FUNCTION_APPLICATION);
-        pb_and_expr.set_type("up:bool");
-
-        // First element: the "and" function symbol
-        pb::Expression* and_symbol = pb_and_expr.add_list();
-        and_symbol->mutable_atom()->set_symbol("and");
-        and_symbol->set_kind(pb::ExpressionKind::FUNCTION_SYMBOL);
-        and_symbol->set_type("up:bool");
-
-        // Add all the condition expressions directly from protobuf
-        for (const auto& pb_condition : pb_action.conditions()) {
-            pb::Expression* operand = pb_and_expr.add_list();
-            *operand = pb_condition.cond();
-        }
-
-        precondition_id_ = problem->intern_from_protobuf(pb_and_expr);
-        has_precondition_ = true;
-    }
-
-    for (const auto& pb_effect : pb_action.effects()) {
-        effects_.emplace_back(pb_effect, problem);
-    }
-
+Action::Action(std::string name, std::vector<Parameter> parameters,
+               ExprID precondition_id, std::vector<Effect> effects, const ExprPool* pool)
+    : name_(std::move(name))
+    , id_(-1)
+    , parameters_(std::move(parameters))
+    , precondition_id_(precondition_id)
+    , has_precondition_(precondition_id != EXPR_NULL &&
+                        !(pool && pool->is_true_constant(precondition_id)))
+    , effects_(std::move(effects))
+    , pool_(pool) {
     build_parameter_mappings();
 }
 

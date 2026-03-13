@@ -85,6 +85,7 @@ add_executable(rantanplan
     src/problem/action.cpp
     src/problem/plan.cpp
     src/problem/problem.cpp
+    src/problem/protobuf_io.cpp
     src/problem/type.cpp
     src/problem/visitors/fluent_collector.cpp
     src/problem/visitors/fluent_polarity_collector.cpp

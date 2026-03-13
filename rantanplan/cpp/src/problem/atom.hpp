@@ -2,7 +2,6 @@
 
 #include <string>
 #include <variant>
-#include "protobuf_aliases.hpp"
 #include "real.hpp"
 
 namespace rantanplan {
@@ -26,7 +25,6 @@ public:
     Atom(const Real& real) : value_(real) {}
     Atom(double real) : value_(Real(real)) {}
     Atom(bool boolean) : value_(boolean) {}
-    Atom(const pb::Atom& pb_atom);
     
     // Type checkers
     bool is_symbol() const { return std::holds_alternative<std::string>(value_); }

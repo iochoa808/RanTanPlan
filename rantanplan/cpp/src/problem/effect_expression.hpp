@@ -1,13 +1,9 @@
 #pragma once
 
 #include <vector>
-#include "protobuf_aliases.hpp"
 #include "expr_pool.hpp"
 
 namespace rantanplan {
-
-// Forward declaration
-class Problem;
 
 /**
  * @brief Structural complexity of an effect's value expression.
@@ -55,7 +51,20 @@ public:
 
     // Constructors
     EffectExpression() : kind_(Kind::ASSIGN), value_kind_(ValueKind::CONSTANT) {}
-    EffectExpression(const pb::EffectExpression& pb_effect_expr, Problem* problem);
+
+    /// Construct with forall variables (used by protobuf_io).
+    EffectExpression(Kind kind, ExprID fluent_id, ExprID value_id,
+                     ExprID condition_id, std::vector<ExprID> forall_variable_ids,
+                     const ExprPool* pool)
+        : kind_(kind)
+        , value_kind_(pool ? classify_value_kind(value_id, *pool) : ValueKind::CONSTANT)
+        , fluent_id_(fluent_id)
+        , value_id_(value_id)
+        , condition_id_(condition_id)
+        , has_condition_(condition_id != EXPR_NULL && !(pool && pool->is_true_constant(condition_id)))
+        , forall_variable_ids_(std::move(forall_variable_ids))
+        , pool_(pool)
+    {}
 
     /// Construct a ground effect expression directly (used by the grounder).
     EffectExpression(Kind kind, ExprID fluent_id, ExprID value_id,

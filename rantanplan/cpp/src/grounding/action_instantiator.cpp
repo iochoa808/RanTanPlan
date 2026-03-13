@@ -14,7 +14,7 @@ static ExprID make_object_constant(ExprPool& pool,
 
     ExprNode node;
     node.kind = static_cast<int>(ExprKind::CONSTANT);
-    // NOTE: Leave node.op as default (-1) to match intern_from_protobuf(),
+    // NOTE: Leave node.op as default (-1) to match intern_expr() in protobuf_io.cpp,
     // which does NOT set op for CONSTANT nodes.
 
     // Derive type_id via pointer arithmetic (Type* points into types_ vector).

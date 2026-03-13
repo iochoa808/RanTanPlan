@@ -3,7 +3,6 @@
 #include <vector>
 #include <string>
 #include "action.hpp"
-#include "protobuf_aliases.hpp"
 
 namespace rantanplan {
 
@@ -26,9 +25,6 @@ public:
     // Basic properties
     size_t length() const { return actions_.size(); }
     bool is_empty() const { return actions_.empty(); }
-    
-    // Convert to protobuf for communication with Python
-    pb::Plan to_protobuf() const;
     
     // String representation for debugging
     std::string to_string() const;

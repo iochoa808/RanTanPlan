@@ -1,5 +1,4 @@
 #include "effect_expression.hpp"
-#include "problem.hpp"
 #include <sstream>
 #include <algorithm>
 
@@ -95,28 +94,6 @@ ValueKind classify_value_kind(ExprID value_id, const ExprPool& pool) {
 // ============================================================================
 // EffectExpression
 // ============================================================================
-
-EffectExpression::EffectExpression(const pb::EffectExpression& pb_effect_expr, Problem* problem)
-    : kind_(static_cast<Kind>(pb_effect_expr.kind())) {
-
-    pool_ = &problem->pool();
-
-    fluent_id_ = problem->intern_from_protobuf(pb_effect_expr.fluent());
-    value_id_ = problem->intern_from_protobuf(pb_effect_expr.value());
-
-    // Classify the value expression structure
-    value_kind_ = classify_value_kind(value_id_, *pool_);
-
-    if (pb_effect_expr.has_condition()) {
-        condition_id_ = problem->intern_from_protobuf(pb_effect_expr.condition());
-        // Check if condition is a trivial "true" constant
-        has_condition_ = condition_id_.valid() && !pool_->is_true_constant(condition_id_);
-    }
-
-    for (const auto& var : pb_effect_expr.forall()) {
-        forall_variable_ids_.push_back(problem->intern_from_protobuf(var));
-    }
-}
 
 std::string EffectExpression::to_string() const {
     std::ostringstream oss;
