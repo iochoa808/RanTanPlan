@@ -1,63 +1,62 @@
 #include "strategy_registry.hpp"
-#include "strategies.hpp"
 #include <stdexcept>
 #include <sstream>
 
 namespace rantanplan {
 
-std::map<std::string, StrategyRegistry::StrategyFactory>& StrategyRegistry::get_registry() {
-    static std::map<std::string, StrategyFactory> registry;
-    static bool initialized = false;
+using E = EncoderFamily;
+using S = SemanticsKind;
+using I = InterferenceKind;
+using P = PropagatorKind;
+using K = PlannerKind;
 
-    if (!initialized) {
-        initialized = true;  // Set BEFORE calling initialize to avoid recursion
-        initialize_builtin_strategies(registry);
-    }
+const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
+    static const std::map<std::string, StrategySpec> registry = {
+        // Sequential
+        {"seq",                            {E::Grounded, S::Sequential, I::EagerSyntactic,  P::Null,              K::Sequential}},
 
+        // Forall variants
+        {"forall",                         {E::Grounded, S::Forall,     I::EagerSyntactic,  P::Null,              K::Sequential}},
+        {"forall-prop",                    {E::Grounded, S::Forall,     I::EagerSyntactic,  P::Forall,            K::Sequential}},
+        {"forall-lazy",                    {E::Grounded, S::Forall,     I::LazySyntactic,   P::LazyForall,        K::Sequential}},
+        {"forall-lazy-semantic",           {E::Grounded, S::Forall,     I::LazySemantic,    P::LazyForall,        K::Sequential}},
+        {"forall-lazy-semantic-chain",     {E::Chained,  S::Forall,     I::LazySemantic,    P::LazyForall,        K::Sequential}},
+
+        // Exists variants
+        {"exists",                         {E::Grounded, S::Exists,     I::EagerSyntactic,  P::Null,              K::Sequential}},
+        {"exists-lazy",                    {E::Grounded, S::Exists,     I::LazySyntactic,   P::Exists,            K::Sequential}},
+        {"exists-lazy-semantic",           {E::Grounded, S::Exists,     I::LazySemantic,    P::Exists,            K::Sequential}},
+        {"exists-lazy-semantic-chain",     {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::Sequential}},
+
+        // Special strategies
+        {"r2e",                            {E::R2E,      S::Sequential, I::EagerSyntactic,  P::Null,              K::Sequential}},
+        {"dec",                            {E::Chained,  S::Exists,     I::LazySemantic,    P::DecisionHeuristic, K::Sequential}},
+
+        // Experimental eager-semantic
+        {"forall-eager-semantic",          {E::Grounded, S::Forall,     I::EagerSemantic,   P::Null,              K::Sequential}},
+        {"forall-eager-semantic-chain",    {E::Chained,  S::Forall,     I::EagerSemantic,   P::Null,              K::Sequential}},
+        {"exists-eager-semantic",          {E::Grounded, S::Exists,     I::EagerSemantic,   P::Null,              K::Sequential}},
+        {"exists-eager-semantic-chain",    {E::Chained,  S::Exists,     I::EagerSemantic,   P::Null,              K::Sequential}},
+
+        // Double-tail sequential
+        {"seq-dt",                         {E::Grounded, S::Sequential, I::EagerSyntactic,  P::Null,              K::DoubleTail}},
+
+        // Double-tail forall
+        {"forall-dt",                      {E::Grounded, S::Forall,     I::EagerSyntactic,  P::Null,              K::DoubleTail}},
+        {"forall-lazy-dt",                 {E::Grounded, S::Forall,     I::LazySyntactic,   P::LazyForall,        K::DoubleTail}},
+        {"forall-lazy-semantic-dt",        {E::Grounded, S::Forall,     I::LazySemantic,    P::LazyForall,        K::DoubleTail}},
+        {"forall-lazy-semantic-chain-dt",  {E::Chained,  S::Forall,     I::LazySemantic,    P::LazyForall,        K::DoubleTail}},
+
+        // Double-tail exists
+        {"exists-dt",                      {E::Grounded, S::Exists,     I::EagerSyntactic,  P::Null,              K::DoubleTail}},
+        {"exists-lazy-dt",                 {E::Grounded, S::Exists,     I::LazySyntactic,   P::Exists,            K::DoubleTail}},
+        {"exists-lazy-semantic-dt",        {E::Grounded, S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail}},
+        {"exists-lazy-semantic-chain-dt",  {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail}},
+    };
     return registry;
 }
 
-void StrategyRegistry::initialize_builtin_strategies(std::map<std::string, StrategyFactory>& registry) {
-
-    // Sequential
-    registry["seq"] = []() { return std::make_unique<SequentialStrategy>(); };
-
-    // Forall variants
-    registry["forall"] = []() { return std::make_unique<ForallStrategy>(); };
-    registry["forall-prop"] = []() { return std::make_unique<ForallPropStrategy>(); };
-    registry["forall-lazy"] = []() { return std::make_unique<ForallLazyStrategy>(); };
-    registry["forall-lazy-semantic"] = []() { return std::make_unique<ForallLazySemanticStrategy>(); };
-    registry["forall-lazy-semantic-chain"] = []() { return std::make_unique<ForallLazySemanticChainStrategy>(); };
-
-    // Exists variants
-    registry["exists"] = []() { return std::make_unique<ExistsStrategy>(); };
-    registry["exists-lazy"] = []() { return std::make_unique<ExistsLazyStrategy>(); };
-    registry["exists-lazy-semantic"] = []() { return std::make_unique<ExistsLazySemanticStrategy>(); };
-    registry["exists-lazy-semantic-chain"] = []() { return std::make_unique<ExistsLazySemanticChainStrategy>(); };
-
-    // Special strategies
-    registry["r2e"] = []() { return std::make_unique<R2EStrategy>(); };
-    registry["dec"] = []() { return std::make_unique<DecisionHeuristicStrategy>(); };
-
-    // Experimental
-    registry["forall-eager-semantic"] = []() { return std::make_unique<ForallEagerSemanticStrategy>(); };
-    registry["forall-eager-semantic-chain"] = []() { return std::make_unique<ForallEagerSemanticChainStrategy>(); };
-    registry["exists-eager-semantic"] = []() { return std::make_unique<ExistsEagerSemanticStrategy>(); };
-    registry["exists-eager-semantic-chain"] = []() { return std::make_unique<ExistsEagerSemanticChainStrategy>(); };
-
-    // Double-tail strategies
-    registry["seq-dt"] = []() { return std::make_unique<SequentialDoubleTailStrategy>(); };
-    registry["forall-dt"] = []() { return std::make_unique<ForallDoubleTailStrategy>(); };
-    registry["forall-lazy-dt"] = []() { return std::make_unique<ForallLazyDoubleTailStrategy>(); };
-    registry["forall-lazy-semantic-dt"] = []() { return std::make_unique<ForallLazySemanticDoubleTailStrategy>(); };
-    registry["forall-lazy-semantic-chain-dt"] = []() { return std::make_unique<ForallLazySemanticChainDoubleTailStrategy>(); };
-    registry["exists-dt"] = []() { return std::make_unique<ExistsDoubleTailStrategy>(); };
-    registry["exists-lazy-dt"] = []() { return std::make_unique<ExistsLazyDoubleTailStrategy>(); };
-    registry["exists-lazy-semantic-dt"] = []() { return std::make_unique<ExistsLazySemanticDoubleTailStrategy>(); };
-    registry["exists-lazy-semantic-chain-dt"] = []() { return std::make_unique<ExistsLazySemanticChainDoubleTailStrategy>(); };
-}
-
-std::unique_ptr<StrategyConfiguration> StrategyRegistry::create(const std::string& name) {
+const StrategySpec& StrategyRegistry::get(const std::string& name) {
     auto& registry = get_registry();
     auto it = registry.find(name);
 
@@ -76,7 +75,7 @@ std::unique_ptr<StrategyConfiguration> StrategyRegistry::create(const std::strin
         throw std::invalid_argument(error.str());
     }
 
-    return it->second();
+    return it->second;
 }
 
 bool StrategyRegistry::exists(const std::string& name) {

@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "cli_parser.hpp"
 #include "strategy_registry.hpp"
+#include "strategy_factory.hpp"
 #include <stdexcept>
 
 namespace rantanplan {
@@ -36,17 +37,11 @@ void Config::validate() const {
             "'. Valid values: linear, arithmetic, geometric, doubling");
     }
 
-    // Non-linear horizon schedules rely on prefix-monotone front-loading, which
-    // is only implemented in SequentialPlanner.  DoubleTailPlanner tests a
-    // specific (forward_end, backward_start) pair per iteration and cannot skip
-    // horizons while preserving completeness.
-    if (planner.horizon_schedule != "linear" &&
-        StrategyRegistry::create(planner.strategy)->uses_double_tail()) {
-        throw std::invalid_argument(
-            "Non-linear horizon schedule '" + planner.horizon_schedule +
-            "' is not compatible with double-tail strategy '" + planner.strategy + "'. "
-            "Use a non-dt strategy or --horizon-schedule linear.");
-    }
+    // Strategy compatibility validation (single point of responsibility
+    // in StrategyFactory::validate — covers both spec-internal and
+    // spec-vs-config constraints).
+    const auto& spec = StrategyRegistry::get(planner.strategy);
+    StrategyFactory::validate(spec, planner.strategy, planner.horizon_schedule);
 
     // Validate global settings
     if (global.timeout <= 0) {

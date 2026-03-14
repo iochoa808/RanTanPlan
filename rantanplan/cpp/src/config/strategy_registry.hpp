@@ -1,40 +1,24 @@
 #pragma once
 
-#include "strategy_configuration.hpp"
+#include "strategy_spec.hpp"
 #include <map>
 #include <vector>
-#include <functional>
-#include <memory>
 #include <string>
 
 namespace rantanplan {
 
-/**
- * @brief Registry for all available strategy configurations
- */
 class StrategyRegistry {
 public:
-    using StrategyFactory = std::function<std::unique_ptr<StrategyConfiguration>()>;
+    /// Look up a strategy spec by name.
+    /// Throws std::invalid_argument if the name is unknown.
+    static const StrategySpec& get(const std::string& name);
 
-    /**
-     * @brief Create a strategy by name
-     * @throws std::invalid_argument if strategy name is unknown
-     */
-    static std::unique_ptr<StrategyConfiguration> create(const std::string& name);
-
-    /**
-     * @brief Check if a strategy exists
-     */
     static bool exists(const std::string& name);
 
-    /**
-     * @brief Get list of all available strategy names
-     */
     static std::vector<std::string> list_strategies();
 
 private:
-    static std::map<std::string, StrategyFactory>& get_registry();
-    static void initialize_builtin_strategies(std::map<std::string, StrategyFactory>& registry);
+    static const std::map<std::string, StrategySpec>& get_registry();
 };
 
 } // namespace rantanplan

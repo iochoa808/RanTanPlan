@@ -68,6 +68,7 @@ add_executable(rantanplan
     src/config/config.cpp
     src/config/cli_parser.cpp
     src/config/strategy_registry.cpp
+    src/config/strategy_factory.cpp
     src/util/memory_tracker.cpp
     src/util/stats.cpp
     src/util/scoped_timer.cpp

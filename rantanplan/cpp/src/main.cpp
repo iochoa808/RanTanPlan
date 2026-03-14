@@ -11,6 +11,7 @@
 
 #include "config/config.hpp"
 #include "config/strategy_registry.hpp"
+#include "config/strategy_factory.hpp"
 #include "problem/problem.hpp"
 #include "problem/protobuf_io.hpp"
 #include "planners/sequential.hpp"
@@ -57,9 +58,10 @@ int export_formula_and_exit(const rantanplan::Problem& problem) {
     }
 
     // Only allow formula export with strategies that support it
-    auto strategy = rantanplan::StrategyRegistry::create(config.planner.strategy);
-    if (!strategy->supports_formula_export()) {
-        rantanplan::Logger::instance().error("Formula export is not supported by strategy '" + strategy->get_name() + "'");
+    const auto& spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
+    if (!rantanplan::supports_formula_export(spec)) {
+        rantanplan::Logger::instance().error(
+            "Formula export is not supported by strategy '" + config.planner.strategy + "'");
         return 1;
     }
 
@@ -67,10 +69,10 @@ int export_formula_and_exit(const rantanplan::Problem& problem) {
         // Create Z3 context
         z3::context ctx;
 
-        // Create encoder, parallelism, and interference analyzer using strategy
-        auto encoder = strategy->create_encoder(problem, ctx);
-        auto parallelism = strategy->create_parallelism();
-        auto interference = strategy->create_interference(problem);
+        // Create encoder, parallelism, and interference analyzer using factory
+        auto encoder = rantanplan::StrategyFactory::create_encoder(spec, problem, ctx);
+        auto parallelism = rantanplan::StrategyFactory::create_parallelism(spec);
+        auto interference = rantanplan::StrategyFactory::create_interference(spec, problem);
 
         // Inject interference analyzer into parallelism strategy
         parallelism->set_interference_analyzer(std::move(interference));
@@ -114,12 +116,12 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
 
     z3::context ctx;
 
-    auto strategy = rantanplan::StrategyRegistry::create(config.planner.strategy);
-    rantanplan::Logger::instance().info("Using strategy: " + strategy->get_name());
+    const auto& spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
+    rantanplan::Logger::instance().info("Using strategy: " + config.planner.strategy);
 
-    auto encoder = strategy->create_encoder(problem, ctx);
-    auto parallelism = strategy->create_parallelism();
-    auto interference = strategy->create_interference(problem);
+    auto encoder = rantanplan::StrategyFactory::create_encoder(spec, problem, ctx);
+    auto parallelism = rantanplan::StrategyFactory::create_parallelism(spec);
+    auto interference = rantanplan::StrategyFactory::create_interference(spec, problem);
 
     parallelism->set_interference_analyzer(std::move(interference));
     encoder->set_parallelism_strategy(std::move(parallelism));
@@ -127,15 +129,15 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
     // Set pipeline data on encoder
     encoder->set_symmetry_data(pipeline_result.symmetry_data);
 
-    // Create planner using strategy (strategy decides which planner to use!)
-    auto planner = strategy->create_planner(problem, *encoder, ctx);
+    // Create planner using factory
+    auto planner = rantanplan::StrategyFactory::create_planner(spec, problem, *encoder, ctx);
 
-    // Get solver reference and create propagator using strategy
-    auto propagator = strategy->create_propagator(planner->get_solver(), problem, *encoder);
+    // Get solver reference and create propagator using factory
+    auto propagator = rantanplan::StrategyFactory::create_propagator(spec, planner->get_solver(), problem, *encoder);
 
     // Enable solver decision logging if requested
     if (config.has_log_file()) {
-        propagator->enable_logging(config.logging.log_file, strategy->get_name());
+        propagator->enable_logging(config.logging.log_file, config.planner.strategy);
     }
 
     planner->set_propagator_strategy(std::move(propagator));
@@ -145,10 +147,10 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
     if (planner->solution_found()) {
         // Plan found (even if empty) - populate the result
         result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
-        
+
         // Convert plan to protobuf and set it in the result
         *result.mutable_plan() = rantanplan::plan_to_protobuf(plan);
-        
+
         if (config.is_info()) {
             log_message = result.add_log_messages();
             log_message->set_level(LogMessage_LogLevel_INFO);
@@ -163,16 +165,16 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
             log_message->set_message("No plan found within the search limit.");
         }
     }
-    
+
     if (config.is_verbose()) {
         log_message = result.add_log_messages();
         log_message->set_level(LogMessage_LogLevel_INFO);
         log_message->set_message("Finished solving the problem.");
     }
-    
+
     // Add memory tracking information to result
     double current_memory = rantanplan::MemoryTracker::instance().get_current_memory_mb();
-    
+
     log_message = result.add_log_messages();
     log_message->set_level(LogMessage_LogLevel_INFO);
     log_message->set_message("Memory usage - Current: " + std::to_string(current_memory) + " MB");
@@ -181,7 +183,7 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
 }
 int main(int argc, char* argv[]) {
     GOOGLE_PROTOBUF_VERIFY_VERSION;
-    
+
     try {
         // Initialize configuration first
         rantanplan::Config::instance().initialize(argc, argv);
@@ -312,7 +314,7 @@ int main(int argc, char* argv[]) {
     if (config.is_debug()) {
         rantanplan::Stats::instance().print_all();
     }
-    
+
     // Write statistics to file if specified
     if (!config.global.stats_file.empty()) {
         rantanplan::Stats::instance().write_to_file(config.global.stats_file);
