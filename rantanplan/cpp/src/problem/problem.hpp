@@ -22,6 +22,8 @@ class Problem;
 
 namespace rantanplan {
 
+enum class MetricKind { NONE, MINIMIZE_ACTION_COSTS, MINIMIZE_PLAN_LENGTH };
+
 /**
  * @brief Main problem representation class
  * 
@@ -122,6 +124,12 @@ public:
     const std::vector<Goal>& goals() const { return goals_; }
     size_t goal_count() const { return goals_.size(); }
     const Goal& goal(size_t index) const { return goals_[index]; }
+
+    // Metric access
+    bool has_metric() const { return metric_kind_ != MetricKind::NONE; }
+    MetricKind metric_kind() const { return metric_kind_; }
+    void set_metric_kind(MetricKind kind) { metric_kind_ = kind; }
+    bool has_state_dependent_costs() const;
     
     // Type access
     const std::vector<Type>& types() const { return *types_; }
@@ -171,6 +179,9 @@ private:
     std::vector<Goal> goals_;
     std::shared_ptr<std::vector<Type>> types_ = std::make_shared<std::vector<Type>>();
     
+    // Metric
+    MetricKind metric_kind_ = MetricKind::NONE;
+
     // Expression interning pool
     std::shared_ptr<ExprPool> pool_ = std::make_shared<ExprPool>();
 

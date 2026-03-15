@@ -382,8 +382,8 @@ bool NumericRelaxedPlanningGraph::build() {
         }
 
         // Early termination if all actions reachable and goals achieved (if enabled)
-        if (enable_all_actions_reachable_termination_ && 
-            are_all_actions_reachable() && 
+        if (enable_all_actions_reachable_termination_ &&
+            are_all_actions_reachable() &&
             are_goals_achievable()) {
             Logger::instance().verbose("All " + std::to_string(action_layers_.back().size()) + 
                                       "/" + std::to_string(problem_.actions().size()) +
@@ -909,9 +909,11 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
         action_vars.push_back(action_var);
         action_map[action_var_name] = &action;
 
-        // action_var → precondition
-        z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
-        solver.add(z3::implies(action_var, precondition));
+        // action_var → precondition (vacuously true if no precondition)
+        if (action.has_precondition()) {
+            z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
+            solver.add(z3::implies(action_var, precondition));
+        }
     }
 
     // Check satisfiability
@@ -947,9 +949,11 @@ bool NumericRelaxedPlanningGraph::is_action_applicable_smt(const Action& action,
     // Add layer state constraints
     add_layer_constraints(solver, layer);
 
-    // Add action precondition
-    z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
-    solver.add(precondition);
+    // Add action precondition (vacuously true if no precondition)
+    if (action.has_precondition()) {
+        z3::expr precondition = grounded_visitor_.convert_from_pool(action.precondition_id(), layer);
+        solver.add(precondition);
+    }
 
     // Check satisfiability
     total_smt_queries_++;

@@ -34,6 +34,9 @@ void Problem::collect_grounded_fluents() {
                 collector.collect_from_id(ee.condition_id());
             }
         }
+        if (action.has_explicit_cost()) {
+            collector.collect_from_id(action.cost_id());
+        }
     }
 
     // 3. Goals
@@ -110,6 +113,7 @@ Problem Problem::without_actions(const std::vector<size_t>& removed_indices) con
     result.grounded_fluents_ = grounded_fluents_;
     result.initial_state_ = initial_state_;
     result.goals_ = goals_;
+    result.metric_kind_ = metric_kind_;
 
     // Copy all index maps except action (which needs rebuilding)
     result.object_name_to_index_ = object_name_to_index_;
@@ -141,6 +145,7 @@ Problem Problem::with_actions(std::vector<Action> new_actions) const {
     result.fluents_ = fluents_;
     result.initial_state_ = initial_state_;
     result.goals_ = goals_;
+    result.metric_kind_ = metric_kind_;
 
     // Copy index maps (except action and grounded_fluent — those are rebuilt)
     result.object_name_to_index_ = object_name_to_index_;
@@ -174,6 +179,7 @@ Problem Problem::with_additional_initial_state(const std::vector<Assignment>& ex
     result.actions_ = actions_;
     result.grounded_fluents_ = grounded_fluents_;
     result.goals_ = goals_;
+    result.metric_kind_ = metric_kind_;
 
     // Copy all index maps
     result.object_name_to_index_ = object_name_to_index_;
@@ -266,6 +272,18 @@ void Problem::resolve_type_hierarchy() {
             }
         }
     }
+}
+
+bool Problem::has_state_dependent_costs() const {
+    FluentCollector collector(*this);
+    for (const auto& action : actions_) {
+        if (action.has_explicit_cost()) {
+            collector.clear();
+            collector.collect_from_id(action.cost_id());
+            if (collector.has_fluents()) return true;
+        }
+    }
+    return false;
 }
 
 int Problem::find_grounded_fluent_index(ExprID eid) const {

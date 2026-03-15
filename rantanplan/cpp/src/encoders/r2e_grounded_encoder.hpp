@@ -28,6 +28,10 @@ public:
     std::shared_ptr<z3::expr> encode_frames(int t) override;
     std::shared_ptr<z3::expr> encode_parallelism(int t) override;
 
+    /// Evaluate cost at the chain-substituted state σ^t_{prev(i)} that action i
+    /// actually sees under R2E's fixed ordering, making SDAC costs sound.
+    z3::expr convert_cost_to_z3(const Action& action, int timestep) override;
+
 private:
     ActionOrdering action_ordering_;
     

@@ -71,6 +71,10 @@ protected:
 
     void build_epc_index();
 
+public:
+    const auto& get_epc_index() const { return epc_index_; }
+protected:
+
     int layers_encoded_ = -1; // Tracks the highest layer for which transitions are encoded
 
 private:

@@ -113,11 +113,6 @@ private:
         const std::vector<const Action*>& actions) const;
 
     /**
-     * @brief Collect and log statistics for the current search
-     */
-    void collect_statistics();
-
-    /**
      * @brief Calculate the forward stack depth at a given iteration
      * @param iteration Current iteration number
      * @return Number of forward actions (depth of forward stack)

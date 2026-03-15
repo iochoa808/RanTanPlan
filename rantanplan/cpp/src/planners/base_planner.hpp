@@ -89,6 +89,12 @@ public:
      */
     virtual bool solution_found() const = 0;
 
+    /// Whether the planner proved optimality. Default: false (satisficing planners).
+    virtual bool optimality_proven() const { return false; }
+
+    /// Best cost found (only meaningful for cost-optimal planners).
+    virtual double best_cost() const { return 0.0; }
+
     /**
      * @brief Set the propagator strategy for this planner
      * @param propagator The propagator strategy to use
@@ -116,6 +122,17 @@ public:
 protected:
     /// Horizon schedule; concrete planners initialise this from Config in their constructor.
     HorizonSchedule schedule_;
+
+    /// Collect Z3 solver statistics and memory usage into the global Stats singleton.
+    /// Uses get_solver() to access the derived class's solver.
+    void collect_statistics();
+
+    /// Add standard timestep constraints: actions, frames, symmetries, parallelism,
+    /// and propagator variable registration. Optionally includes prefix-monotone
+    /// constraints (omitted by DoubleTailPlanner).
+    static void add_timestep_constraints(z3::solver& solver, BaseEncoder& encoder,
+                                         PropagatorStrategy& propagator, int timestep,
+                                         bool prefix_monotone = true);
 };
 
 } // namespace rantanplan

@@ -59,6 +59,15 @@ public:
     // Helper functions to convert expressions/effects to Z3 using visitor (for propagators)
     virtual z3::expr convert_expr_id_to_z3(ExprID id, int timestep = -1) = 0;
     virtual z3::expr convert_effect_to_z3(const EffectExpression& effect, int timestep) = 0;
+
+    /// Convert an action's cost expression to Z3 at the given timestep.
+    /// The default evaluates the cost at the start-of-timestep state x_t.
+    /// R2EGroundedEncoder overrides this to evaluate at the chain-substituted
+    /// intermediate state σ^t_{prev(i)}, which is the state action i actually
+    /// sees under the fixed R2E ordering. This makes SDAC costs correct for R2E.
+    virtual z3::expr convert_cost_to_z3(const Action& action, int timestep) {
+        return convert_expr_id_to_z3(action.cost_id(), timestep);
+    }
     
     // Plan extraction from Z3 model
     virtual Plan extract_plan(const z3::model& model, int max_timestep) const = 0;

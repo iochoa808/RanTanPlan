@@ -28,24 +28,6 @@ std::string DoubleTailPlanner::get_propagator_strategy_name() const {
     return propagator_strategy_->get_name();
 }
 
-void DoubleTailPlanner::collect_statistics() {
-    auto& stats = Stats::instance();
-
-    // Collect key Z3 solver statistics
-    z3::stats z3_stats = solver_.statistics();
-    for (unsigned i = 0; i < z3_stats.size(); ++i) {
-        std::string key = "z3." + z3_stats.key(i);
-
-        if (z3_stats.is_uint(i)) {
-            stats.set(key, static_cast<double>(z3_stats.uint_value(i)));
-        } else if (z3_stats.is_double(i)) {
-            stats.set(key, z3_stats.double_value(i));
-        }
-    }
-
-    // Add memory info
-    stats.set("memory.current_mb", MemoryTracker::instance().get_current_memory_mb());
-}
 
 std::shared_ptr<z3::expr> DoubleTailPlanner::create_link_constraints(int forward_t, int backward_t) {
     // Create equivalence constraints for all fluents: fluent@forward_t ⟺ fluent@backward_t
@@ -61,17 +43,9 @@ std::shared_ptr<z3::expr> DoubleTailPlanner::create_link_constraints(int forward
 }
 
 void DoubleTailPlanner::add_timestep_constraints(int t) {
-    solver_.add(*encoder_.encode_actions(t));
-    solver_.add(*encoder_.encode_frames(t));
-    solver_.add(*encoder_.encode_symmetries(t));
-
-    // Only add parallelism constraints if propagator doesn't manage them
-    if (!propagator_strategy_->manages_parallelism_constraints()) {
-        solver_.add(*encoder_.encode_parallelism(t));
-    }
-
-    // Register variables for next timestep
-    propagator_strategy_->register_timestep_variables(t + 1);
+    // DoubleTail omits prefix_monotone (not compatible with bidirectional search)
+    BasePlanner::add_timestep_constraints(solver_, encoder_, *propagator_strategy_, t,
+                                          /*prefix_monotone=*/false);
 }
 
 /**
@@ -325,7 +299,7 @@ std::vector<const Action*> DoubleTailPlanner::topologically_sort_actions(
     const std::vector<const Action*>& actions) const {
 
     if (actions.size() <= 1) {
-        return actions;
+        return {actions.begin(), actions.end()};
     }
 
     const ParallelismStrategy* strategy = encoder_.get_parallelism_strategy();

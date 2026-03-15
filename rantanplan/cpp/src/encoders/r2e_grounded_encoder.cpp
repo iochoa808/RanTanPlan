@@ -428,6 +428,16 @@ int R2EGroundedEncoder::get_global_action_index(const Action* action) const {
     return std::distance(global_action_order_.begin(), it) + 1;
 }
 
+z3::expr R2EGroundedEncoder::convert_cost_to_z3(const Action& action, int timestep) {
+    // R2E's fixed ordering means action a_i sees state σ^t_{prev(i)},
+    // not x^t. Apply the same prev_substitution used for preconditions
+    // so that SDAC cost expressions reference the correct intermediate state.
+    z3::expr cost_z3 = convert_expr_id_to_z3(action.cost_id(), timestep);
+    int action_index = get_global_action_index(&action);
+    auto prev_substitution = create_prev_substitution(action_index, timestep);
+    return apply_substitution(cost_z3, prev_substitution, timestep);
+}
+
 Plan R2EGroundedEncoder::extract_plan(const z3::model& model, int max_timestep) const {
     Plan plan;
     const auto& config = Config::instance();

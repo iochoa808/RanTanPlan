@@ -38,38 +38,8 @@ void SequentialPlanner::debug_output_constraints() {
     }
 }
 
-void SequentialPlanner::collect_statistics() {
-    auto& stats = Stats::instance();
-
-    // Collect key Z3 solver statistics (just the important numbers)
-    z3::stats z3_stats = solver_.statistics();
-    for (unsigned i = 0; i < z3_stats.size(); ++i) {
-        std::string key = "z3." + z3_stats.key(i);
-
-        if (z3_stats.is_uint(i)) {
-            stats.set(key, static_cast<double>(z3_stats.uint_value(i)));
-        } else if (z3_stats.is_double(i)) {
-            stats.set(key, z3_stats.double_value(i));
-        }
-    }
-
-    // Add memory info
-    stats.set("memory.current_mb", MemoryTracker::instance().get_current_memory_mb());
-}
-
 void SequentialPlanner::add_timestep_constraints(int timestep) {
-    solver_.add(*encoder_.encode_actions(timestep));
-    solver_.add(*encoder_.encode_frames(timestep));
-    solver_.add(*encoder_.encode_prefix_monotone(timestep));
-    solver_.add(*encoder_.encode_symmetries(timestep));
-
-    // Only add parallelism constraints if propagator doesn't manage them
-    if (!propagator_strategy_->manages_parallelism_constraints()) {
-        solver_.add(*encoder_.encode_parallelism(timestep));
-    }
-
-    // Register variables for next timestep
-    propagator_strategy_->register_timestep_variables(timestep + 1);
+    BasePlanner::add_timestep_constraints(solver_, encoder_, *propagator_strategy_, timestep);
 }
 
 Plan SequentialPlanner::search() {

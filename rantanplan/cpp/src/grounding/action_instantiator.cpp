@@ -75,6 +75,12 @@ Action instantiate_action(ExprPool& pool,
         ground.set_precondition_id(ground_pre);
     }
 
+    // Substitute cost expression.
+    if (lifted_action.has_explicit_cost()) {
+        ExprID ground_cost = substitute(pool, lifted_action.cost_id(), subst);
+        ground.set_cost_id(ground_cost);
+    }
+
     // Substitute each effect.
     for (const auto& eff : lifted_action.effects()) {
         const auto& ee = eff.effect_expression();

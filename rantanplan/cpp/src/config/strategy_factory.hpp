@@ -7,13 +7,16 @@
 #include "../planners/propagators/propagator_strategy.hpp"
 #include "../encoders/parallelism/parallelism_strategy.hpp"
 #include "../encoders/parallelism/interference_analysis.hpp"
+#include "../passes/pass.hpp"
 #include <z3++.h>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace rantanplan {
 
-/// Single point of responsibility for strategy compatibility validation.
+/// Single point of responsibility for strategy compatibility validation
+/// and component creation.
 ///
 /// All rules about which component combinations are legal live here —
 /// both pure spec constraints (e.g. lazy interference + null propagator)
@@ -27,6 +30,15 @@ public:
     static void validate(const StrategySpec& spec,
                          const std::string& strategy_name,
                          const std::string& horizon_schedule);
+
+    /// Adjust a strategy spec for problem-specific constraints (e.g. SDAC +
+    /// exists-step downgrade). Mutates spec in place and logs adjustments.
+    static void adjust_spec(StrategySpec& spec, const Problem& problem);
+
+    /// Configure a planner after creation with pipeline results (e.g. SDAC
+    /// cost lower bounds for B&B). Handles dynamic dispatch internally.
+    static void configure_planner(BasePlanner& planner, const StrategySpec& spec,
+                                  const PipelineResult& pipeline_result);
 
     static std::unique_ptr<BaseEncoder> create_encoder(
         const StrategySpec& spec, const Problem& problem, z3::context& ctx);
@@ -43,7 +55,12 @@ public:
 
     static std::unique_ptr<BasePlanner> create_planner(
         const StrategySpec& spec, const Problem& problem,
-        BaseEncoder& encoder, z3::context& ctx);
+        BaseEncoder& encoder, z3::context& ctx,
+        const InterferenceAnalysis* interference = nullptr);
+
+    /// Whether the given strategy + problem combination requires the
+    /// NumericRPG pass in the pipeline (e.g. B&B + SDAC).
+    static bool needs_numeric_rpg(const StrategySpec& spec, const Problem& problem);
 };
 
 } // namespace rantanplan

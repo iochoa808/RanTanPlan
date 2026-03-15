@@ -31,6 +31,8 @@ QUICK_TEST_DIRS = [
     "pddl/test/rover",
     "pddl/test/gripper-round-1-adl",
     "pddl/test/hydropower",
+    "pddl/test/sdac-simple",
+    "pddl/test/sdac-zero-bound",
 ]
 
 TIMEOUT = 60  # seconds per test
@@ -102,7 +104,8 @@ def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False)
         with OneshotPlanner(name='RantanPlan', params=params) as planner:
             result = planner.solve(prob, timeout=TIMEOUT)
 
-        if result.status != PlanGenerationResultStatus.SOLVED_SATISFICING:
+        if result.status not in (PlanGenerationResultStatus.SOLVED_SATISFICING,
+                                  PlanGenerationResultStatus.SOLVED_OPTIMALLY):
             return False, result.status.name
 
         if result.plan is None:

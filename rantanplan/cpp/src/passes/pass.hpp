@@ -17,9 +17,10 @@ struct PipelineResult {
     Problem problem;                    ///< Current problem (transformed by each pass)
     bool proven_unsolvable = false;     ///< True if any pass proved unsolvability
     std::string unsolvable_reason;      ///< Name of the pass that proved unsolvability
-    int lower_bound = 0;                ///< Max lower bound across all passes so far
+    int lower_bound = 0;               ///< Max lower bound across all passes so far
     std::vector<ObjectSwap> detected_object_swaps; ///< From SymmetryDetectionPass (pre-grounding)
     std::vector<SymmetryInfo> symmetry_data; ///< From SymmetryCompletionPass (post-CWA)
+    std::vector<double> sdac_cost_lower_bounds; ///< SDAC cost lower bounds (from NumericRPGPass); empty if not SDAC
 };
 
 /**

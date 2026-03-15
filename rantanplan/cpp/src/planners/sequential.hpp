@@ -46,10 +46,7 @@ private:
     // Debug method to output constraints for a given timestep
     void debug_output_constraints();
 
-    // Collect comprehensive statistics
-    void collect_statistics();
-
-    // Add constraints for a given timestep (actions, frames, symmetries, parallelism)
+    // Add constraints for a given timestep (delegates to BasePlanner::add_timestep_constraints)
     void add_timestep_constraints(int timestep);
 };
 
