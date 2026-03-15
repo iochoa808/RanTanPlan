@@ -94,10 +94,14 @@ Plan DoubleTailPlanner::search() {
     auto& config = Config::instance();
     auto& stats = Stats::instance();
 
-    Logger::instance().info("Starting double-tail search with propagator: " + propagator_strategy_->get_name());
-    Logger::instance().info("Max horizon = " + std::to_string(max_horizon_));
+    std::string search_msg = "Starting double-tail search with propagator: " + propagator_strategy_->get_name();
+    search_msg += ", max horizon: " + std::to_string(max_horizon_);
+    search_msg += ", timeout: " + format_timeout_string();
+    Logger::instance().info(search_msg);
 
     solution_found_ = false;
+    timed_out_ = false;
+    init_deadline();
 
     // Add invariant constraints: initial state at t=0, goal state at t=max_horizon_
     solver_.add(*encoder_.encode_initial_state());
@@ -114,13 +118,8 @@ Plan DoubleTailPlanner::search() {
     // - Odd iterations (1,3,5,...): add one forward transition
     // - Even iterations (2,4,6,...): add one backward transition
     for (int iteration = 0; iteration <= max_horizon_; ++iteration) {
-        // Check timeout
-        auto current_time = std::chrono::high_resolution_clock::now();
-        auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
-        if (elapsed_seconds >= config.global.timeout) {
-            Logger::instance().info("\n*** TIMEOUT reached after " + std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
-            break;
-        }
+        // Apply Z3 timeout for the remaining budget
+        if (!apply_solver_timeout(solver_)) break;
 
         auto step_start = std::chrono::high_resolution_clock::now();
 
@@ -227,11 +226,15 @@ Plan DoubleTailPlanner::search() {
         } else if (result == z3::unsat) {
             // Continue to next iteration
         } else {
-            Logger::instance().info("Solver returned unknown result at iteration " + std::to_string(iteration));
+            if (handle_unknown_result(solver_, "iteration " + std::to_string(iteration))) break;
         }
     }
 
-    Logger::instance().info("\n*** NO PLAN FOUND within " + std::to_string(max_horizon_) + " iterations ***");
+    if (timed_out_) {
+        Logger::instance().info("No plan found (timeout).");
+    } else {
+        Logger::instance().info("\n*** NO PLAN FOUND within " + std::to_string(max_horizon_) + " iterations ***");
+    }
     collect_statistics();
     propagator_strategy_->cleanup();
     return Plan();

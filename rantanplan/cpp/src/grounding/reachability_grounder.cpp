@@ -275,11 +275,15 @@ GroundingResult ReachabilityGrounder::ground() {
         numeric_bounds = std::make_unique<NumericBoundsIndex>(lifted_problem_);
         numeric_bounds->initialize_from_initial_state();
         numeric_bounds->precompute_freezes();
-        Logger::instance().info("Grounding: numeric interval bounds ENABLED");
+        Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+            {"numeric bounds", "enabled"}
+        });
     }
 
-    Logger::instance().info("Grounding: initial facts = " + std::to_string(facts.total_fact_count()));
-    Logger::instance().info("Grounding: action schemas = " + std::to_string(lifted_problem_.action_count()));
+    Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+        {"initial facts", std::to_string(facts.total_fact_count())},
+        {"action schemas", std::to_string(lifted_problem_.action_count())}
+    });
 
     // Per-schema seen-binding sets for deduplication (full fingerprint, not hash-only).
     std::vector<std::unordered_set<std::vector<int>, FingerprintHash>> seen_bindings(lifted_problem_.action_count());
@@ -411,14 +415,16 @@ GroundingResult ReachabilityGrounder::ground() {
             goal_reachable_layer = iteration;
         }
 
-        std::string log_msg = "Grounding: iteration " + std::to_string(iteration) +
-                      " — new actions=" + std::to_string(new_actions_this_iter) +
-                      ", new facts=" + std::to_string(new_facts_this_iter) +
-                      ", total facts=" + std::to_string(facts.total_fact_count());
+        std::string iter_name = "Grounding I" + std::to_string(iteration);
+        std::vector<std::pair<std::string, std::string>> metrics = {
+            {"new actions", std::to_string(new_actions_this_iter)},
+            {"new facts", std::to_string(new_facts_this_iter)},
+            {"total facts", std::to_string(facts.total_fact_count())}
+        };
         if (use_numeric && pruned_this_iter > 0) {
-            log_msg += ", numeric pruned=" + std::to_string(pruned_this_iter);
+            metrics.push_back({"numeric pruned", std::to_string(pruned_this_iter)});
         }
-        Logger::instance().info(log_msg);
+        Logger::instance().component(VerbosityLevel::INFO, iter_name, metrics);
     }
 
     // Build result.
@@ -428,10 +434,11 @@ GroundingResult ReachabilityGrounder::ground() {
     result.lower_bound         = std::max(0, goal_reachable_layer);
     result.proven_unsolvable   = (goal_reachable_layer < 0);
 
-    Logger::instance().info("Grounding: fixpoint after " + std::to_string(iteration) +
-                  " iterations, " + std::to_string(ground_actions.size()) +
-                  " ground actions, " + std::to_string(facts.total_fact_count()) +
-                  " reachable facts");
+    Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+        {"fixpoint", std::to_string(iteration) + " iterations"},
+        {"actions", std::to_string(ground_actions.size())},
+        {"reachable facts", std::to_string(facts.total_fact_count())}
+    });
 
     if (use_numeric) {
         size_t permanently_pruned = 0;
@@ -442,16 +449,21 @@ GroundingResult ReachabilityGrounder::ground() {
             }
         }
         if (permanently_pruned > 0) {
-            Logger::instance().info("Grounding: actions permanently pruned by numeric bounds = " +
-                          std::to_string(permanently_pruned));
+            Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+                {"numeric pruned", std::to_string(permanently_pruned)}
+            });
             Stats::instance().set("grounding_numeric_pruned", static_cast<int>(permanently_pruned));
         }
     }
 
     if (result.proven_unsolvable) {
-        Logger::instance().info("Grounding: goal UNREACHABLE — problem proven unsolvable");
+        Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+            {"result", "UNSOLVABLE (goals unreachable)"}
+        });
     } else {
-        Logger::instance().info("Grounding: lower bound = " + std::to_string(result.lower_bound));
+        Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+            {"lower bound", std::to_string(result.lower_bound)}
+        });
     }
 
     // Build the grounded problem.

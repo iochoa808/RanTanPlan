@@ -332,6 +332,11 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
             if self._output_plan is not None:
                 command.extend(["--output-plan", self._output_plan])
 
+            # Forward timeout to C++ so Z3 can interrupt long solver calls.
+            # Python's process.wait(timeout) is kept as a safety net with extra margin.
+            if timeout is not None:
+                command.extend(["--timeout", str(int(timeout))])
+
             self._log_verbose(f"Running planner: {' '.join(command)}")
 
             # Run the C++ planner with real-time output streaming
@@ -352,9 +357,11 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
             stdout_thread.start()
             stderr_thread.start()
 
-            # Wait for process to complete with timeout
+            # Wait for process to complete with timeout.
+            # Add margin so C++ can finish writing results after Z3 timeout fires.
+            process_timeout = timeout + 10 if timeout is not None else None
             try:
-                return_code = process.wait(timeout=timeout)
+                return_code = process.wait(timeout=process_timeout)
             except subprocess.TimeoutExpired:
                 process.kill()
                 self._log("Planner timed out.")

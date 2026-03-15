@@ -58,9 +58,12 @@ Plan SequentialPlanner::search() {
     if (config.planner.horizon_schedule != "linear") {
         search_msg += ", schedule: " + config.planner.horizon_schedule;
     }
+    search_msg += ", timeout: " + format_timeout_string();
     Logger::instance().info(search_msg);
 
     solution_found_ = false;
+    timed_out_ = false;
+    init_deadline();
 
     // Add initial state constraints (invariant across all horizons).
     solver_.add(*encoder_.encode_initial_state());
@@ -100,14 +103,8 @@ Plan SequentialPlanner::search() {
     int h             = start_timestep;  // first horizon to check
 
     while (h <= config.planner.max_steps) {
-        // Check timeout
-        auto current_time = std::chrono::high_resolution_clock::now();
-        auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
-        if (elapsed_seconds >= config.global.timeout) {
-            Logger::instance().info("\n*** TIMEOUT reached after " +
-                std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
-            break;
-        }
+        // Check timeout before building formula
+        if (!apply_solver_timeout(solver_)) break;
 
         auto step_start   = std::chrono::high_resolution_clock::now();
         auto formula_start = std::chrono::high_resolution_clock::now();
@@ -186,8 +183,7 @@ Plan SequentialPlanner::search() {
         } else if (result == z3::unsat) {
             // UNSAT at this horizon; advance to the next scheduled horizon.
         } else {
-            Logger::instance().info("Solver returned unknown result at horizon " +
-                std::to_string(h));
+            if (handle_unknown_result(solver_, "horizon " + std::to_string(h))) break;
         }
 
         // Advance to next scheduled horizon.
@@ -196,10 +192,12 @@ Plan SequentialPlanner::search() {
         h = next_h;
     }
 
-    Logger::instance().info("\n*** NO PLAN FOUND within " +
-        std::to_string(config.planner.max_steps) + " timesteps, aborting ***");
-    Logger::instance().info("No plan found within " +
-        std::to_string(config.planner.max_steps) + " timesteps.");
+    if (timed_out_) {
+        Logger::instance().info("No plan found (timeout).");
+    } else {
+        Logger::instance().info("\n*** NO PLAN FOUND within " +
+            std::to_string(config.planner.max_steps) + " timesteps ***");
+    }
 
     collect_statistics();
     propagator_strategy_->cleanup();

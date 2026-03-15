@@ -171,8 +171,15 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
             }
             log_message->set_message(msg);
         }
+    } else if (planner->timed_out()) {
+        result.set_status(PlanGenerationResult_Status_TIMEOUT);
+        if (config.is_info()) {
+            log_message = result.add_log_messages();
+            log_message->set_level(LogMessage_LogLevel_INFO);
+            log_message->set_message("Timeout reached.");
+        }
     } else {
-        // No plan found
+        // No plan found within search limits (max_steps exhausted)
         result.set_status(PlanGenerationResult_Status_UNSOLVABLE_INCOMPLETELY);
         if (config.is_info()) {
             log_message = result.add_log_messages();

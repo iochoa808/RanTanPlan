@@ -99,7 +99,6 @@ public:
                           SemanticsKind semantics);
 
     Plan search() override;
-    bool solution_found() const override { return solution_found_; }
     bool optimality_proven() const override { return optimality_proven_; }
     double best_cost() const override { return best_cost_; }
 
@@ -115,7 +114,6 @@ private:
     BaseEncoder& encoder_;
     z3::context& ctx_;
     z3::solver solver_;
-    bool solution_found_ = false;
     bool optimality_proven_ = false;
     double best_cost_ = 0.0;
     int solution_count_ = 0;

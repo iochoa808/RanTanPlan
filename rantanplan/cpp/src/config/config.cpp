@@ -49,9 +49,9 @@ void Config::validate() const {
     // spec-vs-config constraints).
     StrategyFactory::validate(spec, planner.strategy, planner.horizon_schedule);
 
-    // Validate global settings
-    if (global.timeout <= 0) {
-        throw std::invalid_argument("Timeout must be positive");
+    // Validate global settings (0 = no timeout, any positive value is valid)
+    if (global.timeout < 0) {
+        throw std::invalid_argument("Timeout must be non-negative (0 = no timeout)");
     }
 
     if (planner.max_steps <= 0) {

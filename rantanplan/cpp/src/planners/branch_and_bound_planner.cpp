@@ -89,10 +89,13 @@ Plan BranchAndBoundPlanner::search() {
     if (start_timestep > 0) {
         search_msg += " from timestep " + std::to_string(start_timestep);
     }
+    search_msg += ", timeout: " + format_timeout_string();
     Logger::instance().info(search_msg);
 
     solution_found_ = false;
     optimality_proven_ = false;
+    timed_out_ = false;
+    init_deadline();
 
     // Initialize
     solver_.add(*encoder_.encode_initial_state());
@@ -123,14 +126,8 @@ Plan BranchAndBoundPlanner::search() {
     }
 
     while (h <= config.planner.max_steps) {
-        // Check timeout
-        auto current_time = std::chrono::high_resolution_clock::now();
-        auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
-        if (elapsed_seconds >= config.global.timeout) {
-            Logger::instance().info("\n*** TIMEOUT reached after " +
-                std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
-            break;
-        }
+        // Check timeout before building formula
+        if (!apply_solver_timeout(solver_)) break;
 
         auto step_start = std::chrono::high_resolution_clock::now();
 
@@ -167,11 +164,8 @@ Plan BranchAndBoundPlanner::search() {
         // 5. Inner B&B loop at this horizon
         bool advance_horizon = false;
         while (!advance_horizon) {
-            // Check timeout within inner loop
-            auto inner_time = std::chrono::high_resolution_clock::now();
-            auto inner_elapsed = std::chrono::duration<double>(inner_time - start_time).count();
-            if (inner_elapsed >= config.global.timeout) {
-                Logger::instance().info("\n*** TIMEOUT reached during B&B inner loop ***");
+            // Apply Z3 timeout for the inner loop check too
+            if (!apply_solver_timeout(solver_)) {
                 advance_horizon = true;
                 break;
             }
@@ -258,7 +252,7 @@ Plan BranchAndBoundPlanner::search() {
                     advance_horizon = true;
                 }
             } else {
-                // Unknown — treat as no progress at this horizon
+                handle_unknown_result(solver_, "B&B horizon " + std::to_string(h));
                 advance_horizon = true;
             }
         }
@@ -270,6 +264,8 @@ Plan BranchAndBoundPlanner::search() {
         total_time += step_time;
         stats.add("planner.total_time", step_time);
 
+        if (timed_out_) break;
+
         int next_h = schedule_.next(h, config.planner.max_steps);
         if (next_h <= h) break;
         h = next_h;
@@ -280,11 +276,16 @@ Plan BranchAndBoundPlanner::search() {
 
     if (solution_found_) {
         best_cost_ = upper_bound;
+        std::string reason = timed_out_ ? "timeout" : "search limit";
         Logger::instance().info(
             "\n*** BEST PLAN FOUND: horizon=" + std::to_string(h) +
             ", actions=" + std::to_string(best_plan.length()) +
             ", cost=" + std::to_string(upper_bound) +
-            " (optimality not proven, total time: " +
+            " (optimality not proven — " + reason +
+            ", total time: " + std::to_string(total_time) + "s) ***");
+    } else if (timed_out_) {
+        Logger::instance().info(
+            "\n*** NO PLAN FOUND (timeout after " +
             std::to_string(total_time) + "s) ***");
     } else {
         Logger::instance().info(

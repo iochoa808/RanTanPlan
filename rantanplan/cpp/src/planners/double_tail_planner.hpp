@@ -44,7 +44,6 @@ public:
 
     // BasePlanner interface implementation
     Plan search() override;
-    bool solution_found() const override { return solution_found_; }
     void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) override;
     std::string get_propagator_strategy_name() const override;
     z3::solver& get_solver() override { return solver_; }
@@ -55,7 +54,6 @@ private:
     BaseEncoder& encoder_;
     z3::context& ctx_;
     z3::solver solver_;
-    bool solution_found_ = false;
     std::unique_ptr<PropagatorStrategy> propagator_strategy_;
     int max_horizon_;  // Upper bound for backward stack timestep
 

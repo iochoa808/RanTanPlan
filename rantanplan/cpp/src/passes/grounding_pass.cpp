@@ -6,7 +6,7 @@
 namespace rantanplan {
 
 void GroundingPass::apply(PipelineResult& result) const {
-    Logger::instance().info("Running reachability grounding...");
+    Logger::instance().component(VerbosityLevel::INFO, "Grounding", {{"status", "starting"}});
 
     ReachabilityGrounder grounder(result.problem);
     GroundingResult gr = grounder.ground();
@@ -26,9 +26,10 @@ void GroundingPass::apply(PipelineResult& result) const {
         result.unsolvable_reason = name();
     }
 
-    Logger::instance().info("Grounding pass complete: " +
-                  std::to_string(gr.ground_action_count) + " ground actions, " +
-                  std::to_string(gr.iterations) + " iterations");
+    Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+        {"complete", std::to_string(gr.ground_action_count) + " actions, " +
+                     std::to_string(gr.iterations) + " iterations"}
+    });
 }
 
 } // namespace rantanplan

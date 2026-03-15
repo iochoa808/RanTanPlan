@@ -23,9 +23,6 @@ public:
     // BasePlanner interface implementation
     Plan search() override;
 
-    // Check if the last search found a solution (even if empty plan)
-    bool solution_found() const override { return solution_found_; }
-
     // Strategy management
     void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) override;
     std::string get_propagator_strategy_name() const override;
@@ -38,7 +35,6 @@ private:
     BaseEncoder& encoder_;
     z3::context& ctx_;
     z3::solver solver_;  // Solver to maintain current constraints state
-    bool solution_found_ = false;  // Track if last search found a solution
 
     // Propagator strategy for custom propagation (defaults to null propagator)
     std::unique_ptr<PropagatorStrategy> propagator_strategy_;

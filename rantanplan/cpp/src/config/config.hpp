@@ -20,7 +20,7 @@ public:
     struct Global {
         VerbosityLevel verbosity = VerbosityLevel::INFO;
         bool debug_mode = false;
-        int timeout = 3600;
+        int timeout = 0;  // 0 = no timeout (run indefinitely)
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
         bool enable_action_removal = false;  // Enable RPG-based action removal (disabled by default; enabled automatically for --up-grounding)

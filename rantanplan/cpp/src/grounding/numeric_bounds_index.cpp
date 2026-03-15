@@ -331,9 +331,10 @@ void NumericBoundsIndex::precompute_freezes() {
     if (!freeze_upper_.empty() || !freeze_lower_.empty()) {
         size_t upper_count = freeze_upper_.size();
         size_t lower_count = freeze_lower_.size();
-        Logger::instance().info("Grounding: freeze analysis — " +
-            std::to_string(upper_count) + " upper frozen, " +
-            std::to_string(lower_count) + " lower frozen");
+        Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+            {"freeze analysis", std::to_string(upper_count) + " upper, " +
+                                std::to_string(lower_count) + " lower"}
+        });
 
         // for (const auto& fluent : problem_.fluents()) {
         //     if (!fluent.is_function()) continue;
