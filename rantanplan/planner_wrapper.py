@@ -45,6 +45,8 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
         self._log_file = options.get('log_file')  # None if not specified
         self._up_grounding = options.get('up_grounding', False)
         self._numeric_grounding = options.get('numeric_grounding', True)
+        self._mode = options.get('mode')  # None if not specified
+        self._output_plan = options.get('output_plan')  # None if not specified
 
     # ── Verbosity helpers ────────────────────────────────────────────────
     # Verbosity levels: silent < info (default/None) < verbose < debug
@@ -323,6 +325,12 @@ class RantanPlanPlanner(Engine, OneshotPlannerMixin):
 
             if not self._numeric_grounding:
                 command.append("--no-numeric-grounding")
+
+            if self._mode is not None:
+                command.extend(["--mode", self._mode])
+
+            if self._output_plan is not None:
+                command.extend(["--output-plan", self._output_plan])
 
             self._log_verbose(f"Running planner: {' '.join(command)}")
 

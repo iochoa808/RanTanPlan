@@ -239,6 +239,14 @@ Plan BranchAndBoundPlanner::search() {
                     upper_bound = plan_cost;
                     best_plan = encoder_.extract_plan(model, h);
                     solution_found_ = true;
+                    solution_count_++;
+
+                    auto now = std::chrono::high_resolution_clock::now();
+                    double elapsed = std::chrono::duration<double>(now - start_time).count();
+                    bool unit = (problem_.metric_kind() != MetricKind::MINIMIZE_ACTION_COSTS);
+                    best_plan.write_ipc(config.planner.output_plan, solution_count_,
+                                        upper_bound, unit,
+                                        config.planner.strategy, config.planner.mode, elapsed);
 
                     Logger::instance().info(
                         "  Improved plan: cost=" + std::to_string(upper_bound) +

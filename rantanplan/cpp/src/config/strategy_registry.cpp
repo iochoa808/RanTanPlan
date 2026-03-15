@@ -32,19 +32,6 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         {"r2e",                            {E::R2E,      S::Sequential, I::EagerSyntactic,  P::Null,              K::Sequential}},
         {"dec",                            {E::Chained,  S::Exists,     I::LazySemantic,    P::DecisionHeuristic, K::Sequential}},
 
-        // Branch-and-bound optimal
-        {"r2e-opt",                        {E::R2E,      S::Sequential, I::EagerSyntactic,  P::Null,              K::BranchAndBound}},
-        {"seq-opt",                        {E::Grounded, S::Sequential, I::EagerSyntactic,  P::Null,              K::BranchAndBound}},
-        {"forall-opt",                     {E::Grounded, S::Forall,     I::EagerSyntactic,  P::Null,              K::BranchAndBound}},
-        {"forall-prop-opt",                {E::Grounded, S::Forall,     I::EagerSyntactic,  P::Forall,            K::BranchAndBound}},
-        {"forall-lazy-opt",                {E::Grounded, S::Forall,     I::LazySyntactic,   P::LazyForall,        K::BranchAndBound}},
-        {"forall-lazy-semantic-opt",       {E::Grounded, S::Forall,     I::LazySemantic,    P::LazyForall,        K::BranchAndBound}},
-        {"forall-lazy-semantic-chain-opt", {E::Chained,  S::Forall,     I::LazySemantic,    P::LazyForall,        K::BranchAndBound}},
-        {"exists-opt",                     {E::Grounded, S::Exists,     I::EagerSyntactic,  P::Null,              K::BranchAndBound}},
-        {"exists-lazy-opt",                {E::Grounded, S::Exists,     I::LazySyntactic,   P::Exists,            K::BranchAndBound}},
-        {"exists-lazy-semantic-opt",       {E::Grounded, S::Exists,     I::LazySemantic,    P::Exists,            K::BranchAndBound}},
-        {"exists-lazy-semantic-chain-opt", {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::BranchAndBound}},
-
         // Experimental eager-semantic
         {"forall-eager-semantic",          {E::Grounded, S::Forall,     I::EagerSemantic,   P::Null,              K::Sequential}},
         {"forall-eager-semantic-chain",    {E::Chained,  S::Forall,     I::EagerSemantic,   P::Null,              K::Sequential}},

@@ -12,6 +12,7 @@
 #include "config/config.hpp"
 #include "config/strategy_registry.hpp"
 #include "config/strategy_factory.hpp"
+#include "config/strategy_spec.hpp"
 #include "problem/problem.hpp"
 #include "problem/protobuf_io.hpp"
 #include "planners/sequential.hpp"
@@ -117,7 +118,9 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
     z3::context ctx;
 
     rantanplan::StrategySpec spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
-    rantanplan::Logger::instance().info("Using strategy: " + config.planner.strategy);
+    rantanplan::SearchMode search_mode = rantanplan::parse_search_mode(config.planner.mode);
+    spec.planner = rantanplan::resolve_planner_kind(search_mode, spec);
+    rantanplan::Logger::instance().info("Using strategy: " + config.planner.strategy + " (mode: " + config.planner.mode + ")");
     rantanplan::StrategyFactory::adjust_spec(spec, problem);
 
     auto encoder = rantanplan::StrategyFactory::create_encoder(spec, problem, ctx);
@@ -242,6 +245,8 @@ int main(int argc, char* argv[]) {
     std::vector<const rantanplan::Pass*> passes;
 
     rantanplan::StrategySpec pipeline_spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
+    pipeline_spec.planner = rantanplan::resolve_planner_kind(
+        rantanplan::parse_search_mode(config.planner.mode), pipeline_spec);
     bool need_numeric_rpg = config.global.use_numeric_rpg ||
         rantanplan::StrategyFactory::needs_numeric_rpg(pipeline_spec, planning_problem);
 

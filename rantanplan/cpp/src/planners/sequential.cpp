@@ -167,6 +167,10 @@ Plan SequentialPlanner::search() {
                     ", actions=" + std::to_string(plan.length()) +
                     " (total time: " + std::to_string(total_time) + "s) ***");
 
+                plan.write_ipc(config.planner.output_plan, 1,
+                               -1.0, true,
+                               config.planner.strategy, config.planner.mode, total_time);
+
                 stats.set("planner.plan_length",      static_cast<double>(plan.length()));
                 stats.set("planner.solution_horizon", static_cast<double>(h));
                 collect_statistics();

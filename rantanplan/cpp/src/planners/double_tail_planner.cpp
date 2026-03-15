@@ -208,6 +208,11 @@ Plan DoubleTailPlanner::search() {
 
             try {
                 Plan plan = extract_plan(model, iteration);
+
+                plan.write_ipc(config.planner.output_plan, 1,
+                               -1.0, true,
+                               config.planner.strategy, config.planner.mode, total_time);
+
                 stats.set("planner.plan_length", static_cast<double>(plan.length()));
                 stats.set("planner.solution_timestep", static_cast<double>(iteration));
                 collect_statistics();

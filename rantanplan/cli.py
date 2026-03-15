@@ -38,6 +38,12 @@ Use --list-strategies to see available strategies and their descriptions.
     # Strategy selection
     parser.add_argument("--strategy", type=str,
                        help="Planning strategy to use")
+    parser.add_argument("--mode",
+                       choices=["satisficing", "optimal", "anytime"],
+                       default=None,
+                       help="Search mode: satisficing (first plan, default), "
+                            "optimal (cost-optimal with proof), "
+                            "anytime (keep improving, write intermediate plans)")
 
     # List strategies
     parser.add_argument("--list-strategies", action="store_true",
@@ -149,6 +155,10 @@ def solve_problem(problem, args):
         planner_params['up_grounding'] = True
     if args.no_numeric_grounding:
         planner_params['numeric_grounding'] = False
+    if args.mode is not None:
+        planner_params['mode'] = args.mode
+    if args.output_plan:
+        planner_params['output_plan'] = args.output_plan
     # Handle verbosity
     if args.silent:
         planner_params['verbosity'] = "silent"
@@ -235,13 +245,7 @@ def main():
                 params = ", ".join(map(str, action.actual_parameters))
                 print(f"  {i+1}. {action.action.name}({params})")
 
-        if args.output_plan:
-            with open(args.output_plan, 'w') as f:
-                for i, action in enumerate(result.plan.actions):
-                    params = ", ".join(map(str, action.actual_parameters))
-                    f.write(f"{i+1}. {action.action.name}({params})\n")
-            if not args.silent:
-                print(f"Plan saved to: {args.output_plan}")
+        # Plan files are written by the C++ backend in IPC format
     else:
         if not args.silent:
             print("No plan found")

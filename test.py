@@ -88,7 +88,7 @@ def find_problems(quick=False):
 # Single test
 # ---------------------------------------------------------------------------
 
-def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False):
+def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False, mode=None):
     """Run one test. Returns (passed: bool, detail: str)."""
     try:
         reader = PDDLReader()
@@ -100,6 +100,8 @@ def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False)
         }
         if up_grounding:
             params['up_grounding'] = True
+        if mode is not None:
+            params['mode'] = mode
 
         with OneshotPlanner(name='RantanPlan', params=params) as planner:
             result = planner.solve(prob, timeout=TIMEOUT)
@@ -126,6 +128,25 @@ def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False)
 # Main
 # ---------------------------------------------------------------------------
 
+## Strategies to test with --mode optimal (replaces the old -opt registry entries)
+OPTIMAL_MODE_STRATEGIES = [
+    "seq", "r2e",
+    "forall", "forall-prop", "forall-lazy", "forall-lazy-semantic", "forall-lazy-semantic-chain",
+    "exists", "exists-lazy", "exists-lazy-semantic", "exists-lazy-semantic-chain",
+]
+
+
+def build_test_configs(strategies):
+    """Build list of (strategy, mode, label) tuples to test."""
+    configs = []
+    for s in strategies:
+        configs.append((s, None, s))
+    for s in OPTIMAL_MODE_STRATEGIES:
+        if s in strategies:
+            configs.append((s, "optimal", f"{s} --mode optimal"))
+    return configs
+
+
 def main():
     parser = argparse.ArgumentParser(description="RantanPlan test suite")
     parser.add_argument("--quick", action="store_true",
@@ -143,28 +164,30 @@ def main():
         print("No PDDL problems found.")
         sys.exit(1)
 
-    total = len(problems) * len(strategies)
+    configs = build_test_configs(strategies)
+    total = len(problems) * len(configs)
     print(f"\n{C.BOLD}RantanPlan Test Suite{C.END}")
-    print(f"{len(problems)} domains x {len(strategies)} strategies = {total} tests\n")
+    print(f"{len(problems)} domains x {len(configs)} configs = {total} tests\n")
 
     passed = failed = 0
     failures = []
     test_num = 0
 
     for name, domain, problem_file in problems:
-        for strategy in strategies:
+        for strategy, mode, label in configs:
             test_num += 1
-            label = f"{name} / {strategy}"
-            print(f"  [{test_num}/{total}] {label}... ", end="", flush=True)
+            test_label = f"{name} / {label}"
+            print(f"  [{test_num}/{total}] {test_label}... ", end="", flush=True)
 
             ok, detail = run_test(name, domain, problem_file, strategy,
-                                  verbose=args.verbose, up_grounding=args.up_grounding)
+                                  verbose=args.verbose, up_grounding=args.up_grounding,
+                                  mode=mode)
             if ok:
                 passed += 1
                 print(f"{C.GREEN}PASS{C.END} ({detail})")
             else:
                 failed += 1
-                failures.append((label, detail))
+                failures.append((test_label, detail))
                 print(f"{C.RED}FAIL{C.END} ({detail})")
 
     # Summary

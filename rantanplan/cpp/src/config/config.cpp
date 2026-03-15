@@ -2,6 +2,7 @@
 #include "cli_parser.hpp"
 #include "strategy_registry.hpp"
 #include "strategy_factory.hpp"
+#include "strategy_spec.hpp"
 #include <stdexcept>
 
 namespace rantanplan {
@@ -37,10 +38,15 @@ void Config::validate() const {
             "'. Valid values: linear, arithmetic, geometric, doubling");
     }
 
+    // Validate search mode and resolve planner kind (may throw if mode
+    // is incompatible with the strategy, e.g. optimal + double-tail).
+    auto spec = StrategyRegistry::get(planner.strategy);
+    SearchMode mode = parse_search_mode(planner.mode);
+    spec.planner = resolve_planner_kind(mode, spec);
+
     // Strategy compatibility validation (single point of responsibility
     // in StrategyFactory::validate — covers both spec-internal and
     // spec-vs-config constraints).
-    const auto& spec = StrategyRegistry::get(planner.strategy);
     StrategyFactory::validate(spec, planner.strategy, planner.horizon_schedule);
 
     // Validate global settings

@@ -118,6 +118,7 @@ private:
     bool solution_found_ = false;
     bool optimality_proven_ = false;
     double best_cost_ = 0.0;
+    int solution_count_ = 0;
     std::unique_ptr<PropagatorStrategy> propagator_strategy_;
 
     AbstractSuffixEncoder abstract_;
