@@ -13,7 +13,7 @@ using K = PlannerKind;
 const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
     static const std::map<std::string, StrategySpec> registry = {
         // Sequential
-        {"seq",                            {E::Grounded, S::Sequential, I::EagerSyntactic,  P::Null,              K::Sequential}},
+        {"seq",                            {E::Grounded, S::Sequential, I::None,             P::Null,              K::Sequential}},
 
         // Forall variants
         {"forall",                         {E::Grounded, S::Forall,     I::EagerSyntactic,  P::Null,              K::Sequential}},
@@ -29,7 +29,7 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         {"exists-lazy-semantic-chain",     {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::Sequential}},
 
         // Special strategies
-        {"r2e",                            {E::R2E,      S::Sequential, I::EagerSyntactic,  P::Null,              K::Sequential}},
+        {"r2e",                            {E::R2E,      S::Sequential, I::None,             P::Null,              K::Sequential}},
         {"dec",                            {E::Chained,  S::Exists,     I::LazySemantic,    P::DecisionHeuristic, K::Sequential}},
 
         // Experimental eager-semantic
@@ -39,7 +39,7 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         {"exists-eager-semantic-chain",    {E::Chained,  S::Exists,     I::EagerSemantic,   P::Null,              K::Sequential}},
 
         // Double-tail sequential
-        {"seq-dt",                         {E::Grounded, S::Sequential, I::EagerSyntactic,  P::Null,              K::DoubleTail}},
+        {"seq-dt",                         {E::Grounded, S::Sequential, I::None,             P::Null,              K::DoubleTail}},
 
         // Double-tail forall
         {"forall-dt",                      {E::Grounded, S::Forall,     I::EagerSyntactic,  P::Null,              K::DoubleTail}},

@@ -35,8 +35,8 @@ static bool is_lazy(InterferenceKind kind) {
            kind == InterferenceKind::LazySemantic;
 }
 
-static bool is_eager(InterferenceKind kind) {
-    return !is_lazy(kind);
+static bool is_none(InterferenceKind kind) {
+    return kind == InterferenceKind::None;
 }
 
 void StrategyFactory::validate(const StrategySpec& spec,
@@ -60,6 +60,14 @@ void StrategyFactory::validate(const StrategySpec& spec,
 
     // Eager interference with lazy-only propagators is valid but unusual.
     // No hard constraint — eager provides a superset of lazy's interface.
+
+    // No interference is only valid with sequential semantics (which has
+    // built-in at-most-one constraint and doesn't need interference analysis).
+    if (is_none(spec.interference) && spec.semantics != SemanticsKind::Sequential) {
+        throw std::invalid_argument(
+            "No interference analysis requires Sequential semantics "
+            "(Forall/Exists semantics need interference for mutex constraints)");
+    }
 
     // DecisionHeuristicPropagator is designed for exists semantics.
     if (spec.propagator == PropagatorKind::DecisionHeuristic &&
@@ -167,6 +175,8 @@ std::unique_ptr<ParallelismStrategy> StrategyFactory::create_parallelism(
 std::unique_ptr<InterferenceAnalysis> StrategyFactory::create_interference(
     const StrategySpec& spec, const Problem& problem) {
     switch (spec.interference) {
+        case InterferenceKind::None:
+            return nullptr;
         case InterferenceKind::EagerSyntactic:
             return std::make_unique<EagerInterferenceAnalysis>(problem);
         case InterferenceKind::EagerSemantic:

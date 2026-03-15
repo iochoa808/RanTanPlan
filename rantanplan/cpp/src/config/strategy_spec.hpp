@@ -7,7 +7,7 @@ namespace rantanplan {
 
 enum class EncoderFamily { Grounded, Chained, R2E };
 enum class SemanticsKind { Sequential, Forall, Exists };
-enum class InterferenceKind { EagerSyntactic, EagerSemantic, LazySyntactic, LazySemantic };
+enum class InterferenceKind { None, EagerSyntactic, EagerSemantic, LazySyntactic, LazySemantic };
 enum class PropagatorKind { Null, Forall, LazyForall, Exists, DecisionHeuristic };
 enum class PlannerKind { Sequential, DoubleTail, BranchAndBound };
 
