@@ -103,7 +103,8 @@ def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False,
         if mode is not None:
             params['mode'] = mode
 
-        with OneshotPlanner(name='RantanPlan', params=params) as planner:
+        engine_name = 'RantanPlan-optimal' if mode == 'optimal' else 'RantanPlan'
+        with OneshotPlanner(name=engine_name, params=params) as planner:
             result = planner.solve(prob, timeout=TIMEOUT)
 
         if result.status not in (PlanGenerationResultStatus.SOLVED_SATISFICING,

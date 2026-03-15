@@ -115,16 +115,8 @@ Use --list-strategies to see available strategies and their descriptions.
 
 
 
-def solve_problem(problem, args):
-    """Solve problem using selected strategy."""
-    try:
-        from unified_planning.shortcuts import OneshotPlanner
-        import rantanplan
-    except ImportError as e:
-        print(f"Error: Failed to import dependencies: {e}")
-        return None
-
-    # Build planner parameters with strategy name
+def _build_planner_params(args) -> Dict[str, object]:
+    """Build planner parameters dictionary from CLI arguments."""
     planner_params: Dict[str, object] = {
         'strategy': args.strategy,
     }
@@ -167,16 +159,46 @@ def solve_problem(problem, args):
     elif args.verbose >= 2:
         planner_params['verbosity'] = "debug"
 
+    return planner_params
+
+
+def solve_problem(problem, args):
+    """Solve problem using selected strategy and mode."""
+    try:
+        from unified_planning.shortcuts import OneshotPlanner, AnytimePlanner
+        from unified_planning.engines import PlanGenerationResultStatus
+        import rantanplan
+    except ImportError as e:
+        print(f"Error: Failed to import dependencies: {e}")
+        return None
+
+    planner_params = _build_planner_params(args)
+
     # Show configuration info
     if not args.silent and args.verbose >= 1:
         print(f"Strategy: {args.strategy}")
 
     try:
-        # Cast to Any to avoid static typing issues with UP engines
         PlannerClass: Any = OneshotPlanner
-        with PlannerClass(name='RantanPlan', params=planner_params) as planner:  # type: ignore[func-returns-value]
-            result = planner.solve(problem, timeout=args.timeout)  # type: ignore[attr-defined]
-            return result
+
+        if args.mode == "anytime":
+            with AnytimePlanner(name='RantanPlan-anytime', params=planner_params) as planner:
+                last_result = None
+                for result in planner.get_solutions(problem, timeout=args.timeout):
+                    if result.status == PlanGenerationResultStatus.INTERMEDIATE:
+                        if not args.silent and result.plan:
+                            print(f"Improving plan found ({len(result.plan.actions)} actions)")
+                    last_result = result
+                return last_result
+        elif args.mode == "optimal":
+            with PlannerClass(name='RantanPlan-optimal', params=planner_params) as planner:
+                result = planner.solve(problem, timeout=args.timeout)
+                return result
+        else:
+            # satisficing (default)
+            with PlannerClass(name='RantanPlan', params=planner_params) as planner:
+                result = planner.solve(problem, timeout=args.timeout)
+                return result
     except Exception as e:
         print(f"Error during planning: {e}")
         return None
