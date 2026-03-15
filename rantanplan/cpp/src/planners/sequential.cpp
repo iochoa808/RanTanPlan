@@ -14,16 +14,13 @@
 namespace rantanplan {
 
     SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
-        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx) {
-        // Initialize planner with the given problem, encoder, and Z3 context
-        // Propagator must be set via set_propagator_strategy() before search()
+        : BasePlanner(problem, encoder, ctx) {
     }
 
     SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx,
                                        std::unique_ptr<PropagatorStrategy> propagator)
-        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
-          propagator_strategy_(std::move(propagator)) {
-        // Initialize planner with the given problem, encoder, Z3 context, and propagator strategy
+        : BasePlanner(problem, encoder, ctx) {
+        propagator_strategy_ = std::move(propagator);
     }
 
 void SequentialPlanner::debug_output_constraints() {
@@ -204,13 +201,5 @@ Plan SequentialPlanner::search() {
     return Plan();
 }
 
-
-void SequentialPlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) {
-    propagator_strategy_ = std::move(propagator);
-}
-
-std::string SequentialPlanner::get_propagator_strategy_name() const {
-    return propagator_strategy_->get_name();
-}
 
 } // namespace rantanplan

@@ -95,7 +95,6 @@ add_executable(rantanplan
     src/encoders/grounded_encoder.cpp
     src/encoders/chained_grounded_encoder.cpp
     src/encoders/r2e_grounded_encoder.cpp
-    src/encoders/reified_grounded_encoder.cpp
     src/encoders/parallelism/interference_analyzer.cpp
     src/encoders/parallelism/interference_analysis.cpp
     src/encoders/parallelism/eager_interference_analysis.cpp

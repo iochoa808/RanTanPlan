@@ -1,17 +1,8 @@
 #include "exists_semantics.hpp"
 #include "../../problem/action.hpp"
 #include "../../util/stats.hpp"
-#include <iostream>
 
 namespace rantanplan {
-
-void ExistsSemantics::initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) {
-    problem_ = &problem;
-    ctx_ = &ctx;
-    variable_factory_ = &var_factory;
-
-    std::cout << "ExistsSemantics initialized" << std::endl;
-}
 
 std::shared_ptr<z3::expr> ExistsSemantics::encode_parallelism(int timestep) {
     // Get the interference graph from the analyzer
@@ -55,12 +46,9 @@ std::shared_ptr<z3::expr> ExistsSemantics::encode_parallelism(int timestep) {
     
     // Combine all mutex constraints with logical AND
     if (mutex_constraints.empty()) {
-        std::cout << "ExistsSemantics: Generated 0 mutex constraints for timestep " << timestep << std::endl;
         return std::make_shared<z3::expr>(ctx_->bool_val(true));
     }
-    
-    std::cout << "ExistsSemantics: Generated " << mutex_constraints.size() << " mutex constraints for timestep " << timestep << std::endl;
-    
+
     auto& stats = Stats::instance();
     stats.add("encoder.mutex_constraints", mutex_constraints.size());
     

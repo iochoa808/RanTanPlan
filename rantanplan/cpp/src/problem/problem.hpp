@@ -192,6 +192,9 @@ private:
     std::unordered_map<ExprID, size_t> grounded_fluent_to_index_;
     std::unordered_map<std::string, const Type*> type_name_to_ptr_;
     
+    /// Create a copy with all shared members. Used by without_actions/with_actions/etc.
+    Problem clone_base() const;
+
     void build_object_mappings();
     void build_fluent_mappings();
     void build_action_mappings();

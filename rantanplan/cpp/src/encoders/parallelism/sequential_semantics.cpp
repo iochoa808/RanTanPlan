@@ -1,15 +1,8 @@
 #include "sequential_semantics.hpp"
 #include "../../problem/action.hpp"
 #include "../../util/stats.hpp"
-#include <iostream>
 
 namespace rantanplan {
-
-void SequentialSemantics::initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) {
-    problem_ = &problem;
-    ctx_ = &ctx;
-    variable_factory_ = &var_factory;
-}
 
 std::shared_ptr<z3::expr> SequentialSemantics::encode_parallelism(int timestep) {
     // Create a vector of all action variables at timestep

@@ -100,9 +100,7 @@ const Type* Problem::find_type(const std::string& name) const {
     return nullptr;
 }
 
-Problem Problem::without_actions(const std::vector<size_t>& removed_indices) const {
-    std::unordered_set<size_t> removed_set(removed_indices.begin(), removed_indices.end());
-
+Problem Problem::clone_base() const {
     Problem result;
     result.domain_name_ = domain_name_;
     result.problem_name_ = problem_name_;
@@ -110,18 +108,28 @@ Problem Problem::without_actions(const std::vector<size_t>& removed_indices) con
     result.pool_ = pool_;                 // shared_ptr — same ExprPool
     result.objects_ = objects_;            // Type* point into shared types_ — valid
     result.fluents_ = fluents_;            // Type* point into shared types_ — valid
+    result.actions_ = actions_;
     result.grounded_fluents_ = grounded_fluents_;
     result.initial_state_ = initial_state_;
     result.goals_ = goals_;
     result.metric_kind_ = metric_kind_;
 
-    // Copy all index maps except action (which needs rebuilding)
     result.object_name_to_index_ = object_name_to_index_;
     result.fluent_name_to_index_ = fluent_name_to_index_;
+    result.action_name_to_index_ = action_name_to_index_;
     result.grounded_fluent_to_index_ = grounded_fluent_to_index_;
-    result.type_name_to_ptr_ = type_name_to_ptr_;  // pointers into shared types_ — valid
+    result.type_name_to_ptr_ = type_name_to_ptr_;
+
+    return result;
+}
+
+Problem Problem::without_actions(const std::vector<size_t>& removed_indices) const {
+    std::unordered_set<size_t> removed_set(removed_indices.begin(), removed_indices.end());
+
+    Problem result = clone_base();
 
     // Filter actions, re-index IDs
+    result.actions_.clear();
     result.actions_.reserve(actions_.size() - removed_set.size());
     int new_id = 0;
     for (size_t i = 0; i < actions_.size(); ++i) {
@@ -136,23 +144,9 @@ Problem Problem::without_actions(const std::vector<size_t>& removed_indices) con
 }
 
 Problem Problem::with_actions(std::vector<Action> new_actions) const {
-    Problem result;
-    result.domain_name_ = domain_name_;
-    result.problem_name_ = problem_name_;
-    result.types_ = types_;
-    result.pool_ = pool_;
-    result.objects_ = objects_;
-    result.fluents_ = fluents_;
-    result.initial_state_ = initial_state_;
-    result.goals_ = goals_;
-    result.metric_kind_ = metric_kind_;
+    Problem result = clone_base();
 
-    // Copy index maps (except action and grounded_fluent — those are rebuilt)
-    result.object_name_to_index_ = object_name_to_index_;
-    result.fluent_name_to_index_ = fluent_name_to_index_;
-    result.type_name_to_ptr_ = type_name_to_ptr_;
-
-    // Set new actions with contiguous IDs
+    // Replace actions with contiguous IDs
     result.actions_ = std::move(new_actions);
     for (size_t i = 0; i < result.actions_.size(); ++i) {
         result.actions_[i].set_id(static_cast<int>(i));
@@ -169,27 +163,7 @@ Problem Problem::with_actions(std::vector<Action> new_actions) const {
 Problem Problem::with_additional_initial_state(const std::vector<Assignment>& extra_assignments) const {
     if (extra_assignments.empty()) return *this;
 
-    Problem result;
-    result.domain_name_ = domain_name_;
-    result.problem_name_ = problem_name_;
-    result.types_ = types_;
-    result.pool_ = pool_;
-    result.objects_ = objects_;
-    result.fluents_ = fluents_;
-    result.actions_ = actions_;
-    result.grounded_fluents_ = grounded_fluents_;
-    result.goals_ = goals_;
-    result.metric_kind_ = metric_kind_;
-
-    // Copy all index maps
-    result.object_name_to_index_ = object_name_to_index_;
-    result.fluent_name_to_index_ = fluent_name_to_index_;
-    result.action_name_to_index_ = action_name_to_index_;
-    result.grounded_fluent_to_index_ = grounded_fluent_to_index_;
-    result.type_name_to_ptr_ = type_name_to_ptr_;
-
-    // Append extra assignments to the initial state
-    result.initial_state_ = initial_state_;
+    Problem result = clone_base();
     result.initial_state_.insert(result.initial_state_.end(),
                                   extra_assignments.begin(),
                                   extra_assignments.end());

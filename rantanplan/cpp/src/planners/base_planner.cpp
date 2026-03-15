@@ -6,6 +6,19 @@
 
 namespace rantanplan {
 
+BasePlanner::BasePlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
+    : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
+      propagator_strategy_(nullptr) {
+}
+
+void BasePlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) {
+    propagator_strategy_ = std::move(propagator);
+}
+
+std::string BasePlanner::get_propagator_strategy_name() const {
+    return propagator_strategy_->get_name();
+}
+
 void BasePlanner::init_deadline() {
     auto& config = Config::instance();
     if (config.global.timeout > 0) {

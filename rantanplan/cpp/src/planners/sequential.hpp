@@ -23,22 +23,7 @@ public:
     // BasePlanner interface implementation
     Plan search() override;
 
-    // Strategy management
-    void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) override;
-    std::string get_propagator_strategy_name() const override;
-
-    // Get solver reference (for creating propagators)
-    z3::solver& get_solver() override { return solver_; }
-
 private:
-    const Problem& problem_;
-    BaseEncoder& encoder_;
-    z3::context& ctx_;
-    z3::solver solver_;  // Solver to maintain current constraints state
-
-    // Propagator strategy for custom propagation (defaults to null propagator)
-    std::unique_ptr<PropagatorStrategy> propagator_strategy_;
-    
     // Debug method to output constraints for a given timestep
     void debug_output_constraints();
 

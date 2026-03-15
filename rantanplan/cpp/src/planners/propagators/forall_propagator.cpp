@@ -3,7 +3,7 @@
 #include "../../encoders/z3_variable_factory.hpp"
 #include "../../encoders/parallelism/interference_analysis.hpp"
 #include "../../util/stats.hpp"
-#include <iostream>
+
 #include <set>
 #include <cassert>
 
@@ -120,9 +120,7 @@ void ForallPropagator::build_reverse_interference_lookup() {
             actions_interfering_with_[target_node].insert(node_id);
         }
     }
-    
-    std::cout << "Built reverse interference lookup for " 
-              << actions_interfering_with_.size() << " node IDs" << std::endl;
+
 }
 
 } // namespace rantanplan

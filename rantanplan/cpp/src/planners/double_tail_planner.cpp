@@ -13,21 +13,10 @@
 namespace rantanplan {
 
 DoubleTailPlanner::DoubleTailPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
-    : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
-      propagator_strategy_(nullptr) {
-    // Set upper bound for backward stack
+    : BasePlanner(problem, encoder, ctx) {
     auto& config = Config::instance();
     max_horizon_ = config.planner.max_steps;
 }
-
-void DoubleTailPlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) {
-    propagator_strategy_ = std::move(propagator);
-}
-
-std::string DoubleTailPlanner::get_propagator_strategy_name() const {
-    return propagator_strategy_->get_name();
-}
-
 
 std::shared_ptr<z3::expr> DoubleTailPlanner::create_link_constraints(int forward_t, int backward_t) {
     // Create equivalence constraints for all fluents: fluent@forward_t ⟺ fluent@backward_t

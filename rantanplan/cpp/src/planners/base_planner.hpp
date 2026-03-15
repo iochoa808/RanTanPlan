@@ -2,6 +2,7 @@
 
 #include "../problem/problem.hpp"
 #include "../problem/plan.hpp"
+#include "../encoders/base_encoder.hpp"
 #include "propagators/propagator_strategy.hpp"
 #include <z3++.h>
 #include <algorithm>
@@ -99,23 +100,14 @@ public:
     /// Whether the search ended due to timeout.
     bool timed_out() const { return timed_out_; }
 
-    /**
-     * @brief Set the propagator strategy for this planner
-     * @param propagator The propagator strategy to use
-     */
-    virtual void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) = 0;
+    /// Set the propagator strategy for this planner.
+    void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator);
 
-    /**
-     * @brief Get the name of the current propagator strategy
-     * @return Name of the propagator (e.g., "NullPropagator", "LazyForallPropagator")
-     */
-    virtual std::string get_propagator_strategy_name() const = 0;
+    /// Get the name of the current propagator strategy.
+    std::string get_propagator_strategy_name() const;
 
-    /**
-     * @brief Access to the underlying Z3 solver
-     * @return Reference to the Z3 solver used by this planner
-     */
-    virtual z3::solver& get_solver() = 0;
+    /// Access to the underlying Z3 solver.
+    z3::solver& get_solver() { return solver_; }
 
     /**
      * @brief Set the horizon schedule used during search
@@ -124,6 +116,16 @@ public:
     const HorizonSchedule& get_horizon_schedule() const { return schedule_; }
 
 protected:
+    /// Construct with shared planner dependencies.
+    BasePlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx);
+
+    // Shared state across all planners (declaration order matters for init).
+    const Problem& problem_;
+    BaseEncoder& encoder_;
+    z3::context& ctx_;
+    z3::solver solver_;
+    std::unique_ptr<PropagatorStrategy> propagator_strategy_;
+
     /// Horizon schedule; concrete planners initialise this from Config in their constructor.
     HorizonSchedule schedule_;
 

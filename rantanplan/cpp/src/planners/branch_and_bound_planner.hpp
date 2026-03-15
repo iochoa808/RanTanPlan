@@ -102,22 +102,13 @@ public:
     bool optimality_proven() const override { return optimality_proven_; }
     double best_cost() const override { return best_cost_; }
 
-    void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) override;
-    std::string get_propagator_strategy_name() const override;
-    z3::solver& get_solver() override { return solver_; }
-
     /// Set SDAC cost lower bounds (forwarded to AbstractSuffixEncoder).
     void set_cost_lower_bounds(std::vector<double> bounds) { abstract_.set_cost_lower_bounds(std::move(bounds)); }
 
 private:
-    const Problem& problem_;
-    BaseEncoder& encoder_;
-    z3::context& ctx_;
-    z3::solver solver_;
     bool optimality_proven_ = false;
     double best_cost_ = 0.0;
     int solution_count_ = 0;
-    std::unique_ptr<PropagatorStrategy> propagator_strategy_;
 
     AbstractSuffixEncoder abstract_;
 

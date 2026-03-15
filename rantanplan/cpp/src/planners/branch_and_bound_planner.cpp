@@ -18,7 +18,7 @@ namespace rantanplan {
 BranchAndBoundPlanner::BranchAndBoundPlanner(
     const Problem& problem, BaseEncoder& encoder, z3::context& ctx,
     const InterferenceAnalysis* interference, SemanticsKind semantics)
-    : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
+    : BasePlanner(problem, encoder, ctx),
       abstract_(problem, ctx, encoder, interference, semantics) {
 }
 
@@ -297,15 +297,6 @@ Plan BranchAndBoundPlanner::search() {
     collect_statistics();
     propagator_strategy_->cleanup();
     return best_plan;
-}
-
-void BranchAndBoundPlanner::set_propagator_strategy(
-    std::unique_ptr<PropagatorStrategy> propagator) {
-    propagator_strategy_ = std::move(propagator);
-}
-
-std::string BranchAndBoundPlanner::get_propagator_strategy_name() const {
-    return propagator_strategy_->get_name();
 }
 
 } // namespace rantanplan

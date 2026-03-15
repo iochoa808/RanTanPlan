@@ -1,6 +1,7 @@
 #include "achievers_analysis.hpp"
 #include "../arpg/arpg.hpp"
 #include "../util/memory_tracker.hpp"
+#include "../util/logger.hpp"
 #include <iostream>
 #include <algorithm>
 
@@ -11,7 +12,7 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     auto& stats = Stats::instance();
     auto start_total = std::chrono::high_resolution_clock::now();
 
-    std::cout << "Starting achievers analysis..." << std::endl;
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {{"status", "starting"}});
 
     // Initialize SMT infrastructure
     ctx_ = std::make_unique<z3::context>();
@@ -23,8 +24,6 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
 
     // Time ARPG computation
     auto start_arpg = std::chrono::high_resolution_clock::now();
-    double memory_before_arpg = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "  Building ARPG graph..." << std::flush;
 
     ARPG arpg(problem);
     bool goal_reachable = arpg.construct_graph();
@@ -35,11 +34,13 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     initialize_persistent_solver();
 
     auto end_arpg = std::chrono::high_resolution_clock::now();
-
     double arpg_time = std::chrono::duration<double>(end_arpg - start_arpg).count();
     double memory_after_arpg = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << " timing: " << arpg_time << "s, memory=" << memory_after_arpg << "MB"
-              << " (+" << (memory_after_arpg - memory_before_arpg) << "MB)" << std::endl;
+
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"ARPG", std::to_string(arpg_time) + "s"},
+        {"mem", std::to_string(static_cast<int>(memory_after_arpg)) + "MB"}
+    });
 
     stats.set("achievers_analysis.arpg_time_seconds", arpg_time);
     stats.set("achievers_analysis.arpg_goal_reachable", goal_reachable ? 1 : 0);
@@ -47,23 +48,24 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
 
     // Time semantic analysis
     auto start_analysis = std::chrono::high_resolution_clock::now();
-    double memory_before_analysis = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << "  Semantic achievers analysis..." << std::flush;
 
     analyze(problem);
     auto end_analysis = std::chrono::high_resolution_clock::now();
 
     double analysis_time = std::chrono::duration<double>(end_analysis - start_analysis).count();
     double memory_after_analysis = MemoryTracker::instance().get_current_memory_mb();
-    std::cout << " timing: " << analysis_time << "s, memory=" << memory_after_analysis << "MB"
-              << " (+" << (memory_after_analysis - memory_before_analysis) << "MB)" << std::endl;
 
     stats.set("achievers_analysis.semantic_analysis_time_seconds", analysis_time);
 
     auto end_total = std::chrono::high_resolution_clock::now();
     double total_time = std::chrono::duration<double>(end_total - start_total).count();
-    std::cout << "*** ACHIEVERS ANALYSIS COMPLETE: total_time=" << total_time << "s, memory="
-              << memory_after_analysis << "MB ***" << std::endl;
+
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"semantic", std::to_string(analysis_time) + "s"},
+        {"total", std::to_string(total_time) + "s"},
+        {"mem", std::to_string(static_cast<int>(memory_after_analysis)) + "MB"}
+    });
+
     stats.set("achievers_analysis.total_time_seconds", total_time);
 }
 
@@ -179,19 +181,14 @@ void AchieversAnalysis::analyze_semantic_achievers() {
     }
 
     stats.set("achievers_analysis.conditions_to_analyze", all_conditions.size());
-    std::cout << "    Analyzing " << all_conditions.size() << " conditions across "
-              << problem_->action_count() << " actions..." << std::endl;
+
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"conditions", std::to_string(all_conditions.size())},
+        {"actions", std::to_string(problem_->action_count())}
+    });
 
     // For each condition, check which actions can achieve it semantically
-    size_t condition_count = 0;
-    size_t total_conditions = all_conditions.size();
     for (ExprID condition_eid : all_conditions) {
-        condition_count++;
-        if (condition_count % 10 == 0 || condition_count == total_conditions) {
-            std::cout << "    Progress: " << condition_count << "/" << total_conditions
-                      << " conditions, " << z3_query_count_ << " SMT queries" << std::endl;
-        }
-
         auto condition_fluents = collect_fluents_in_expression(condition_eid);
 
         for (const auto& action : problem_->actions()) {
@@ -310,14 +307,14 @@ bool AchieversAnalysis::fluent_sets_intersect(const std::unordered_set<ExprID>& 
 }
 
 void AchieversAnalysis::initialize_persistent_solver() {
-    std::cout << "  Initializing persistent solver with bounds constraints..." << std::flush;
     auto start = std::chrono::high_resolution_clock::now();
-
     add_bounds_constraints_to_solver();
-
     auto end = std::chrono::high_resolution_clock::now();
     double init_time = std::chrono::duration<double>(end - start).count();
-    std::cout << " timing: " << init_time << "s" << std::endl;
+
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"solver init", std::to_string(init_time) + "s"}
+    });
 
     auto& stats = Stats::instance();
     stats.set("achievers_analysis.solver_init_time_seconds", init_time);

@@ -21,9 +21,7 @@ public:
     ForallSemantics() = default;
     
     std::shared_ptr<z3::expr> encode_parallelism(int timestep) override;
-    
-    void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) override;
-    
+
     std::string get_name() const override { return "ForallSemantics"; }
 
     // Analyzer access methods
@@ -36,9 +34,6 @@ public:
     bool allows_concurrent_actions() const override { return true; }
 
 private:
-    const Problem* problem_;
-    z3::context* ctx_;
-    Z3VariableFactory* variable_factory_;
     std::unique_ptr<InterferenceAnalysis> interference_analyzer_;
 };
 

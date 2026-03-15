@@ -15,9 +15,7 @@ public:
     SequentialSemantics() = default;
     
     std::shared_ptr<z3::expr> encode_parallelism(int timestep) override;
-    
-    void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) override;
-    
+
     std::string get_name() const override { return "SequentialSemantics"; }
 
     // Analyzer access methods (not applicable for sequential semantics)
@@ -30,10 +28,6 @@ public:
 
     bool allows_concurrent_actions() const override { return false; }
 
-private:
-    const Problem* problem_;
-    z3::context* ctx_;
-    Z3VariableFactory* variable_factory_;
 };
 
 } // namespace rantanplan
