@@ -57,7 +57,7 @@ Use --list-strategies to see available strategies and their descriptions.
     parser.add_argument("--executable", type=str,
                        help="Path to RantanPlan C++ executable")
     parser.add_argument("--output-plan", type=str,
-                       help="Save plan to file")
+                       help="Base path for plan output in IPC format (files written as <path>.1, .2, etc.)")
     parser.add_argument("--stats-file", type=str,
                        help="Save statistics to file")
     

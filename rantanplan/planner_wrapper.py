@@ -98,9 +98,10 @@ class _RantanPlanBase(Engine):
         ]
 
         for path in candidates:
-            if os.path.exists(path) or (path == "rantanplan" and self._check_executable_in_path(path)):
-                if os.path.exists(path):
-                    return path
+            if os.path.exists(path):
+                return path
+            if path == "rantanplan" and self._check_executable_in_path(path):
+                return path
 
         default_path = os.path.join(package_dir, "cpp", "build", "rantanplan")
         if not os.path.exists(default_path):

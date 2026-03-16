@@ -261,8 +261,9 @@ z3::expr AbstractSuffixEncoder::encode_loop_formulas() {
                     }
                     // External precondition atoms: they represent concrete
                     // state conditions that can provide external support.
-                    // For simplicity, we treat them as always satisfiable
-                    // (they're grounded in the concrete prefix).
+                    // Treat them as always satisfiable (grounded in the
+                    // concrete prefix) by adding unconditional support.
+                    external_support.push_back(ctx_.bool_val(true));
                 }
             }
         }
