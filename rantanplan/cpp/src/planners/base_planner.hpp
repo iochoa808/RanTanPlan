@@ -2,9 +2,11 @@
 
 #include "../problem/problem.hpp"
 #include "../problem/plan.hpp"
+#include "../encoders/base_encoder.hpp"
 #include "propagators/propagator_strategy.hpp"
 #include <z3++.h>
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -87,25 +89,25 @@ public:
      * @brief Check if the last search found a solution
      * @return true if a valid plan was found, false otherwise
      */
-    virtual bool solution_found() const = 0;
+    virtual bool solution_found() const { return solution_found_; }
 
-    /**
-     * @brief Set the propagator strategy for this planner
-     * @param propagator The propagator strategy to use
-     */
-    virtual void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) = 0;
+    /// Whether the planner proved optimality. Default: false (satisficing planners).
+    virtual bool optimality_proven() const { return false; }
 
-    /**
-     * @brief Get the name of the current propagator strategy
-     * @return Name of the propagator (e.g., "NullPropagator", "LazyForallPropagator")
-     */
-    virtual std::string get_propagator_strategy_name() const = 0;
+    /// Best cost found (only meaningful for cost-optimal planners).
+    virtual double best_cost() const { return 0.0; }
 
-    /**
-     * @brief Access to the underlying Z3 solver
-     * @return Reference to the Z3 solver used by this planner
-     */
-    virtual z3::solver& get_solver() = 0;
+    /// Whether the search ended due to timeout.
+    bool timed_out() const { return timed_out_; }
+
+    /// Set the propagator strategy for this planner.
+    void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator);
+
+    /// Get the name of the current propagator strategy.
+    std::string get_propagator_strategy_name() const;
+
+    /// Access to the underlying Z3 solver.
+    z3::solver& get_solver() { return solver_; }
 
     /**
      * @brief Set the horizon schedule used during search
@@ -114,8 +116,54 @@ public:
     const HorizonSchedule& get_horizon_schedule() const { return schedule_; }
 
 protected:
+    /// Construct with shared planner dependencies.
+    BasePlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx);
+
+    // Shared state across all planners (declaration order matters for init).
+    const Problem& problem_;
+    BaseEncoder& encoder_;
+    z3::context& ctx_;
+    z3::solver solver_;
+    std::unique_ptr<PropagatorStrategy> propagator_strategy_;
+
     /// Horizon schedule; concrete planners initialise this from Config in their constructor.
     HorizonSchedule schedule_;
+
+    bool solution_found_ = false;
+    bool timed_out_ = false;
+
+    /// Wall-clock deadline for the search. Set from Config::global::timeout in
+    /// init_deadline(), then queried via remaining_ms() before each solver.check().
+    std::chrono::steady_clock::time_point deadline_;
+
+    /// Initialise the deadline from Config::global::timeout.
+    void init_deadline();
+
+    /// Milliseconds remaining until deadline. Returns 0 if already past.
+    unsigned remaining_ms() const;
+
+    /// Apply the remaining timeout to a Z3 solver so that the next check()
+    /// call is interrupted if the wall-clock budget runs out.
+    /// Returns false if the deadline has already passed (caller should break).
+    bool apply_solver_timeout(z3::solver& solver);
+
+    /// Check if a z3::unknown result was caused by timeout. If so, sets
+    /// timed_out_ and logs the interruption. Returns true if it was a timeout.
+    bool handle_unknown_result(const z3::solver& solver, const std::string& context);
+
+    /// Format the timeout value for log messages (e.g. "120s" or "none").
+    static std::string format_timeout_string();
+
+    /// Collect Z3 solver statistics and memory usage into the global Stats singleton.
+    /// Uses get_solver() to access the derived class's solver.
+    void collect_statistics();
+
+    /// Add standard timestep constraints: actions, frames, symmetries, parallelism,
+    /// and propagator variable registration. Optionally includes prefix-monotone
+    /// constraints (omitted by DoubleTailPlanner).
+    static void add_timestep_constraints(z3::solver& solver, BaseEncoder& encoder,
+                                         PropagatorStrategy& propagator, int timestep,
+                                         bool prefix_monotone = true);
 };
 
 } // namespace rantanplan

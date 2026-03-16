@@ -239,6 +239,14 @@ public:
     // Semantic helpers
     // ========================================================================
 
+    /// Intern an integer constant and return its ExprID.
+    ExprID intern_int_constant(int64_t value) {
+        ExprNode node;
+        node.kind = static_cast<int>(ExprKind::CONSTANT);
+        node.payload = value;
+        return intern(std::move(node));
+    }
+
     /// Check if this is a boolean constant with value true.
     bool is_true_constant(ExprID id) const {
         if (!id.valid()) return false;

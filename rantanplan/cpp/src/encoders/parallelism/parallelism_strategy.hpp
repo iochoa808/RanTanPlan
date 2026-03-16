@@ -35,7 +35,11 @@ public:
      * @param ctx Z3 context for creating expressions
      * @param var_factory Factory for creating Z3 variables
      */
-    virtual void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) = 0;
+    virtual void initialize(const Problem& problem, z3::context& ctx, Z3VariableFactory& var_factory) {
+        problem_ = &problem;
+        ctx_ = &ctx;
+        variable_factory_ = &var_factory;
+    }
     
     /**
      * @brief Get the name of this parallelism strategy
@@ -61,6 +65,11 @@ public:
      *         false if at most one action per timestep (sequential semantics)
      */
     virtual bool allows_concurrent_actions() const = 0;
+
+protected:
+    const Problem* problem_ = nullptr;
+    z3::context* ctx_ = nullptr;
+    Z3VariableFactory* variable_factory_ = nullptr;
 };
 
 } // namespace rantanplan

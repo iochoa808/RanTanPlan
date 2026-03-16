@@ -23,6 +23,20 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--strategy requires a value");
             }
         }
+        else if (arg == "--mode") {
+            if (i + 1 < argc) {
+                config.planner.mode = argv[++i];
+            } else {
+                throw std::invalid_argument("--mode requires a value (satisficing, optimal, anytime)");
+            }
+        }
+        else if (arg == "--output-plan") {
+            if (i + 1 < argc) {
+                config.planner.output_plan = argv[++i];
+            } else {
+                throw std::invalid_argument("--output-plan requires a filename");
+            }
+        }
         else if (arg == "--list-strategies") {
             // Print available strategies and exit
             std::cout << "Available strategies:" << std::endl;

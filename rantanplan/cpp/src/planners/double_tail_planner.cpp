@@ -13,38 +13,9 @@
 namespace rantanplan {
 
 DoubleTailPlanner::DoubleTailPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
-    : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
-      propagator_strategy_(nullptr) {
-    // Set upper bound for backward stack
+    : BasePlanner(problem, encoder, ctx) {
     auto& config = Config::instance();
     max_horizon_ = config.planner.max_steps;
-}
-
-void DoubleTailPlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) {
-    propagator_strategy_ = std::move(propagator);
-}
-
-std::string DoubleTailPlanner::get_propagator_strategy_name() const {
-    return propagator_strategy_->get_name();
-}
-
-void DoubleTailPlanner::collect_statistics() {
-    auto& stats = Stats::instance();
-
-    // Collect key Z3 solver statistics
-    z3::stats z3_stats = solver_.statistics();
-    for (unsigned i = 0; i < z3_stats.size(); ++i) {
-        std::string key = "z3." + z3_stats.key(i);
-
-        if (z3_stats.is_uint(i)) {
-            stats.set(key, static_cast<double>(z3_stats.uint_value(i)));
-        } else if (z3_stats.is_double(i)) {
-            stats.set(key, z3_stats.double_value(i));
-        }
-    }
-
-    // Add memory info
-    stats.set("memory.current_mb", MemoryTracker::instance().get_current_memory_mb());
 }
 
 std::shared_ptr<z3::expr> DoubleTailPlanner::create_link_constraints(int forward_t, int backward_t) {
@@ -61,17 +32,9 @@ std::shared_ptr<z3::expr> DoubleTailPlanner::create_link_constraints(int forward
 }
 
 void DoubleTailPlanner::add_timestep_constraints(int t) {
-    solver_.add(*encoder_.encode_actions(t));
-    solver_.add(*encoder_.encode_frames(t));
-    solver_.add(*encoder_.encode_symmetries(t));
-
-    // Only add parallelism constraints if propagator doesn't manage them
-    if (!propagator_strategy_->manages_parallelism_constraints()) {
-        solver_.add(*encoder_.encode_parallelism(t));
-    }
-
-    // Register variables for next timestep
-    propagator_strategy_->register_timestep_variables(t + 1);
+    // DoubleTail omits prefix_monotone (not compatible with bidirectional search)
+    BasePlanner::add_timestep_constraints(solver_, encoder_, *propagator_strategy_, t,
+                                          /*prefix_monotone=*/false);
 }
 
 /**
@@ -120,10 +83,14 @@ Plan DoubleTailPlanner::search() {
     auto& config = Config::instance();
     auto& stats = Stats::instance();
 
-    Logger::instance().info("Starting double-tail search with propagator: " + propagator_strategy_->get_name());
-    Logger::instance().info("Max horizon = " + std::to_string(max_horizon_));
+    std::string search_msg = "Starting double-tail search with propagator: " + propagator_strategy_->get_name();
+    search_msg += ", max horizon: " + std::to_string(max_horizon_);
+    search_msg += ", timeout: " + format_timeout_string();
+    Logger::instance().info(search_msg);
 
     solution_found_ = false;
+    timed_out_ = false;
+    init_deadline();
 
     // Add invariant constraints: initial state at t=0, goal state at t=max_horizon_
     solver_.add(*encoder_.encode_initial_state());
@@ -140,13 +107,8 @@ Plan DoubleTailPlanner::search() {
     // - Odd iterations (1,3,5,...): add one forward transition
     // - Even iterations (2,4,6,...): add one backward transition
     for (int iteration = 0; iteration <= max_horizon_; ++iteration) {
-        // Check timeout
-        auto current_time = std::chrono::high_resolution_clock::now();
-        auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
-        if (elapsed_seconds >= config.global.timeout) {
-            Logger::instance().info("\n*** TIMEOUT reached after " + std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
-            break;
-        }
+        // Apply Z3 timeout for the remaining budget
+        if (!apply_solver_timeout(solver_)) break;
 
         auto step_start = std::chrono::high_resolution_clock::now();
 
@@ -234,6 +196,11 @@ Plan DoubleTailPlanner::search() {
 
             try {
                 Plan plan = extract_plan(model, iteration);
+
+                plan.write_ipc(config.planner.output_plan, 1,
+                               -1.0, true,
+                               config.planner.strategy, config.planner.mode, total_time);
+
                 stats.set("planner.plan_length", static_cast<double>(plan.length()));
                 stats.set("planner.solution_timestep", static_cast<double>(iteration));
                 collect_statistics();
@@ -248,11 +215,15 @@ Plan DoubleTailPlanner::search() {
         } else if (result == z3::unsat) {
             // Continue to next iteration
         } else {
-            Logger::instance().info("Solver returned unknown result at iteration " + std::to_string(iteration));
+            if (handle_unknown_result(solver_, "iteration " + std::to_string(iteration))) break;
         }
     }
 
-    Logger::instance().info("\n*** NO PLAN FOUND within " + std::to_string(max_horizon_) + " iterations ***");
+    if (timed_out_) {
+        Logger::instance().info("No plan found (timeout).");
+    } else {
+        Logger::instance().info("\n*** NO PLAN FOUND within " + std::to_string(max_horizon_) + " iterations ***");
+    }
     collect_statistics();
     propagator_strategy_->cleanup();
     return Plan();
@@ -325,7 +296,7 @@ std::vector<const Action*> DoubleTailPlanner::topologically_sort_actions(
     const std::vector<const Action*>& actions) const {
 
     if (actions.size() <= 1) {
-        return actions;
+        return {actions.begin(), actions.end()};
     }
 
     const ParallelismStrategy* strategy = encoder_.get_parallelism_strategy();

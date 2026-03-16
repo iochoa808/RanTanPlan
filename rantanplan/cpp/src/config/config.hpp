@@ -20,7 +20,7 @@ public:
     struct Global {
         VerbosityLevel verbosity = VerbosityLevel::INFO;
         bool debug_mode = false;
-        int timeout = 3600;
+        int timeout = 0;  // 0 = no timeout (run indefinitely)
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
         bool enable_action_removal = false;  // Enable RPG-based action removal (disabled by default; enabled automatically for --up-grounding)
@@ -42,6 +42,8 @@ public:
     
     struct Planner {
         std::string strategy = "seq";  // Strategy name (replaces parallelism_strategy, encoder, propagator, interference)
+        std::string mode = "satisficing";  // Search mode: satisficing, optimal, anytime
+        std::string output_plan = "plan.txt";  // Plan output file path (IPC format)
         int max_steps = 500;
         int start_timestep = 0;  // Starting timestep for search (can be set by RPG lower bound)
         std::string horizon_schedule = "linear";  // Schedule type: linear|arithmetic|geometric|doubling

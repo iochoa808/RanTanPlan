@@ -15,6 +15,7 @@
 
 #include "../planners/sequential.hpp"
 #include "../planners/double_tail_planner.hpp"
+#include "../planners/branch_and_bound_planner.hpp"
 
 #include "../planners/propagators/null_propagator.hpp"
 #include "../planners/propagators/forall_propagator.hpp"
@@ -22,6 +23,9 @@
 #include "../planners/propagators/exists_propagator.hpp"
 #include "../planners/propagators/decision_heuristic_propagator.hpp"
 
+#include "../util/logger.hpp"
+
+#include <algorithm>
 #include <stdexcept>
 
 namespace rantanplan {
@@ -31,8 +35,8 @@ static bool is_lazy(InterferenceKind kind) {
            kind == InterferenceKind::LazySemantic;
 }
 
-static bool is_eager(InterferenceKind kind) {
-    return !is_lazy(kind);
+static bool is_none(InterferenceKind kind) {
+    return kind == InterferenceKind::None;
 }
 
 void StrategyFactory::validate(const StrategySpec& spec,
@@ -57,6 +61,14 @@ void StrategyFactory::validate(const StrategySpec& spec,
     // Eager interference with lazy-only propagators is valid but unusual.
     // No hard constraint — eager provides a superset of lazy's interface.
 
+    // No interference is only valid with sequential semantics (which has
+    // built-in at-most-one constraint and doesn't need interference analysis).
+    if (is_none(spec.interference) && spec.semantics != SemanticsKind::Sequential) {
+        throw std::invalid_argument(
+            "No interference analysis requires Sequential semantics "
+            "(Forall/Exists semantics need interference for mutex constraints)");
+    }
+
     // DecisionHeuristicPropagator is designed for exists semantics.
     if (spec.propagator == PropagatorKind::DecisionHeuristic &&
         spec.semantics != SemanticsKind::Exists) {
@@ -76,6 +88,62 @@ void StrategyFactory::validate(const StrategySpec& spec,
             "' is not compatible with double-tail strategy '" + strategy_name + "'. "
             "Use a non-dt strategy or --horizon-schedule linear.");
     }
+}
+
+void StrategyFactory::adjust_spec(StrategySpec& spec, const Problem& problem) {
+    // SDAC + exists-step is unsound for cost-optimal planning: exists semantics
+    // evaluates costs at x_t but the serialized cost depends on intermediate
+    // states. Downgrade to forall semantics which is SDAC-safe.
+    if (uses_branch_and_bound(spec) &&
+        problem.has_metric() && problem.has_state_dependent_costs() &&
+        sdac_unsafe(spec)) {
+        Logger::instance().info(
+            "SDAC detected with exists-step semantics — downgrading to "
+            "forall semantics for sound cost evaluation.");
+        spec.semantics = SemanticsKind::Forall;
+        if (spec.propagator == PropagatorKind::Exists) {
+            spec.propagator = PropagatorKind::LazyForall;
+        }
+    }
+
+    if (uses_branch_and_bound(spec) &&
+        problem.has_metric() && problem.has_state_dependent_costs()) {
+        Logger::instance().info(
+            "SDAC detected: abstract suffix uses RPG-derived cost lower bounds.");
+    }
+}
+
+void StrategyFactory::configure_planner(BasePlanner& planner, const StrategySpec& spec,
+                                         const PipelineResult& pipeline_result) {
+    if (!uses_branch_and_bound(spec) || pipeline_result.sdac_cost_lower_bounds.empty()) {
+        return;
+    }
+
+    const auto& cost_bounds = pipeline_result.sdac_cost_lower_bounds;
+    bool all_positive = std::all_of(cost_bounds.begin(), cost_bounds.end(),
+                                     [](double lb) { return lb > 0.0; });
+    if (!all_positive) {
+        Logger::instance().info(
+            "WARNING: Some SDAC action cost expressions have a lower bound "
+            "of 0 (or could not be bounded). The abstract suffix will use 0 "
+            "for these actions, reducing branch-and-bound pruning power.");
+    } else {
+        Logger::instance().info(
+            "SDAC cost lower bounds computed via numeric RPG fixpoint — "
+            "all action costs have positive lower bounds.");
+    }
+
+    auto* bb_planner = dynamic_cast<BranchAndBoundPlanner*>(&planner);
+    if (bb_planner) {
+        bb_planner->set_cost_lower_bounds(
+            std::vector<double>(cost_bounds.begin(), cost_bounds.end()));
+    }
+}
+
+bool StrategyFactory::needs_numeric_rpg(const StrategySpec& spec, const Problem& problem) {
+    return uses_branch_and_bound(spec) &&
+           problem.has_metric() &&
+           problem.has_state_dependent_costs();
 }
 
 std::unique_ptr<BaseEncoder> StrategyFactory::create_encoder(
@@ -107,6 +175,8 @@ std::unique_ptr<ParallelismStrategy> StrategyFactory::create_parallelism(
 std::unique_ptr<InterferenceAnalysis> StrategyFactory::create_interference(
     const StrategySpec& spec, const Problem& problem) {
     switch (spec.interference) {
+        case InterferenceKind::None:
+            return nullptr;
         case InterferenceKind::EagerSyntactic:
             return std::make_unique<EagerInterferenceAnalysis>(problem);
         case InterferenceKind::EagerSemantic:
@@ -139,12 +209,16 @@ std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
 
 std::unique_ptr<BasePlanner> StrategyFactory::create_planner(
     const StrategySpec& spec, const Problem& problem,
-    BaseEncoder& encoder, z3::context& ctx) {
+    BaseEncoder& encoder, z3::context& ctx,
+    const InterferenceAnalysis* interference) {
     switch (spec.planner) {
         case PlannerKind::Sequential:
             return std::make_unique<SequentialPlanner>(problem, encoder, ctx);
         case PlannerKind::DoubleTail:
             return std::make_unique<DoubleTailPlanner>(problem, encoder, ctx);
+        case PlannerKind::BranchAndBound:
+            return std::make_unique<BranchAndBoundPlanner>(
+                problem, encoder, ctx, interference, spec.semantics);
     }
     throw std::invalid_argument("Unknown planner kind");
 }

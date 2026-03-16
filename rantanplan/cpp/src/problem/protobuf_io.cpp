@@ -240,6 +240,38 @@ Problem load_problem_from_protobuf(const ::Problem& pb_problem) {
         problem.goals_.emplace_back(ctx.intern(pb_goal.goal()), &problem.pool());
     }
 
+    // --- Load metrics (action costs) ---
+    for (const auto& pb_metric : pb_problem.metrics()) {
+        if (pb_metric.kind() == ::Metric::MINIMIZE_ACTION_COSTS) {
+            problem.set_metric_kind(MetricKind::MINIMIZE_ACTION_COSTS);
+
+            // Apply per-action costs
+            for (auto& action : problem.actions_) {
+                auto it = pb_metric.action_costs().find(action.name());
+                if (it != pb_metric.action_costs().end()) {
+                    action.set_cost_id(ctx.intern(it->second));
+                } else if (pb_metric.has_default_action_cost()) {
+                    action.set_cost_id(ctx.intern(pb_metric.default_action_cost()));
+                }
+            }
+            break;  // only process the first MINIMIZE_ACTION_COSTS metric
+        } else if (pb_metric.kind() == ::Metric::MINIMIZE_SEQUENTIAL_PLAN_LENGTH) {
+            problem.set_metric_kind(MetricKind::MINIMIZE_PLAN_LENGTH);
+            break;
+        }
+    }
+
+    // Ensure every action has a cost_id. Actions without explicit costs
+    // (e.g., MINIMIZE_PLAN_LENGTH or no metric) default to unit cost = 1.
+    {
+        ExprID unit_cost = problem.pool_->intern_int_constant(1);
+        for (auto& action : problem.actions_) {
+            if (!action.has_explicit_cost()) {
+                action.set_cost_id(unit_cost);
+            }
+        }
+    }
+
     problem.collect_grounded_fluents();
     return problem;
 }

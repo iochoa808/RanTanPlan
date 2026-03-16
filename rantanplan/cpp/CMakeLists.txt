@@ -95,7 +95,6 @@ add_executable(rantanplan
     src/encoders/grounded_encoder.cpp
     src/encoders/chained_grounded_encoder.cpp
     src/encoders/r2e_grounded_encoder.cpp
-    src/encoders/reified_grounded_encoder.cpp
     src/encoders/parallelism/interference_analyzer.cpp
     src/encoders/parallelism/interference_analysis.cpp
     src/encoders/parallelism/eager_interference_analysis.cpp
@@ -107,9 +106,12 @@ add_executable(rantanplan
     src/encoders/parallelism/exists_semantics.cpp
     src/encoders/parallelism/graph.cpp
     src/encoders/z3_variable_factory.cpp
+    src/planners/base_planner.cpp
     src/planners/sequential.cpp
     src/planners/double_tail_planner.cpp
+    src/planners/branch_and_bound_planner.cpp
     src/planners/formula_exporter.cpp
+    src/encoders/abstract_suffix_encoder.cpp
     src/planners/propagators/propagator_strategy.cpp
     src/planners/propagators/forall_propagator.cpp
     src/planners/propagators/lazy_forall_propagator.cpp

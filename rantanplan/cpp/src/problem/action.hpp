@@ -43,6 +43,11 @@ public:
     size_t effect_count() const { return effects_.size(); }
     const Effect& effect(size_t index) const { return effects_[index]; }
 
+    // Cost access
+    ExprID cost_id() const { return cost_id_; }
+    void set_cost_id(ExprID id) { cost_id_ = id; }
+    bool has_explicit_cost() const { return cost_id_ != EXPR_NULL; }
+
     // Setters (used by Problem internals)
     void set_id(int id) { id_ = id; }
     void add_parameter(const Parameter& param);
@@ -66,6 +71,7 @@ private:
     ExprID precondition_id_ = EXPR_NULL;
     bool has_precondition_ = false;
     std::vector<Effect> effects_;
+    ExprID cost_id_ = EXPR_NULL;  // Set to 1 during loading if no explicit cost
     const ExprPool* pool_ = nullptr; // for to_string()
 
     // Quick lookup for parameters

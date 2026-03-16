@@ -12,6 +12,7 @@
 #include "config/config.hpp"
 #include "config/strategy_registry.hpp"
 #include "config/strategy_factory.hpp"
+#include "config/strategy_spec.hpp"
 #include "problem/problem.hpp"
 #include "problem/protobuf_io.hpp"
 #include "planners/sequential.hpp"
@@ -116,21 +117,26 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
 
     z3::context ctx;
 
-    const auto& spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
-    rantanplan::Logger::instance().info("Using strategy: " + config.planner.strategy);
+    rantanplan::StrategySpec spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
+    rantanplan::SearchMode search_mode = rantanplan::parse_search_mode(config.planner.mode);
+    spec.planner = rantanplan::resolve_planner_kind(search_mode, spec);
+    rantanplan::Logger::instance().info("Using strategy: " + config.planner.strategy + " (mode: " + config.planner.mode + ")");
+    rantanplan::StrategyFactory::adjust_spec(spec, problem);
 
     auto encoder = rantanplan::StrategyFactory::create_encoder(spec, problem, ctx);
     auto parallelism = rantanplan::StrategyFactory::create_parallelism(spec);
     auto interference = rantanplan::StrategyFactory::create_interference(spec, problem);
 
+    // Keep raw pointer before moving — BranchAndBoundPlanner needs it for Axiom 6
+    const rantanplan::InterferenceAnalysis* interference_ptr = interference.get();
+
     parallelism->set_interference_analyzer(std::move(interference));
     encoder->set_parallelism_strategy(std::move(parallelism));
-
-    // Set pipeline data on encoder
     encoder->set_symmetry_data(pipeline_result.symmetry_data);
 
-    // Create planner using factory
-    auto planner = rantanplan::StrategyFactory::create_planner(spec, problem, *encoder, ctx);
+    auto planner = rantanplan::StrategyFactory::create_planner(
+        spec, problem, *encoder, ctx, interference_ptr);
+    rantanplan::StrategyFactory::configure_planner(*planner, spec, pipeline_result);
 
     // Get solver reference and create propagator using factory
     auto propagator = rantanplan::StrategyFactory::create_propagator(spec, planner->get_solver(), problem, *encoder);
@@ -145,19 +151,35 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
     // Call planner->search() and get the result
     rantanplan::Plan plan = planner->search();
     if (planner->solution_found()) {
-        // Plan found (even if empty) - populate the result
-        result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
+        if (planner->optimality_proven()) {
+            result.set_status(PlanGenerationResult_Status_SOLVED_OPTIMALLY);
+        } else {
+            result.set_status(PlanGenerationResult_Status_SOLVED_SATISFICING);
+        }
 
-        // Convert plan to protobuf and set it in the result
         *result.mutable_plan() = rantanplan::plan_to_protobuf(plan);
 
         if (config.is_info()) {
             log_message = result.add_log_messages();
             log_message->set_level(LogMessage_LogLevel_INFO);
-            log_message->set_message("Plan found with " + std::to_string(plan.length()) + " actions.");
+            std::string msg = "Plan found with " + std::to_string(plan.length()) + " actions.";
+            if (rantanplan::uses_branch_and_bound(spec)) {
+                msg += " Cost: " + std::to_string(planner->best_cost()) + ".";
+                if (planner->optimality_proven()) {
+                    msg += " (OPTIMAL)";
+                }
+            }
+            log_message->set_message(msg);
+        }
+    } else if (planner->timed_out()) {
+        result.set_status(PlanGenerationResult_Status_TIMEOUT);
+        if (config.is_info()) {
+            log_message = result.add_log_messages();
+            log_message->set_level(LogMessage_LogLevel_INFO);
+            log_message->set_message("Timeout reached.");
         }
     } else {
-        // No plan found
+        // No plan found within search limits (max_steps exhausted)
         result.set_status(PlanGenerationResult_Status_UNSOLVABLE_INCOMPLETELY);
         if (config.is_info()) {
             log_message = result.add_log_messages();
@@ -229,6 +251,12 @@ int main(int argc, char* argv[]) {
     rantanplan::CWAInitialStatePass cwa_pass;
     std::vector<const rantanplan::Pass*> passes;
 
+    rantanplan::StrategySpec pipeline_spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
+    pipeline_spec.planner = rantanplan::resolve_planner_kind(
+        rantanplan::parse_search_mode(config.planner.mode), pipeline_spec);
+    bool need_numeric_rpg = config.global.use_numeric_rpg ||
+        rantanplan::StrategyFactory::needs_numeric_rpg(pipeline_spec, planning_problem);
+
     // Symmetry detection (SMT-based) runs BEFORE grounding — it only needs
     // initial state + goals and is the expensive part of symmetry analysis.
     if (config.symmetry.enable_symmetries) {
@@ -251,15 +279,13 @@ int main(int argc, char* argv[]) {
     passes.push_back(&cwa_pass);
 
     if (config.global.reachability_grounding) {
-        if (config.global.enable_action_removal) {
-            passes.push_back(config.global.use_numeric_rpg
+        if (config.global.enable_action_removal || need_numeric_rpg) {
+            passes.push_back(need_numeric_rpg
                              ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
                              : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
         }
-    } else if (config.global.enable_action_removal) {
-        // When using UP grounding (--up-grounding), RPG is enabled by default
-        // to prune unreachable actions from the cross-product grounding.
-        passes.push_back(config.global.use_numeric_rpg
+    } else if (config.global.enable_action_removal || need_numeric_rpg) {
+        passes.push_back(need_numeric_rpg
                          ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
                          : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
     }

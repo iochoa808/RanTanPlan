@@ -599,6 +599,33 @@ public:
     size_t get_layer_count() const { return layer_states_.size(); }
 
     // ========================================================================
+    // INTERVAL EVALUATION (public for cost bound analysis)
+    // ========================================================================
+
+    /**
+     * @brief Evaluate an ExprID to an Interval using current layer bounds
+     *
+     * Walks the expression tree:
+     *   - Constants -> point interval [c, c]
+     *   - State variables -> lookup in layer's numeric_bounds
+     *   - Arithmetic (+, -, *, /) -> interval arithmetic
+     *   - Unknown/unsupported -> Interval::unbounded()
+     *
+     * For sound lower bounds on cost expressions, call at the final layer
+     * after building with early termination disabled.
+     */
+    Interval evaluate_interval(ExprID eid, int layer) const;
+
+    /**
+     * @brief Control early termination behavior.
+     *
+     * When set to false, build() will only stop at true fixpoint —
+     * required for sound cost lower bounds via evaluate_interval().
+     * Default is true (stop when all actions reachable + goals achieved).
+     */
+    void set_early_termination(bool enable) { enable_all_actions_reachable_termination_ = enable; }
+
+    // ========================================================================
     // DEBUG AND ANALYSIS
     // ========================================================================
 
@@ -813,17 +840,6 @@ private:
         int fluent_id,
         const std::vector<const Action*>& applicable_actions,
         int prev_layer) const;
-
-    /**
-     * @brief Evaluate an ExprID to an Interval using current layer bounds
-     *
-     * Walks the expression tree:
-     *   - Constants -> point interval [c, c]
-     *   - State variables -> lookup in layer's numeric_bounds
-     *   - Arithmetic (+, -, *, /) -> interval arithmetic
-     *   - Unknown/unsupported -> Interval::unbounded()
-     */
-    Interval evaluate_interval(ExprID eid, int layer) const;
 
     /**
      * @brief Apply directional widening to new bounds for a fluent

@@ -14,16 +14,13 @@
 namespace rantanplan {
 
     SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
-        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx) {
-        // Initialize planner with the given problem, encoder, and Z3 context
-        // Propagator must be set via set_propagator_strategy() before search()
+        : BasePlanner(problem, encoder, ctx) {
     }
 
     SequentialPlanner::SequentialPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx,
                                        std::unique_ptr<PropagatorStrategy> propagator)
-        : problem_(problem), encoder_(encoder), ctx_(ctx), solver_(ctx),
-          propagator_strategy_(std::move(propagator)) {
-        // Initialize planner with the given problem, encoder, Z3 context, and propagator strategy
+        : BasePlanner(problem, encoder, ctx) {
+        propagator_strategy_ = std::move(propagator);
     }
 
 void SequentialPlanner::debug_output_constraints() {
@@ -38,38 +35,8 @@ void SequentialPlanner::debug_output_constraints() {
     }
 }
 
-void SequentialPlanner::collect_statistics() {
-    auto& stats = Stats::instance();
-
-    // Collect key Z3 solver statistics (just the important numbers)
-    z3::stats z3_stats = solver_.statistics();
-    for (unsigned i = 0; i < z3_stats.size(); ++i) {
-        std::string key = "z3." + z3_stats.key(i);
-
-        if (z3_stats.is_uint(i)) {
-            stats.set(key, static_cast<double>(z3_stats.uint_value(i)));
-        } else if (z3_stats.is_double(i)) {
-            stats.set(key, z3_stats.double_value(i));
-        }
-    }
-
-    // Add memory info
-    stats.set("memory.current_mb", MemoryTracker::instance().get_current_memory_mb());
-}
-
 void SequentialPlanner::add_timestep_constraints(int timestep) {
-    solver_.add(*encoder_.encode_actions(timestep));
-    solver_.add(*encoder_.encode_frames(timestep));
-    solver_.add(*encoder_.encode_prefix_monotone(timestep));
-    solver_.add(*encoder_.encode_symmetries(timestep));
-
-    // Only add parallelism constraints if propagator doesn't manage them
-    if (!propagator_strategy_->manages_parallelism_constraints()) {
-        solver_.add(*encoder_.encode_parallelism(timestep));
-    }
-
-    // Register variables for next timestep
-    propagator_strategy_->register_timestep_variables(timestep + 1);
+    BasePlanner::add_timestep_constraints(solver_, encoder_, *propagator_strategy_, timestep);
 }
 
 Plan SequentialPlanner::search() {
@@ -88,9 +55,12 @@ Plan SequentialPlanner::search() {
     if (config.planner.horizon_schedule != "linear") {
         search_msg += ", schedule: " + config.planner.horizon_schedule;
     }
+    search_msg += ", timeout: " + format_timeout_string();
     Logger::instance().info(search_msg);
 
     solution_found_ = false;
+    timed_out_ = false;
+    init_deadline();
 
     // Add initial state constraints (invariant across all horizons).
     solver_.add(*encoder_.encode_initial_state());
@@ -130,14 +100,8 @@ Plan SequentialPlanner::search() {
     int h             = start_timestep;  // first horizon to check
 
     while (h <= config.planner.max_steps) {
-        // Check timeout
-        auto current_time = std::chrono::high_resolution_clock::now();
-        auto elapsed_seconds = std::chrono::duration<double>(current_time - start_time).count();
-        if (elapsed_seconds >= config.global.timeout) {
-            Logger::instance().info("\n*** TIMEOUT reached after " +
-                std::to_string(static_cast<int>(elapsed_seconds)) + "s ***");
-            break;
-        }
+        // Check timeout before building formula
+        if (!apply_solver_timeout(solver_)) break;
 
         auto step_start   = std::chrono::high_resolution_clock::now();
         auto formula_start = std::chrono::high_resolution_clock::now();
@@ -197,6 +161,10 @@ Plan SequentialPlanner::search() {
                     ", actions=" + std::to_string(plan.length()) +
                     " (total time: " + std::to_string(total_time) + "s) ***");
 
+                plan.write_ipc(config.planner.output_plan, 1,
+                               -1.0, true,
+                               config.planner.strategy, config.planner.mode, total_time);
+
                 stats.set("planner.plan_length",      static_cast<double>(plan.length()));
                 stats.set("planner.solution_horizon", static_cast<double>(h));
                 collect_statistics();
@@ -212,8 +180,7 @@ Plan SequentialPlanner::search() {
         } else if (result == z3::unsat) {
             // UNSAT at this horizon; advance to the next scheduled horizon.
         } else {
-            Logger::instance().info("Solver returned unknown result at horizon " +
-                std::to_string(h));
+            if (handle_unknown_result(solver_, "horizon " + std::to_string(h))) break;
         }
 
         // Advance to next scheduled horizon.
@@ -222,23 +189,17 @@ Plan SequentialPlanner::search() {
         h = next_h;
     }
 
-    Logger::instance().info("\n*** NO PLAN FOUND within " +
-        std::to_string(config.planner.max_steps) + " timesteps, aborting ***");
-    Logger::instance().info("No plan found within " +
-        std::to_string(config.planner.max_steps) + " timesteps.");
+    if (timed_out_) {
+        Logger::instance().info("No plan found (timeout).");
+    } else {
+        Logger::instance().info("\n*** NO PLAN FOUND within " +
+            std::to_string(config.planner.max_steps) + " timesteps ***");
+    }
 
     collect_statistics();
     propagator_strategy_->cleanup();
     return Plan();
 }
 
-
-void SequentialPlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) {
-    propagator_strategy_ = std::move(propagator);
-}
-
-std::string SequentialPlanner::get_propagator_strategy_name() const {
-    return propagator_strategy_->get_name();
-}
 
 } // namespace rantanplan
