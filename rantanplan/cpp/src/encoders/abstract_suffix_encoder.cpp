@@ -342,9 +342,13 @@ z3::expr AbstractSuffixEncoder::encode_axiom_6(int i) {
             // pairs that don't interfere semantically, making axiom 6 slightly
             // weaker (more deferral reasons) but still a valid lower bound.
             // The semantic precision is handled by the propagator during solving.
-            // TODO: Explore a propagator-based lazy approach where axiom 6 clauses
-            // are generated on-demand only for actions the solver actually selects,
-            // avoiding even the syntactic O(N^2) iteration for large action sets.
+            // TODO: Consider handling axiom 6 via a propagator instead of
+            // pre-materializing all M_a clauses. A propagator watching abstract
+            // action variables could add the M_a disjunction on-demand only when
+            // the solver sets a_i = true and no other justification (a_{i-1} or
+            // unsatisfied preconditions) exists. This would avoid the O(h * |A|^2)
+            // clause overhead entirely, matching the lazy philosophy of the exists
+            // propagator for the concrete prefix.
             for (size_t b_idx = 0; b_idx < actions.size(); ++b_idx) {
                 if (b_idx == a_idx) continue;
                 if (interference_->has_syntactic_interference(action, actions[b_idx]) ||
