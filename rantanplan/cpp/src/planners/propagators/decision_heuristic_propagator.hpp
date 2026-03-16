@@ -94,6 +94,7 @@ public:
     void on_push() override;
     void on_pop(unsigned num_scopes) override;
     void on_fixed(z3::expr const &ast, z3::expr const &value) override;
+    // void on_final() override;
     void on_decide(z3::expr const& val, unsigned bit, bool is_pos) override;
     
     // PropagatorStrategy interface

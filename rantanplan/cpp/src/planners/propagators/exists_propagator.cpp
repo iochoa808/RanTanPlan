@@ -69,6 +69,24 @@ void ExistsPropagator::on_fixed(z3::expr const &ast, z3::expr const &value) {
     perform_exists_propagation(action, timestep, ast);
 }
 
+// void ExistsPropagator::on_final() {
+//     // Validate the complete model: for exists semantics, the interference graph
+//     // among active actions at each timestep must be acyclic (a DAG).
+//     for (const auto& [timestep, active_nodes] : active_actions_per_timestep_) {
+//         std::vector<int> cycle;
+//         if (find_cycle_in_active_actions(active_nodes, cycle)) {
+//             z3::expr_vector conflict_actions(ctx());
+//             for (int cycle_node_id : cycle) {
+//                 const Action* cycle_action = &problem_->action(cycle_node_id);
+//                 z3::expr cycle_var = variable_factory_->get_action_variable(*cycle_action, timestep);
+//                 conflict_actions.push_back(cycle_var);
+//             }
+//             conflict(conflict_actions);
+//             return;
+//         }
+//     }
+// }
+
 void ExistsPropagator::register_timestep_variables(int timestep) {
     // Base class handles logging (inc, variable registration)
     PropagatorStrategy::register_timestep_variables(timestep);

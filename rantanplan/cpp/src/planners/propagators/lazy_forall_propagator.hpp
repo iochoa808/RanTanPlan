@@ -58,6 +58,7 @@ public:
     void on_push() override;
     void on_pop(unsigned num_scopes) override;
     void on_fixed(z3::expr const &ast, z3::expr const &value) override;
+    // void on_final() override;
     
     // PropagatorStrategy interface
     void register_timestep_variables(int timestep) override;

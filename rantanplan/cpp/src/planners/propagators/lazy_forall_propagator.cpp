@@ -106,6 +106,31 @@ void LazyForallPropagator::check_and_generate_conflicts(const Action& action, in
     }
 }
 
+// void LazyForallPropagator::on_final() {
+//     // Validate the complete model: for forall semantics, no two interfering
+//     // actions may be true at the same timestep.
+//     for (const auto& [timestep, active_nodes] : active_actions_per_timestep_) {
+//         for (int node_id : active_nodes) {
+//             for (int other_id : active_nodes) {
+//                 if (other_id <= node_id) continue;
+//                 if (interference_analyzer_->has_interference(node_id, other_id) ||
+//                     interference_analyzer_->has_interference(other_id, node_id)) {
+//                     const Action& a1 = problem_->action(node_id);
+//                     const Action& a2 = problem_->action(other_id);
+//                     z3::expr var1 = variable_factory_->get_action_variable(a1, timestep);
+//                     z3::expr var2 = variable_factory_->get_action_variable(a2, timestep);
+//
+//                     z3::expr_vector conflict_clause(ctx());
+//                     conflict_clause.push_back(var1);
+//                     conflict_clause.push_back(var2);
+//                     conflict(conflict_clause);
+//                     return;
+//                 }
+//             }
+//         }
+//     }
+// }
+
 void LazyForallPropagator::register_timestep_variables(int timestep) {
     // Base class handles logging (inc, variable registration)
     PropagatorStrategy::register_timestep_variables(timestep);
