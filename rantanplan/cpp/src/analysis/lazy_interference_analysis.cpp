@@ -1,7 +1,7 @@
 #include "lazy_interference_analysis.hpp"
-#include "../../util/memory_tracker.hpp"
-#include "../../util/logger.hpp"
-#include "../../config/config.hpp"
+#include "../util/memory_tracker.hpp"
+#include "../util/logger.hpp"
+#include "../config/config.hpp"
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>

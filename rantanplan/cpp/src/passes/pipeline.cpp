@@ -1,4 +1,5 @@
 #include "pipeline.hpp"
+#include "../analysis/interference_analysis.hpp"
 #include "../util/scoped_timer.hpp"
 
 namespace rantanplan {

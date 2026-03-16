@@ -670,6 +670,13 @@ class RantanPlanAnytimePlanner(_RantanPlanBase, AnytimePlannerMixin):
 
         plan_base = self._output_plan or "plan.txt"
 
+        # Remove stale plan files from previous runs so the poller
+        # doesn't pick them up as new solutions.
+        i = 1
+        while os.path.exists(f"{plan_base}.{i}"):
+            os.remove(f"{plan_base}.{i}")
+            i += 1
+
         try:
             command = self._build_command(problem_filepath, solution_filepath, timeout)
             self._log_verbose(f"Running planner: {' '.join(command)}")

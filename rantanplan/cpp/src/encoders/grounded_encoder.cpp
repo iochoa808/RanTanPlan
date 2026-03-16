@@ -1,5 +1,5 @@
 #include "grounded_encoder.hpp"
-#include "parallelism/interference_analysis.hpp"
+#include "../analysis/interference_analysis.hpp"
 #include "../util/stats.hpp"
 #include "../config/config.hpp"
 #include <iostream>

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "interference_analysis.hpp"
-#include "../grounded_encoding_visitor.hpp"
-#include "../z3_variable_factory.hpp"
+#include "../encoders/grounded_encoding_visitor.hpp"
+#include "../encoders/z3_variable_factory.hpp"
 #include <z3++.h>
 #include <utility>
 

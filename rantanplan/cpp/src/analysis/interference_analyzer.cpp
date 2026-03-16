@@ -1,9 +1,9 @@
 #include "interference_analyzer.hpp"
-#include "../../util/memory_tracker.hpp"
-#include "../../util/scoped_timer.hpp"
-#include "../../util/logger.hpp"
-#include "../../util/stats.hpp"
-#include "../../config/config.hpp"
+#include "../util/memory_tracker.hpp"
+#include "../util/scoped_timer.hpp"
+#include "../util/logger.hpp"
+#include "../util/stats.hpp"
+#include "../config/config.hpp"
 #include <iostream>
 #include <algorithm>
 #include <unordered_map>

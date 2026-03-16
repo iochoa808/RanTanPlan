@@ -1,11 +1,16 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
+#include "../config/strategy_spec.hpp"
 #include "../problem/problem.hpp"
 #include "../symmetries/smt_symmetry_checker.hpp"
 
 namespace rantanplan {
+
+// Forward declaration — full definition in analysis/interference_analysis.hpp
+class InterferenceAnalysis;
 
 /**
  * @brief Accumulated state threaded through a preprocessing pipeline.
@@ -21,6 +26,8 @@ struct PipelineResult {
     std::vector<ObjectSwap> detected_object_swaps; ///< From SymmetryDetectionPass (pre-grounding)
     std::vector<SymmetryInfo> symmetry_data; ///< From SymmetryCompletionPass (post-CWA)
     std::vector<double> sdac_cost_lower_bounds; ///< SDAC cost lower bounds (from NumericRPGPass); empty if not SDAC
+    StrategySpec resolved_spec{};               ///< Finalized strategy spec (from StrategyResolutionPass)
+    std::unique_ptr<InterferenceAnalysis> interference; ///< Pre-built interference analyzer (from InterferencePass)
 };
 
 /**

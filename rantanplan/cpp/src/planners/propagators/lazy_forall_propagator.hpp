@@ -4,7 +4,7 @@
 #include "../../problem/problem.hpp"
 #include "../../problem/fluent.hpp"
 #include "../../problem/action.hpp"
-#include "../../encoders/parallelism/graph.hpp"
+#include "../../analysis/graph.hpp"
 #include <z3++.h>
 #include <memory>
 #include <unordered_map>

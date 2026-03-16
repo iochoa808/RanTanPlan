@@ -1,7 +1,7 @@
 #pragma once
 
 #include "interference_analysis.hpp"
-#include "../../util/hash_utils.hpp"
+#include "../util/hash_utils.hpp"
 #include <utility>
 
 namespace rantanplan {

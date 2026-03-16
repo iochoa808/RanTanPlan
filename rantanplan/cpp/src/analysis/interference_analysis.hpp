@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../problem/problem.hpp"
-#include "../../problem/action.hpp"
-#include "../../problem/visitors/fluent_polarity_collector.hpp"
+#include "../problem/problem.hpp"
+#include "../problem/action.hpp"
+#include "../problem/visitors/fluent_polarity_collector.hpp"
 #include "graph.hpp"
 #include <vector>
 #include <memory>
@@ -101,8 +101,19 @@ public:
      */
     virtual const std::vector<int>& get_neighbours(int node_id) const = 0;
     
+    /**
+     * @brief Check if two actions interfere syntactically (sound overapproximation)
+     *
+     * Uses fast set-intersection checks on precondition/effect fluents.
+     * This is an overapproximation: may return true for action pairs that
+     * don't interfere semantically, but never returns false for pairs that do.
+     */
+    bool has_syntactic_interference(const Action& a1, const Action& a2) const {
+        return actions_interfere(a1, a2);
+    }
+
     // Utility methods
-    
+
     /**
      * @brief Check if this is a lazy implementation
      * @return True if lazy, false if eager

@@ -95,16 +95,9 @@ add_executable(rantanplan
     src/encoders/grounded_encoder.cpp
     src/encoders/chained_grounded_encoder.cpp
     src/encoders/r2e_grounded_encoder.cpp
-    src/encoders/parallelism/interference_analyzer.cpp
-    src/encoders/parallelism/interference_analysis.cpp
-    src/encoders/parallelism/eager_interference_analysis.cpp
-    src/encoders/parallelism/eager_semantic_interference_analysis.cpp
-    src/encoders/parallelism/lazy_interference_analysis.cpp
-    src/encoders/parallelism/semantic_interference_analysis.cpp
     src/encoders/parallelism/sequential_semantics.cpp
     src/encoders/parallelism/forall_semantics.cpp
     src/encoders/parallelism/exists_semantics.cpp
-    src/encoders/parallelism/graph.cpp
     src/encoders/z3_variable_factory.cpp
     src/planners/base_planner.cpp
     src/planners/sequential.cpp
@@ -122,12 +115,21 @@ add_executable(rantanplan
     src/abstraction/achievers_analysis.cpp
     src/analysis/relaxed_planning_graph.cpp
     src/analysis/numeric_relaxed_planning_graph.cpp
+    src/analysis/graph.cpp
+    src/analysis/interference_analysis.cpp
+    src/analysis/interference_analyzer.cpp
+    src/analysis/eager_interference_analysis.cpp
+    src/analysis/eager_semantic_interference_analysis.cpp
+    src/analysis/lazy_interference_analysis.cpp
+    src/analysis/semantic_interference_analysis.cpp
     src/passes/pipeline.cpp
     src/passes/boolean_rpg_pass.cpp
     src/passes/numeric_rpg_pass.cpp
     src/passes/symmetry_pass.cpp
     src/passes/grounding_pass.cpp
     src/passes/cwa_initial_state_pass.cpp
+    src/passes/strategy_resolution_pass.cpp
+    src/passes/interference_pass.cpp
     src/problem/substitution.cpp
     src/grounding/fact_index.cpp
     src/grounding/binding_matcher.cpp

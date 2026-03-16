@@ -1,8 +1,8 @@
 #include "abstract_suffix_encoder.hpp"
 #include "base_encoder.hpp"
 #include "grounded_encoder.hpp"
-#include "parallelism/graph.hpp"
-#include "parallelism/interference_analysis.hpp"
+#include "../analysis/graph.hpp"
+#include "../analysis/interference_analysis.hpp"
 #include "../problem/visitors/fluent_collector.hpp"
 #include "../problem/expr_enums.hpp"
 
@@ -337,11 +337,18 @@ z3::expr AbstractSuffixEncoder::encode_axiom_6(int i) {
                 reasons.push_back(vf.get_action_variable(actions[b_idx], i - 1));
             }
         } else if (interference_) {
-            // M_a = actions with bidirectional interference
+            // M_a = actions with bidirectional syntactic interference.
+            // Syntactic interference is a sound overapproximation: it may include
+            // pairs that don't interfere semantically, making axiom 6 slightly
+            // weaker (more deferral reasons) but still a valid lower bound.
+            // The semantic precision is handled by the propagator during solving.
+            // TODO: Explore a propagator-based lazy approach where axiom 6 clauses
+            // are generated on-demand only for actions the solver actually selects,
+            // avoiding even the syntactic O(N^2) iteration for large action sets.
             for (size_t b_idx = 0; b_idx < actions.size(); ++b_idx) {
                 if (b_idx == a_idx) continue;
-                if (interference_->has_interference(action, actions[b_idx]) ||
-                    interference_->has_interference(actions[b_idx], action)) {
+                if (interference_->has_syntactic_interference(action, actions[b_idx]) ||
+                    interference_->has_syntactic_interference(actions[b_idx], action)) {
                     reasons.push_back(vf.get_action_variable(actions[b_idx], i - 1));
                 }
             }

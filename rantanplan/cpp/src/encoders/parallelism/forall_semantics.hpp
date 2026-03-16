@@ -1,7 +1,7 @@
 #pragma once
 
 #include "parallelism_strategy.hpp"
-#include "interference_analysis.hpp"
+#include "../../analysis/interference_analysis.hpp"
 #include <memory>
 
 namespace rantanplan {

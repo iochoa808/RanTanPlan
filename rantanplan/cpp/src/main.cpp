@@ -28,6 +28,8 @@
 #include "passes/symmetry_pass.hpp"
 #include "passes/grounding_pass.hpp"
 #include "passes/cwa_initial_state_pass.hpp"
+#include "passes/strategy_resolution_pass.hpp"
+#include "passes/interference_pass.hpp"
 
 #include "z3++.h"
 
@@ -107,9 +109,10 @@ int export_formula_and_exit(const rantanplan::Problem& problem) {
     }
 }
 
-PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
-                                            const rantanplan::PipelineResult& pipeline_result) {
+PlanGenerationResult solve_planning_problem(rantanplan::PipelineResult& pipeline_result) {
     auto& config = rantanplan::Config::instance();
+    const auto& problem = pipeline_result.problem;
+    const auto& spec = pipeline_result.resolved_spec;
 
     PlanGenerationResult result;
     auto* log_message = result.add_log_messages();
@@ -117,20 +120,15 @@ PlanGenerationResult solve_planning_problem(const rantanplan::Problem& problem,
 
     z3::context ctx;
 
-    rantanplan::StrategySpec spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
-    rantanplan::SearchMode search_mode = rantanplan::parse_search_mode(config.planner.mode);
-    spec.planner = rantanplan::resolve_planner_kind(search_mode, spec);
     rantanplan::Logger::instance().info("Using strategy: " + config.planner.strategy + " (mode: " + config.planner.mode + ")");
-    rantanplan::StrategyFactory::adjust_spec(spec, problem);
 
     auto encoder = rantanplan::StrategyFactory::create_encoder(spec, problem, ctx);
     auto parallelism = rantanplan::StrategyFactory::create_parallelism(spec);
-    auto interference = rantanplan::StrategyFactory::create_interference(spec, problem);
 
-    // Keep raw pointer before moving — BranchAndBoundPlanner needs it for Axiom 6
-    const rantanplan::InterferenceAnalysis* interference_ptr = interference.get();
+    // Take interference from pipeline result (pre-built by InterferencePass)
+    const rantanplan::InterferenceAnalysis* interference_ptr = pipeline_result.interference.get();
 
-    parallelism->set_interference_analyzer(std::move(interference));
+    parallelism->set_interference_analyzer(std::move(pipeline_result.interference));
     encoder->set_parallelism_strategy(std::move(parallelism));
     encoder->set_symmetry_data(pipeline_result.symmetry_data);
 
@@ -243,6 +241,7 @@ int main(int argc, char* argv[]) {
     }
 
     // === PREPROCESSING PIPELINE ===
+    rantanplan::StrategyResolutionPass strategy_resolution_pass;
     rantanplan::BooleanRPGPass boolean_rpg_pass;
     rantanplan::NumericRPGPass numeric_rpg_pass;
     rantanplan::SymmetryDetectionPass symmetry_detection_pass;
@@ -251,11 +250,16 @@ int main(int argc, char* argv[]) {
     rantanplan::CWAInitialStatePass cwa_pass;
     std::vector<const rantanplan::Pass*> passes;
 
+    // Raw spec lookup for pipeline assembly decisions (which RPG pass to include).
+    // The authoritative resolved spec is produced by StrategyResolutionPass.
     rantanplan::StrategySpec pipeline_spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
     pipeline_spec.planner = rantanplan::resolve_planner_kind(
         rantanplan::parse_search_mode(config.planner.mode), pipeline_spec);
     bool need_numeric_rpg = config.global.use_numeric_rpg ||
         rantanplan::StrategyFactory::needs_numeric_rpg(pipeline_spec, planning_problem);
+
+    // Strategy resolution runs first — stores the finalized spec in PipelineResult.
+    passes.push_back(&strategy_resolution_pass);
 
     // Symmetry detection (SMT-based) runs BEFORE grounding — it only needs
     // initial state + goals and is the expensive part of symmetry analysis.
@@ -296,25 +300,25 @@ int main(int argc, char* argv[]) {
         passes.push_back(&symmetry_completion_pass);
     }
 
+    // Interference analysis runs last — needs final problem + resolved spec.
+    rantanplan::InterferencePass interference_pass;
+    passes.push_back(&interference_pass);
+
     auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);
-    planning_problem = std::move(pipeline_result.problem);
     config.planner.start_timestep = pipeline_result.lower_bound;
 
     // Record final action count after all pipeline passes (used for grounding analysis).
     rantanplan::Stats::instance().set("pipeline.final_actions",
-                                      static_cast<double>(planning_problem.actions().size()));
+                                      static_cast<double>(pipeline_result.problem.actions().size()));
 
     // Debug: dump problem info after pipeline
     if (config.is_debug()) {
+        const auto& prob = pipeline_result.problem;
         rantanplan::Logger::instance().info("After pipeline: " +
-                    std::to_string(planning_problem.actions().size()) + " actions, " +
-                    std::to_string(planning_problem.grounded_fluents().size()) + " grounded fluents, " +
-                    std::to_string(planning_problem.initial_state().size()) + " initial assignments, " +
-                    std::to_string(planning_problem.goals().size()) + " goals");
-        // rantanplan::Logger::instance().info("Grounded fluents:");
-        // for (const auto& gf : planning_problem.grounded_fluents()) {
-        //     rantanplan::Logger::instance().info("  " + planning_problem.pool().to_string(gf));
-        // }
+                    std::to_string(prob.actions().size()) + " actions, " +
+                    std::to_string(prob.grounded_fluents().size()) + " grounded fluents, " +
+                    std::to_string(prob.initial_state().size()) + " initial assignments, " +
+                    std::to_string(prob.goals().size()) + " goals");
     }
 
     if (pipeline_result.proven_unsolvable) {
@@ -333,8 +337,7 @@ int main(int argc, char* argv[]) {
         return write_result_and_exit(result, argv[2]);
     }
 
-    // Solve the planning problem using pipeline result
-    PlanGenerationResult result = solve_planning_problem(planning_problem, pipeline_result);
+    PlanGenerationResult result = solve_planning_problem(pipeline_result);
 
     // Print statistics if in debug mode, and optionally write to file
     if (config.is_debug()) {

@@ -8,10 +8,10 @@
 #include "../encoders/parallelism/forall_semantics.hpp"
 #include "../encoders/parallelism/exists_semantics.hpp"
 
-#include "../encoders/parallelism/eager_interference_analysis.hpp"
-#include "../encoders/parallelism/eager_semantic_interference_analysis.hpp"
-#include "../encoders/parallelism/lazy_interference_analysis.hpp"
-#include "../encoders/parallelism/semantic_interference_analysis.hpp"
+#include "../analysis/eager_interference_analysis.hpp"
+#include "../analysis/eager_semantic_interference_analysis.hpp"
+#include "../analysis/lazy_interference_analysis.hpp"
+#include "../analysis/semantic_interference_analysis.hpp"
 
 #include "../planners/sequential.hpp"
 #include "../planners/double_tail_planner.hpp"

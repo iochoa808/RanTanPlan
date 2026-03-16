@@ -1,7 +1,7 @@
 #include "lazy_forall_propagator.hpp"
 #include "../../config/config.hpp"
 #include "../../encoders/z3_variable_factory.hpp"
-#include "../../encoders/parallelism/interference_analysis.hpp"
+#include "../../analysis/interference_analysis.hpp"
 #include "../../util/stats.hpp"
 #include <iostream>
 

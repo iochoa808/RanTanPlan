@@ -6,7 +6,7 @@
 #include "../planners/base_planner.hpp"
 #include "../planners/propagators/propagator_strategy.hpp"
 #include "../encoders/parallelism/parallelism_strategy.hpp"
-#include "../encoders/parallelism/interference_analysis.hpp"
+#include "../analysis/interference_analysis.hpp"
 #include "../passes/pass.hpp"
 #include <z3++.h>
 #include <memory>
@@ -15,13 +15,12 @@
 
 namespace rantanplan {
 
-/// Single point of responsibility for strategy compatibility validation
-/// and component creation.
+/// Strategy component factory — handles validation, problem-specific
+/// adjustments, and component creation.
 ///
-/// All rules about which component combinations are legal live here —
-/// both pure spec constraints (e.g. lazy interference + null propagator)
-/// and spec-vs-config constraints (e.g. double-tail + non-linear schedule).
-/// No other code should validate strategy compatibility.
+/// Some methods are called from the Pass pipeline (adjust_spec from
+/// StrategyResolutionPass, create_interference from InterferencePass).
+/// The remaining Z3-dependent creation methods are called at solve time.
 class StrategyFactory {
 public:
     /// Validate that a spec is internally consistent and compatible with

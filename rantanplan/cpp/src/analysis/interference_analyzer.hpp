@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../problem/problem.hpp"
-#include "../../problem/action.hpp"
-#include "../../problem/visitors/fluent_polarity_collector.hpp"
+#include "../problem/problem.hpp"
+#include "../problem/action.hpp"
+#include "../problem/visitors/fluent_polarity_collector.hpp"
 #include "graph.hpp"
 #include <unordered_map>
 #include <unordered_set>

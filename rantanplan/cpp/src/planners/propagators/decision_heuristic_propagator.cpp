@@ -4,7 +4,7 @@
 #include "../../util/memory_tracker.hpp"
 #include "../../util/stats.hpp"
 #include "../../encoders/z3_variable_factory.hpp"
-#include "../../encoders/parallelism/interference_analysis.hpp"
+#include "../../analysis/interference_analysis.hpp"
 #include <iostream>
 #include <set>
 #include <algorithm>

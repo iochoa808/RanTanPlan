@@ -2,7 +2,7 @@
 
 #include "../../problem/problem.hpp"
 #include "../z3_variable_factory.hpp"
-#include "graph.hpp"  // Include graph header instead of forward declaration
+#include "../../analysis/graph.hpp"
 #include <z3++.h>
 #include <memory>
 #include <string>
