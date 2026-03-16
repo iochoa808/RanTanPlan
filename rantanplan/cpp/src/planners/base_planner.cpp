@@ -13,6 +13,70 @@ BasePlanner::BasePlanner(const Problem& problem, BaseEncoder& encoder, z3::conte
 
 void BasePlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator) {
     propagator_strategy_ = std::move(propagator);
+
+    // ── Z3 solver tuning parameters ────────────────────────────────────
+    //
+    // CRITICAL: These must be set AFTER the propagator is registered, and
+    // must use SMT-level parameter names (not sat.* names).
+    //
+    // Background (2026-03 investigation):
+    //   Z3 has two solver backends with DIFFERENT parameter namespaces:
+    //
+    //     SAT-level (standalone):  sat.phase, sat.restart, sat.gc, sat.branching.heuristic
+    //     SMT-level (with propagators): phase_selection, restart_strategy, lemma_gc_strategy
+    //
+    //   When a z3::user_propagator_base is registered, Z3 switches to the
+    //   SMT backend. Setting sat.* params via solver.set() BEFORE this switch
+    //   silently disables ALL user propagator callbacks (fixed, final, push, pop).
+    //   The propagator object exists and is registered, but Z3 never invokes it.
+    //   This caused invalid plans for every propagator-based strategy (forall-prop,
+    //   forall-lazy*, exists-lazy*, dec) while eager strategies were unaffected
+    //   (they encode parallelism as clauses, not via callbacks).
+    //
+    //   Symptom: the solver returns SAT with interfering actions at the same
+    //   timestep (e.g., pick(ball1, right) and pick(ball2, right) in gripper).
+    //   Setting sat.* params AFTER the propagator throws "unknown parameter"
+    //   because the solver is already in SMT mode at that point.
+    //
+    // Available SMT-level tuning parameters:
+    //   restart_strategy : 0=geometric, 1=inner-outer-luby (default), 2=luby, 3=fixed
+    //   phase_selection  : 0=always_false, 1=always_true, 3=caching (default), 6=random
+    //   lemma_gc_strategy: 0=fixed (default), 1=geometric, 2=at-restart, 3=none
+    //   random_seed      : unsigned (default 0)
+    // ────────────────────────────────────────────────────────────────────
+    z3::params p(ctx_);
+    // restart_strategy: 0=geometric, 1=inner-outer-luby (default), 2=luby, 3=fixed
+    //p.set("restart_strategy", (unsigned)2);
+    //p.set("restart_factor", 1.5); // Geometric restart factor (default 1.5)
+    // phase_selection: 0=always_false, 1=always_true, 3=caching (default)
+    p.set("phase_selection", (unsigned)0);    // Most action vars are false
+
+    // relevancy propagation: we seem to don't want any?
+    // https://github.com/Z3Prover/z3/issues/4941
+    p.set("smt.relevancy", (unsigned)0); 
+    //case_split - int
+    // 0 - case split based on variable activity, 
+    // 1 - similar to 0, but delay case splits created during the search,
+    // 2 - similar to 0, but cache the relevancy, 
+    // 3 - case split based on relevancy (structural splitting),
+    // 4 - case split on relevancy and activity, 
+    // 5 - case split on relevancy and current goal,
+    // 6 - activity-based case split with theory-aware branching activity
+    p.set("smt.case_split", (unsigned)0);
+
+    // controls when Z3 garbage-collects learned lemmas/clauses in the SMT search. 
+    // 0 = fixed: Z3 deletes inactive lemmas whenever the number of conflicts since the last lemma-GC exceeds a threshold, using a fixed interval policy.
+    // 1 = geometric: Same trigger style as fixed, but the lemma-GC threshold grows geometrically over time, so garbage collection happens less frequently as search progresses.
+    // 2 = at restart: Z3 runs lemma cleanup when a restart happens, instead of on the conflict-threshold schedule.
+    // 3 = none: Disables lemma garbage collection.
+    p.set("lemma_gc_strategy", (unsigned)1);
+
+    // TODO: Check if Z3 already chooses the best solver for the numeric part
+    // ....
+
+    // hopefully something interesting to learn ...
+    //p.set("smt.core.minimize", true);
+    solver_.set(p);
 }
 
 std::string BasePlanner::get_propagator_strategy_name() const {

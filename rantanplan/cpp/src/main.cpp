@@ -212,6 +212,14 @@ int main(int argc, char* argv[]) {
         // Initialize logger with config
         rantanplan::Logger::instance().set_config(&config);
 
+        // Set Z3 verbosity to match our verbosity level (SILENT=0, INFO=1, VERBOSE=5, DEBUG=10)
+        constexpr int z3_verbosity[] = {0, 1, 1, 5};
+        z3::set_param("verbose", z3_verbosity[static_cast<int>(config.global.verbosity)]);
+
+        // TODO: Core analysis:
+        //z3::set_param("unsat_core", "true");
+        z3::set_param("random_seed", "42");
+
         if (argc < 3) {
             rantanplan::Logger::instance().error("Usage: " + std::string(argv[0]) + " <input_problem.pb> <output_solution.pb> [OPTIONS]");
             rantanplan::Logger::instance().error("Use --help for detailed options");
