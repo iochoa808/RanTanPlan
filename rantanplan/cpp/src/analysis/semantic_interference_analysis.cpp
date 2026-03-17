@@ -84,50 +84,57 @@ bool SemanticInterferenceAnalysis::action_affects_semantically(const Action& a1,
 
 
 z3::expr SemanticInterferenceAnalysis::apply_action_effects_substitution(const Action& action, const z3::expr& target_expr) const {
-    // Apply action's effects as substitution to the a2 expression
-    // This implements the σ(action, expr) operation from the paper
+    // Apply action's effects as substitution to the target expression.
+    // This implements the σ(action, expr) operation from the paper.
+    //
+    // Multiple conditional effects on the same fluent are composed into
+    // a single nested ite expression to avoid Z3's substitute() silently
+    // dropping duplicates (it only applies the first match per key).
     if (action.effects().empty()) {
-        return target_expr; // No effects to apply
+        return target_expr;
     }
-    
-    std::vector<z3::expr> from_exprs;
-    std::vector<z3::expr> to_exprs;
-    
-    // Build substitution pairs from action effects
+
+    // Group effects by fluent ExprID to properly compose multiple effects
+    std::unordered_map<ExprID, std::vector<const Effect*>> effects_by_fluent;
+    std::vector<ExprID> fluent_order; // preserve first-seen order
     for (const Effect& effect : action.effects()) {
-        const EffectExpression& eff_expr = effect.effect_expression();
-        
-        // Convert fluent to Z3
-        z3::expr fluent_z3 = grounded_visitor_->convert_from_pool(eff_expr.fluent_id(), -1);
-
-        // Create the new value expression based on effect type
-        z3::expr new_value_z3 = convert_effect_to_z3(eff_expr, fluent_z3);
-
-        // Handle conditional effects properly
-        z3::expr substitution_value = new_value_z3;
-        if (effect.is_conditional()) {
-            // For conditional effects: fluent -> (condition ? new_value : fluent)
-            z3::expr condition_z3 = grounded_visitor_->convert_from_pool(effect.effect_expression().condition_id(), -1);
-            substitution_value = z3::ite(condition_z3, new_value_z3, fluent_z3);
+        ExprID fid = effect.effect_expression().fluent_id();
+        if (effects_by_fluent.find(fid) == effects_by_fluent.end()) {
+            fluent_order.push_back(fid);
         }
-        
-        // Add substitution: fluent -> substitution_value
-        from_exprs.push_back(fluent_z3);
-        to_exprs.push_back(substitution_value);
+        effects_by_fluent[fid].push_back(&effect);
     }
 
-    // I think this is not needed as if we have an effect, we will have substitutions to apply
-    // if (from_exprs.empty()) return target_expr; // No substitutions to apply
-    
-    // Apply substitution using Z3's substitute function
     z3::expr_vector from_vector(*z3_context_);
     z3::expr_vector to_vector(*z3_context_);
-    
-    for (size_t i = 0; i < from_exprs.size(); ++i) {
-        from_vector.push_back(from_exprs[i]);
-        to_vector.push_back(to_exprs[i]);
+
+    for (ExprID fid : fluent_order) {
+        z3::expr fluent_z3 = grounded_visitor_->convert_from_pool(fid, -1);
+        z3::expr composed = fluent_z3; // start with unchanged fluent
+
+        // Compose effects into a nested ite chain. This is correct when
+        // conditions on the same fluent are mutually exclusive, which is
+        // the expected pattern in well-formed PDDL (e.g., (when C (f))
+        // paired with (when (not C) (not (f)))). If conditions overlap,
+        // the last-added effect wins — a conservative choice for the
+        // interference analysis since it still models a concrete outcome.
+        for (const Effect* effect : effects_by_fluent[fid]) {
+            const EffectExpression& eff_expr = effect->effect_expression();
+            z3::expr new_value_z3 = convert_effect_to_z3(eff_expr, fluent_z3);
+
+            if (effect->is_conditional()) {
+                z3::expr condition_z3 = grounded_visitor_->convert_from_pool(
+                    effect->effect_expression().condition_id(), -1);
+                composed = z3::ite(condition_z3, new_value_z3, composed);
+            } else {
+                composed = new_value_z3; // unconditional overrides all
+            }
+        }
+
+        from_vector.push_back(fluent_z3);
+        to_vector.push_back(composed);
     }
-    
+
     z3::expr result = target_expr;
     return result.substitute(from_vector, to_vector);
 }
@@ -225,15 +232,21 @@ bool SemanticInterferenceAnalysis::are_simply_commuting(const Action& a1, const 
     // Two actions are simply commuting if for every variable x modified by both,
     // the assignments {x → exp1} and {x → exp2} commute
     
-    // Build maps from variables (by ExprID) to their effects for both actions
+    // Build maps from variables (by ExprID) to their effects for both actions.
+    // If any fluent has multiple effects (e.g. paired conditional effects),
+    // simple commutativity doesn't apply — fall through to the full check.
     std::unordered_map<ExprID, const EffectExpression*> a1_effects;
     std::unordered_map<ExprID, const EffectExpression*> a2_effects;
 
     for (const Effect& effect : a1.effects()) {
-        a1_effects[effect.effect_expression().fluent_id()] = &effect.effect_expression();
+        ExprID fid = effect.effect_expression().fluent_id();
+        if (a1_effects.count(fid)) return false; // multiple effects on same fluent
+        a1_effects[fid] = &effect.effect_expression();
     }
     for (const Effect& effect : a2.effects()) {
-        a2_effects[effect.effect_expression().fluent_id()] = &effect.effect_expression();
+        ExprID fid = effect.effect_expression().fluent_id();
+        if (a2_effects.count(fid)) return false; // multiple effects on same fluent
+        a2_effects[fid] = &effect.effect_expression();
     }
 
     // Check commutativity for each variable modified by both actions
