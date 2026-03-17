@@ -56,6 +56,7 @@ public:
     const Object& object(size_t index) const { return objects_[index]; }
     bool has_object(const std::string& name) const;
     const Object* find_object(const std::string& name) const;
+    int find_object_index(const std::string& name) const;
     
     // Fluent access
     const std::vector<Fluent>& fluents() const { return fluents_; }

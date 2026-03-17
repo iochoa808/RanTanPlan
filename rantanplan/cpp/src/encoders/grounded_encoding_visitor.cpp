@@ -165,6 +165,15 @@ z3::expr GroundedEncodingVisitor::convert_node(ExprID id) {
             if (node.type_id >= 0 && node.type_id < static_cast<int>(problem_->types().size())) {
                 type = &problem_->types()[node.type_id];
             }
+            // Object constants must be encoded as concrete integer values,
+            // not free Z3 variables, to preserve distinct-object semantics
+            // in equality comparisons like (= ?dir output).
+            if (type && type->is_object() && problem_) {
+                int idx = problem_->find_object_index(symbol);
+                if (idx >= 0) {
+                    return ctx_.int_val(idx);
+                }
+            }
             return variable_factory_->create_symbol_variable(symbol, type);
         }
         if (std::holds_alternative<int64_t>(node.payload)) {

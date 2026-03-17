@@ -33,6 +33,7 @@ QUICK_TEST_DIRS = [
     "pddl/test/hydropower",
     "pddl/test/sdac-simple",
     "pddl/test/sdac-zero-bound",
+    "pddl/test/worksworld",
 ]
 
 TIMEOUT = 60  # seconds per test

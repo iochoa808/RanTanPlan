@@ -70,6 +70,14 @@ const Object* Problem::find_object(const std::string& name) const {
     return nullptr;
 }
 
+int Problem::find_object_index(const std::string& name) const {
+    auto it = object_name_to_index_.find(name);
+    if (it != object_name_to_index_.end()) {
+        return static_cast<int>(it->second);
+    }
+    return -1;
+}
+
 bool Problem::has_fluent(const std::string& name) const {
     return fluent_name_to_index_.find(name) != fluent_name_to_index_.end();
 }
