@@ -23,7 +23,6 @@
 #include "arpg/arpg.hpp"
 #include "abstraction/achievers_analysis.hpp"
 #include "passes/pipeline.hpp"
-#include "passes/boolean_rpg_pass.hpp"
 #include "passes/numeric_rpg_pass.hpp"
 #include "passes/symmetry_pass.hpp"
 #include "passes/grounding_pass.hpp"
@@ -218,7 +217,6 @@ int main(int argc, char* argv[]) {
 
         // TODO: Core analysis:
         //z3::set_param("unsat_core", "true");
-        z3::set_param("random_seed", "42");
 
         if (argc < 3) {
             rantanplan::Logger::instance().error("Usage: " + std::string(argv[0]) + " <input_problem.pb> <output_solution.pb> [OPTIONS]");
@@ -250,21 +248,12 @@ int main(int argc, char* argv[]) {
 
     // === PREPROCESSING PIPELINE ===
     rantanplan::StrategyResolutionPass strategy_resolution_pass;
-    rantanplan::BooleanRPGPass boolean_rpg_pass;
     rantanplan::NumericRPGPass numeric_rpg_pass;
     rantanplan::SymmetryDetectionPass symmetry_detection_pass;
     rantanplan::SymmetryCompletionPass symmetry_completion_pass;
     rantanplan::GroundingPass grounding_pass;
     rantanplan::CWAInitialStatePass cwa_pass;
     std::vector<const rantanplan::Pass*> passes;
-
-    // Raw spec lookup for pipeline assembly decisions (which RPG pass to include).
-    // The authoritative resolved spec is produced by StrategyResolutionPass.
-    rantanplan::StrategySpec pipeline_spec = rantanplan::StrategyRegistry::get(config.planner.strategy);
-    pipeline_spec.planner = rantanplan::resolve_planner_kind(
-        rantanplan::parse_search_mode(config.planner.mode), pipeline_spec);
-    bool need_numeric_rpg = config.global.use_numeric_rpg ||
-        rantanplan::StrategyFactory::needs_numeric_rpg(pipeline_spec, planning_problem);
 
     // Strategy resolution runs first — stores the finalized spec in PipelineResult.
     passes.push_back(&strategy_resolution_pass);
@@ -276,30 +265,18 @@ int main(int argc, char* argv[]) {
     }
 
     if (config.global.reachability_grounding) {
-        // C++ grounding performs reachability-based instantiation.
-        // RPG seems redundant after C++ grounding
-        // so it is disabled by default. Use --boolean-rpg or --numeric-rpg
-        // to explicitly re-enable it.
         passes.push_back(&grounding_pass);
     }
 
     // CWA pass ensures all grounded fluents have explicit initial assignments.
-    // Must run BEFORE any RPG pass so that NumericRPG's initialize_layer_0()
+    // Must run BEFORE the RPG pass so that NumericRPG's initialize_layer_0()
     // sees a fully-defined initial state (implicit-false booleans and
     // implicit-zero numerics are filled in here).
     // No-op when Python/UP already provides complete initial state.
     passes.push_back(&cwa_pass);
 
-    if (config.global.reachability_grounding) {
-        if (config.global.enable_action_removal || need_numeric_rpg) {
-            passes.push_back(need_numeric_rpg
-                             ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
-                             : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
-        }
-    } else if (config.global.enable_action_removal || need_numeric_rpg) {
-        passes.push_back(need_numeric_rpg
-                         ? static_cast<const rantanplan::Pass*>(&numeric_rpg_pass)
-                         : static_cast<const rantanplan::Pass*>(&boolean_rpg_pass));
+    if (config.global.enable_action_removal) {
+        passes.push_back(&numeric_rpg_pass);
     }
 
     // Symmetry completion runs AFTER grounding + CWA to compute variable

@@ -37,7 +37,6 @@ void BasePlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> pr
     //   timestep (e.g., pick(ball1, right) and pick(ball2, right) in gripper).
     //   Setting sat.* params AFTER the propagator throws "unknown parameter"
     //   because the solver is already in SMT mode at that point.
-Update .gitignore to include experiments directory and *.csv files; enable 'r2e' benchmark strategy in benchmark.py; add report generator for RantanPlan benchmark results.    // ────────────────────────────────────────────────────────────────────
     auto set_unsat_config = [&](z3::params& p) {
         // restart_strategy: 0=geometric, 1=inner-outer-luby (default), 2=luby, 3=fixed
         p.set("restart_strategy", (unsigned)2);
@@ -73,7 +72,7 @@ Update .gitignore to include experiments directory and *.csv files; enable 'r2e'
 
     z3::params p(ctx_);
     p.set("random_seed", (uint)42);  // Fixed seed for reproducibility
-    set_unsat_config(p);
+    //set_unsat_config(p);
     // TODO: Check if Z3 already chooses the best solver for the numeric part
     // ....
 

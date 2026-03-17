@@ -205,3 +205,4 @@ pddl/pb-test
 # results
 experiments
 *.csv
+plan.txt.*

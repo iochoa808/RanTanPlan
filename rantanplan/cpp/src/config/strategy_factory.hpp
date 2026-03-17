@@ -56,10 +56,6 @@ public:
         const StrategySpec& spec, const Problem& problem,
         BaseEncoder& encoder, z3::context& ctx,
         const InterferenceAnalysis* interference = nullptr);
-
-    /// Whether the given strategy + problem combination requires the
-    /// NumericRPG pass in the pipeline (e.g. B&B + SDAC).
-    static bool needs_numeric_rpg(const StrategySpec& spec, const Problem& problem);
 };
 
 } // namespace rantanplan

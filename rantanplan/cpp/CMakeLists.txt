@@ -123,7 +123,6 @@ add_executable(rantanplan
     src/analysis/lazy_interference_analysis.cpp
     src/analysis/semantic_interference_analysis.cpp
     src/passes/pipeline.cpp
-    src/passes/boolean_rpg_pass.cpp
     src/passes/numeric_rpg_pass.cpp
     src/passes/symmetry_pass.cpp
     src/passes/grounding_pass.cpp

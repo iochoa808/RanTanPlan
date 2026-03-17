@@ -95,31 +95,42 @@
  * computed independently. This is the common case for bound propagation
  * because each effect typically modifies one fluent at a time.
  *
- * Action applicability: "Is drive(truck1, A, B) applicable?" requires
- * checking fuel(truck1) >= distance(A,B) AND at(truck1, A). The boolean
- * part is trivial, but the numeric part asks: given fuel ∈ [-10, 100]
- * and distance ∈ [30, 30], is there a point where fuel >= distance?
- * Answer: yes (any fuel in [30, 100] works).
+ * Action applicability and goal checking use Z3 to check satisfiability
+ * of preconditions/goals against the layer's interval bounds. The layer
+ * state is represented as independent box constraints (each boolean
+ * fluent gets an independent reachability constraint, each numeric
+ * fluent gets independent lower/upper bounds). There is no encoded
+ * correlation between fluents.
  *
- * Where Z3 genuinely helps: the load_pkg action has precondition
- * load(truck1) < capacity(truck1). If load ∈ [0, 5] and capacity = 4
- * (constant), interval arithmetic would check "is there x ∈ [0, 5]
- * and y = 4 such that x < y?" and answer yes (x=0 works). But suppose
- * a more complex precondition involves MULTIPLE numeric fluents
- * together, like:
+ * For most PDDL preconditions (e.g., fuel(truck1) >= distance(A,B)
+ * where distance is a constant fluent, or fuel(truck1) >= 50), a
+ * simple 3-valued recursive evaluator over the formula tree — checking
+ * boolean reachability at leaves and interval satisfiability at numeric
+ * comparisons — would give the same result as Z3. The boolean and
+ * numeric parts don't interact in the layer constraints.
  *
- *   pre: fuel(truck1) >= distance(A,B) + load(truck1) * fuel_per_kg
+ * Where Z3 genuinely helps: joint satisfiability of MULTIPLE numeric
+ * constraints over MULTIPLE non-constant fluents. Example:
  *
- * Here fuel, load, and distance interact. Checking satisfiability of
- * this conjunction over their independent intervals is what Z3 does
- * well — it finds a consistent assignment across all variables
- * simultaneously. Interval arithmetic checking each comparison in
- * isolation would miss cases where the intervals overlap individually
- * but no single point satisfies all constraints jointly.
+ *   pre: (x >= y) AND (y >= x + 1)
+ *
+ * With x ∈ [0, 10], y ∈ [0, 10]: each comparison passes individually
+ * (10 >= 0, 10 >= 1), but jointly x >= y AND y >= x+1 implies y > y,
+ * a contradiction. Interval arithmetic per-atom says "satisfiable";
+ * Z3 correctly determines UNSAT. The same applies to goal conjunctions.
+ *
+ * In practice, most standard planning domains have numeric preconditions
+ * comparing a single fluent against a constant or a constant fluent
+ * (never modified), so this precision advantage is rare. Z3's main
+ * value here is engineering convenience: it handles arbitrary formula
+ * structure (nested AND/OR/NOT with mixed boolean-numeric atoms)
+ * without needing a custom evaluator.
  *
  * Summary: interval arithmetic for propagation (per-fluent, independent
- * branches, exact or near-exact), Z3 for satisfiability (multi-fluent
- * joint constraints, where correlations matter).
+ * branches, exact or near-exact). Z3 for satisfiability as a convenient
+ * generic formula evaluator, with a genuine precision advantage only
+ * when multiple non-constant numeric fluents interact within a single
+ * precondition or goal conjunction.
  *
  * Directional widening
  * --------------------
@@ -437,6 +448,18 @@ public:
     };
 
     /**
+     * @brief 3-valued result for interval-based formula evaluation.
+     *
+     * Used by the interval checker (non-Z3) to determine if a formula
+     * is satisfiable given box constraints (independent per-fluent bounds).
+     */
+    enum class FormulaResult {
+        ALWAYS_TRUE,   // True for ALL assignments within box constraints
+        ALWAYS_FALSE,  // False for ALL assignments (= definitely UNSAT)
+        UNKNOWN        // Truth depends on specific assignment (= possibly SAT)
+    };
+
+    /**
      * @brief Bounds for numeric fluents (always bounded)
      *
      * Since initial state is fully defined, numeric variables start with
@@ -705,6 +728,7 @@ private:
     mutable size_t total_smt_queries_;
     mutable size_t total_optimization_queries_;
     mutable size_t total_applicability_checks_;
+    mutable size_t total_interval_checks_;
 
     // ========================================================================
     // STATIC MEMBERS
@@ -788,6 +812,41 @@ private:
      * @brief Check if single action is applicable at layer (SMT query)
      */
     bool is_action_applicable_smt(const Action& action, int layer) const;
+
+    // ========================================================================
+    // PRIVATE METHODS - Interval-Based Formula Evaluation
+    // ========================================================================
+
+    /**
+     * @brief Evaluate a formula to a 3-valued result using interval arithmetic.
+     *
+     * Recursively walks the ExprID tree:
+     *   - Boolean SVs: lookup BooleanReachability in layer state
+     *   - Numeric comparisons: evaluate sides to intervals, check tautology/falsehood
+     *   - AND/OR/NOT/IMPLIES: compose with 3-valued logic
+     *
+     * Sound over-approximation: never returns ALWAYS_FALSE when the formula
+     * is actually satisfiable. May return UNKNOWN when Z3 would prove UNSAT
+     * (only for joint multi-variable numeric constraints).
+     */
+    FormulaResult evaluate_formula_interval(ExprID eid, int layer) const;
+
+    /**
+     * @brief Check if a numeric comparison is always true, always false, or unknown.
+     */
+    FormulaResult evaluate_comparison_interval(ExprOperator op,
+                                               const Interval& lhs,
+                                               const Interval& rhs) const;
+
+    /**
+     * @brief Interval-based action applicability check.
+     */
+    bool is_action_applicable_interval(const Action& action, int layer) const;
+
+    /**
+     * @brief Interval-based goal achievability check at a specific layer.
+     */
+    bool are_goals_achievable_at_layer_interval(int layer) const;
 
     // ========================================================================
     // PRIVATE METHODS - Boolean Effect Propagation

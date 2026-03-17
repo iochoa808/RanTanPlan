@@ -34,10 +34,9 @@ public:
         // but we still need to discover them to avoid incorrect pruning. Therefore, we must
         // build to fixpoint rather than stopping early when goals become achievable.
         bool rpg_early_termination = false;  // Stop RPG construction when goals are reachable (DEFAULT: false - required for sound action removal)
-        bool use_numeric_rpg = false;  // Use NumericRelaxedPlanningGraph (true) or RelaxedPlanningGraph (false) for action removal
-        bool compare_rpgs = false;  // Run RPG comparison tool to debug action removal differences
         bool reachability_grounding = true;  // C++ reachability grounding is the default; --up-grounding disables this
         bool numeric_grounding = true;  // Numeric interval bounds in reachability grounder (disable with --no-numeric-grounding)
+        bool rpg_interval_checker = true;  // Use interval-based formula checker instead of Z3 for RPG applicability/goals (--smt-rpg-checker to revert to Z3)
     } global;
     
     struct Planner {

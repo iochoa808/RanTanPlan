@@ -124,7 +124,8 @@ NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem,
       build_time_ms_(0.0),
       total_smt_queries_(0),
       total_optimization_queries_(0),
-      total_applicability_checks_(0) {
+      total_applicability_checks_(0),
+      total_interval_checks_(0) {
 
     // Build EPC index for efficient effect lookup
     build_epc_index();
@@ -415,6 +416,7 @@ bool NumericRelaxedPlanningGraph::build() {
     Stats::instance().set("rpg.numeric.smt_queries", total_smt_queries_);
     Stats::instance().set("rpg.numeric.optimization_queries", total_optimization_queries_);
     Stats::instance().set("rpg.numeric.applicability_checks", total_applicability_checks_);
+    Stats::instance().set("rpg.numeric.interval_checks", total_interval_checks_);
     Stats::instance().set("rpg.numeric.total_actions", total_actions);
     Stats::instance().set("rpg.numeric.reachable_actions", reachable_actions);
     Stats::instance().set("rpg.numeric.removed_actions", removed_actions);
@@ -877,8 +879,12 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
     std::vector<const Action*> applicable_actions;
 
     // For each action, check if its precondition is satisfiable given the layer state
+    bool use_interval = Config::instance().global.rpg_interval_checker;
     for (const Action& action : problem_.actions()) {
-        if (is_action_applicable_smt(action, layer)) {
+        bool applicable = use_interval
+            ? is_action_applicable_interval(action, layer)
+            : is_action_applicable_smt(action, layer);
+        if (applicable) {
             applicable_actions.push_back(&action);
         }
     }
@@ -1017,6 +1023,210 @@ void NumericRelaxedPlanningGraph::add_numeric_constraints(z3::solver& solver, in
 }
 
 
+// ============================================================================
+// PRIVATE METHODS - Interval-Based Formula Evaluation
+// ============================================================================
+
+NumericRelaxedPlanningGraph::FormulaResult
+NumericRelaxedPlanningGraph::evaluate_comparison_interval(
+    ExprOperator op, const Interval& lhs, const Interval& rhs) const {
+
+    switch (op) {
+        case ExprOperator::LESS_EQUAL:
+            if (lhs.upper <= rhs.lower) return FormulaResult::ALWAYS_TRUE;
+            if (lhs.lower > rhs.upper)  return FormulaResult::ALWAYS_FALSE;
+            return FormulaResult::UNKNOWN;
+
+        case ExprOperator::LESS_THAN:
+            if (lhs.upper < rhs.lower)  return FormulaResult::ALWAYS_TRUE;
+            if (lhs.lower >= rhs.upper) return FormulaResult::ALWAYS_FALSE;
+            return FormulaResult::UNKNOWN;
+
+        case ExprOperator::GREATER_EQUAL:
+            if (lhs.lower >= rhs.upper) return FormulaResult::ALWAYS_TRUE;
+            if (lhs.upper < rhs.lower)  return FormulaResult::ALWAYS_FALSE;
+            return FormulaResult::UNKNOWN;
+
+        case ExprOperator::GREATER_THAN:
+            if (lhs.lower > rhs.upper)  return FormulaResult::ALWAYS_TRUE;
+            if (lhs.upper <= rhs.lower) return FormulaResult::ALWAYS_FALSE;
+            return FormulaResult::UNKNOWN;
+
+        case ExprOperator::EQUALS: {
+            double eps = Config::instance().global.epsilon;
+            // Both point intervals at same value
+            if (std::abs(lhs.upper - lhs.lower) < eps &&
+                std::abs(rhs.upper - rhs.lower) < eps &&
+                std::abs(lhs.lower - rhs.lower) < eps)
+                return FormulaResult::ALWAYS_TRUE;
+            // Disjoint intervals
+            if (lhs.upper < rhs.lower || rhs.upper < lhs.lower)
+                return FormulaResult::ALWAYS_FALSE;
+            return FormulaResult::UNKNOWN;
+        }
+
+        default:
+            return FormulaResult::UNKNOWN;
+    }
+}
+
+NumericRelaxedPlanningGraph::FormulaResult
+NumericRelaxedPlanningGraph::evaluate_formula_interval(ExprID eid, int layer) const {
+    if (!eid.valid()) return FormulaResult::UNKNOWN;
+
+    const auto& pool = problem_.pool();
+
+    // --- Boolean constant leaf ---
+    if (pool.is_constant(eid) && pool.payload_is_bool(eid)) {
+        return pool.payload_bool(eid) ? FormulaResult::ALWAYS_TRUE
+                                      : FormulaResult::ALWAYS_FALSE;
+    }
+
+    // --- Boolean state variable (positive atom: "fluent is true") ---
+    if (pool.is_state_variable(eid) && is_boolean_expression(eid)) {
+        int fluent_id = find_grounded_fluent_id(eid);
+        if (fluent_id < 0) return FormulaResult::UNKNOWN;
+        auto it = layer_states_[layer].boolean_reachability.find(fluent_id);
+        if (it == layer_states_[layer].boolean_reachability.end())
+            return FormulaResult::ALWAYS_FALSE;  // not yet reachable
+        switch (it->second) {
+            case BooleanReachability::FALSE_ONLY: return FormulaResult::ALWAYS_FALSE;
+            case BooleanReachability::TRUE_ONLY:  return FormulaResult::ALWAYS_TRUE;
+            case BooleanReachability::BOTH:       return FormulaResult::UNKNOWN;
+        }
+        return FormulaResult::UNKNOWN;
+    }
+
+    // --- AND ---
+    if (pool.is_and(eid)) {
+        bool all_true = true;
+        auto process = [&](ExprID child) -> bool {
+            FormulaResult r = evaluate_formula_interval(child, layer);
+            if (r == FormulaResult::ALWAYS_FALSE) return false;  // short-circuit
+            if (r != FormulaResult::ALWAYS_TRUE) all_true = false;
+            return true;
+        };
+        if (pool.has_head_and_arguments(eid)) {
+            for (ExprID arg : pool.arguments(eid))
+                if (!process(arg)) return FormulaResult::ALWAYS_FALSE;
+        } else {
+            for (ExprID child : pool.children(eid))
+                if (!process(child)) return FormulaResult::ALWAYS_FALSE;
+        }
+        return all_true ? FormulaResult::ALWAYS_TRUE : FormulaResult::UNKNOWN;
+    }
+
+    // --- OR ---
+    if (pool.is_or(eid)) {
+        bool all_false = true;
+        auto process = [&](ExprID child) -> bool {
+            FormulaResult r = evaluate_formula_interval(child, layer);
+            if (r == FormulaResult::ALWAYS_TRUE) return false;  // short-circuit
+            if (r != FormulaResult::ALWAYS_FALSE) all_false = false;
+            return true;
+        };
+        if (pool.has_head_and_arguments(eid)) {
+            for (ExprID arg : pool.arguments(eid))
+                if (!process(arg)) return FormulaResult::ALWAYS_TRUE;
+        } else {
+            for (ExprID child : pool.children(eid))
+                if (!process(child)) return FormulaResult::ALWAYS_TRUE;
+        }
+        return all_false ? FormulaResult::ALWAYS_FALSE : FormulaResult::UNKNOWN;
+    }
+
+    // --- NOT ---
+    if (pool.is_not(eid)) {
+        ExprID child = pool.has_head_and_arguments(eid) ? pool.argument(eid, 0)
+                                                         : pool.child(eid, 0);
+        FormulaResult r = evaluate_formula_interval(child, layer);
+        if (r == FormulaResult::ALWAYS_TRUE) return FormulaResult::ALWAYS_FALSE;
+        if (r == FormulaResult::ALWAYS_FALSE) return FormulaResult::ALWAYS_TRUE;
+        return FormulaResult::UNKNOWN;
+    }
+
+    // --- IMPLIES(A, B) = OR(NOT(A), B) ---
+    if (pool.is_implies(eid)) {
+        ExprID a = pool.has_head_and_arguments(eid) ? pool.argument(eid, 0) : pool.child(eid, 0);
+        ExprID b = pool.has_head_and_arguments(eid) ? pool.argument(eid, 1) : pool.child(eid, 1);
+        FormulaResult ra = evaluate_formula_interval(a, layer);
+        FormulaResult rb = evaluate_formula_interval(b, layer);
+        // NOT(A): flip ra
+        FormulaResult not_a = (ra == FormulaResult::ALWAYS_TRUE) ? FormulaResult::ALWAYS_FALSE
+                            : (ra == FormulaResult::ALWAYS_FALSE) ? FormulaResult::ALWAYS_TRUE
+                            : FormulaResult::UNKNOWN;
+        // OR(NOT(A), B)
+        if (not_a == FormulaResult::ALWAYS_TRUE || rb == FormulaResult::ALWAYS_TRUE)
+            return FormulaResult::ALWAYS_TRUE;
+        if (not_a == FormulaResult::ALWAYS_FALSE && rb == FormulaResult::ALWAYS_FALSE)
+            return FormulaResult::ALWAYS_FALSE;
+        return FormulaResult::UNKNOWN;
+    }
+
+    // --- Function application: comparisons and IFF ---
+    if (pool.is_function_application(eid)) {
+        ExprOperator op = pool.op(eid);
+        size_t nargs = pool.argument_count(eid);
+
+        if (nargs == 2 && is_comparison_operator(op)) {
+            ExprID lhs_eid = pool.argument(eid, 0);
+            ExprID rhs_eid = pool.argument(eid, 1);
+
+            // EQUALS between booleans: handle as IFF
+            if (op == ExprOperator::EQUALS &&
+                is_boolean_expression(lhs_eid) && is_boolean_expression(rhs_eid)) {
+                FormulaResult rl = evaluate_formula_interval(lhs_eid, layer);
+                FormulaResult rr = evaluate_formula_interval(rhs_eid, layer);
+                // IFF: both same → true, both opposite → false
+                if (rl == rr && rl != FormulaResult::UNKNOWN)
+                    return FormulaResult::ALWAYS_TRUE;
+                if ((rl == FormulaResult::ALWAYS_TRUE && rr == FormulaResult::ALWAYS_FALSE) ||
+                    (rl == FormulaResult::ALWAYS_FALSE && rr == FormulaResult::ALWAYS_TRUE))
+                    return FormulaResult::ALWAYS_FALSE;
+                return FormulaResult::UNKNOWN;
+            }
+
+            // Numeric comparison
+            Interval lhs = evaluate_interval(lhs_eid, layer);
+            Interval rhs = evaluate_interval(rhs_eid, layer);
+            return evaluate_comparison_interval(op, lhs, rhs);
+        }
+
+        // IFF (if represented as its own operator)
+        if (nargs == 2 && op == ExprOperator::IFF) {
+            ExprID a = pool.argument(eid, 0);
+            ExprID b = pool.argument(eid, 1);
+            FormulaResult ra = evaluate_formula_interval(a, layer);
+            FormulaResult rb = evaluate_formula_interval(b, layer);
+            if (ra == rb && ra != FormulaResult::UNKNOWN)
+                return FormulaResult::ALWAYS_TRUE;
+            if ((ra == FormulaResult::ALWAYS_TRUE && rb == FormulaResult::ALWAYS_FALSE) ||
+                (ra == FormulaResult::ALWAYS_FALSE && rb == FormulaResult::ALWAYS_TRUE))
+                return FormulaResult::ALWAYS_FALSE;
+            return FormulaResult::UNKNOWN;
+        }
+    }
+
+    // --- Fallback: assume possibly satisfiable ---
+    return FormulaResult::UNKNOWN;
+}
+
+bool NumericRelaxedPlanningGraph::is_action_applicable_interval(
+    const Action& action, int layer) const {
+    total_interval_checks_++;
+    if (!action.has_precondition()) return true;
+    return evaluate_formula_interval(action.precondition_id(), layer)
+        != FormulaResult::ALWAYS_FALSE;
+}
+
+bool NumericRelaxedPlanningGraph::are_goals_achievable_at_layer_interval(int layer) const {
+    for (const Goal& goal : problem_.goals()) {
+        if (evaluate_formula_interval(goal.goal_id(), layer) == FormulaResult::ALWAYS_FALSE)
+            return false;
+    }
+    return true;
+}
+
 double NumericRelaxedPlanningGraph::extract_numeric_value(const z3::expr& z3_value) const {
     // Handle different Z3 value types
     if (z3_value.is_numeral()) {
@@ -1124,8 +1334,11 @@ bool NumericRelaxedPlanningGraph::are_goals_achievable() const {
         return false;
     }
 
-    // Use the last layer for goal checking
     int final_layer = static_cast<int>(layer_states_.size()) - 1;
+
+    if (Config::instance().global.rpg_interval_checker) {
+        return are_goals_achievable_at_layer_interval(final_layer);
+    }
 
     // Create a fresh solver for goal checking
     z3::solver solver(ctx_);
@@ -1155,23 +1368,29 @@ int NumericRelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
     int left = 0;
     int right = static_cast<int>(layer_states_.size()) - 1;
     int min_layer = right;
+    bool use_interval = Config::instance().global.rpg_interval_checker;
 
     while (left <= right) {
         int mid = (left + right) / 2;
 
-        // Check if goals are achievable at layer mid
-        z3::solver solver(ctx_);
-        add_layer_constraints(solver, mid);
+        bool achievable;
+        if (use_interval) {
+            achievable = are_goals_achievable_at_layer_interval(mid);
+        } else {
+            z3::solver solver(ctx_);
+            add_layer_constraints(solver, mid);
 
-        for (const Goal& goal : problem_.goals()) {
-            z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), mid);
-            solver.add(goal_expr);
+            for (const Goal& goal : problem_.goals()) {
+                z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), mid);
+                solver.add(goal_expr);
+            }
+
+            total_smt_queries_++;
+            z3::check_result result = solver.check();
+            achievable = (result == z3::sat);
         }
 
-        total_smt_queries_++;
-        z3::check_result result = solver.check();
-
-        if (result == z3::sat) {
+        if (achievable) {
             // Goals achievable at mid, try earlier
             min_layer = mid;
             right = mid - 1;
@@ -1230,6 +1449,7 @@ void NumericRelaxedPlanningGraph::print_statistics() const {
     std::cout << "Total SMT queries: " << total_smt_queries_ << std::endl;
     std::cout << "Total optimization queries: " << total_optimization_queries_ << std::endl;
     std::cout << "Total applicability checks: " << total_applicability_checks_ << std::endl;
+    std::cout << "Total interval checks: " << total_interval_checks_ << std::endl;
 
     if (!layer_states_.empty()) {
         const auto& final_layer = layer_states_.back();

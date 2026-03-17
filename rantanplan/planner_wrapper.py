@@ -48,8 +48,7 @@ class _RantanPlanBase(Engine):
         self._stats_file = options.get('stats_file')
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
         self._no_action_removal = options.get('no_action_removal', False)
-        self._boolean_rpg = options.get('boolean_rpg', False)
-        self._numeric_rpg = options.get('numeric_rpg', False)
+        self._smt_rpg_checker = options.get('smt_rpg_checker', False)
         self._horizon_schedule = options.get('horizon_schedule')
         self._log_file = options.get('log_file')
         self._up_grounding = options.get('up_grounding', False)
@@ -205,10 +204,8 @@ class _RantanPlanBase(Engine):
             command.extend(["--stats-file", self._stats_file])
         if self._no_action_removal:
             command.append("--no-action-removal")
-        if self._boolean_rpg:
-            command.append("--boolean-rpg")
-        if self._numeric_rpg:
-            command.append("--numeric-rpg")
+        if self._smt_rpg_checker:
+            command.append("--smt-rpg-checker")
         if self._horizon_schedule is not None:
             command.extend(["--horizon-schedule", self._horizon_schedule])
         if self._log_file is not None:

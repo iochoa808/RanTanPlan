@@ -78,10 +78,8 @@ Use --list-strategies to see available strategies and their descriptions.
                        help="Disable CNF normalization of goals and preconditions")
     parser.add_argument("--no-action-removal", action="store_true",
                        help="Disable RPG-based action removal optimization")
-    parser.add_argument("--boolean-rpg", action="store_true",
-                       help="Use Boolean RPG for action removal (faster, less precise)")
-    parser.add_argument("--numeric-rpg", action="store_true",
-                       help="Use Numeric RPG for action removal (slower, more precise, default)")
+    parser.add_argument("--smt-rpg-checker", action="store_true",
+                       help="Use Z3 SMT solver for RPG applicability checks instead of interval arithmetic (default: interval)")
 
     # Logging
     parser.add_argument("--log-file", type=str,
@@ -137,10 +135,8 @@ def _build_planner_params(args) -> Dict[str, object]:
         planner_params['no_cnf_normalization'] = True
     if args.no_action_removal:
         planner_params['no_action_removal'] = True
-    if args.boolean_rpg:
-        planner_params['boolean_rpg'] = True
-    if args.numeric_rpg:
-        planner_params['numeric_rpg'] = True
+    if args.smt_rpg_checker:
+        planner_params['smt_rpg_checker'] = True
     if args.horizon_schedule is not None:
         planner_params['horizon_schedule'] = args.horizon_schedule
     if args.log_file:

@@ -140,12 +140,6 @@ void StrategyFactory::configure_planner(BasePlanner& planner, const StrategySpec
     }
 }
 
-bool StrategyFactory::needs_numeric_rpg(const StrategySpec& spec, const Problem& problem) {
-    return uses_branch_and_bound(spec) &&
-           problem.has_metric() &&
-           problem.has_state_dependent_costs();
-}
-
 std::unique_ptr<BaseEncoder> StrategyFactory::create_encoder(
     const StrategySpec& spec, const Problem& problem, z3::context& ctx) {
     switch (spec.encoder) {

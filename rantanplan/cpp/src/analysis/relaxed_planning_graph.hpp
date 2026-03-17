@@ -11,7 +11,11 @@
 namespace rantanplan {
 
 /**
- * @brief RelaxedPlanningGraph — monotone reachability analysis for action removal.
+ * @brief RelaxedPlanningGraph — Boolean-only monotone reachability analysis.
+ *
+ * NOTE: Currently unused. NumericRelaxedPlanningGraph is a strict superset
+ * (handles both boolean and numeric fluents) and is used by default via
+ * NumericRPGPass. This class is kept for potential lightweight/fast-path use.
  *
  * Layer-by-layer relaxed planning graph implementation using traditional fixpoint computation.
  *

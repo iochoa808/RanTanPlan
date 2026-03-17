@@ -103,13 +103,8 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
             config.global.enable_action_removal = false;
             explicit_no_action_removal = true;
         }
-        else if (arg == "--boolean-rpg") {
-            config.global.use_numeric_rpg = false;
-            config.global.enable_action_removal = true;
-        }
-        else if (arg == "--numeric-rpg") {
-            config.global.use_numeric_rpg = true;
-            config.global.enable_action_removal = true;
+        else if (arg == "--smt-rpg-checker") {
+            config.global.rpg_interval_checker = false;
         }
         // Z3 solver options
         else if (arg == "--no-persist-clauses") {
