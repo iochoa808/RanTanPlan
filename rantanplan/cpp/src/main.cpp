@@ -275,7 +275,7 @@ int main(int argc, char* argv[]) {
     // No-op when Python/UP already provides complete initial state.
     passes.push_back(&cwa_pass);
 
-    if (config.global.enable_action_removal) {
+    if (config.global.enable_rpg) {
         passes.push_back(&numeric_rpg_pass);
     }
 

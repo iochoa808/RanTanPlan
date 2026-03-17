@@ -1,11 +1,14 @@
 #include "grounding_pass.hpp"
 #include "../grounding/reachability_grounder.hpp"
 #include "../util/logger.hpp"
+#include "../util/scoped_timer.hpp"
 #include "../util/stats.hpp"
 
 namespace rantanplan {
 
 void GroundingPass::apply(PipelineResult& result) const {
+    ScopedTimer timer("grounding.time_ms");
+
     Logger::instance().component(VerbosityLevel::INFO, "Grounding", {{"status", "starting"}});
 
     ReachabilityGrounder grounder(result.problem);
@@ -27,6 +30,7 @@ void GroundingPass::apply(PipelineResult& result) const {
     }
 
     Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
         {"complete", std::to_string(gr.ground_action_count) + " actions, " +
                      std::to_string(gr.iterations) + " iterations"}
     });

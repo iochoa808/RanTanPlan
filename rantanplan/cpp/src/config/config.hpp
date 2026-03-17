@@ -23,7 +23,8 @@ public:
         int timeout = 0;  // 0 = no timeout (run indefinitely)
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
-        bool enable_action_removal = false;  // Enable RPG-based action removal (disabled by default; enabled automatically for --up-grounding)
+        bool enable_rpg = true;              // Run NumericRPG for reachability check + lower bound
+        bool enable_action_removal = true;   // Prune unreachable actions using RPG results
         bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
         double epsilon = 1e-6;  // Numerical tolerance for floating-point comparisons
         // IMPORTANT: Early termination is UNSOUND for action removal with Numeric RPG!

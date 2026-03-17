@@ -8,10 +8,6 @@
 namespace rantanplan {
 
 void CLIParser::parse(Config& config, int argc, char* argv[]) {
-    // Track whether --no-action-removal was given so it can override
-    // --up-grounding / --boolean-rpg / --numeric-rpg regardless of flag order.
-    bool explicit_no_action_removal = false;
-
     for (int i = 3; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -89,19 +85,13 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--horizon-schedule requires a value (linear|arithmetic|geometric|doubling)");
             }
         }
-        // Action removal / grounding options
+        // Grounding options
         else if (arg == "--up-grounding") {
             // Use Unified Planning grounding (Python side) instead of C++ grounding.
-            // This disables C++ grounding and enables RPG-based action removal.
             config.global.reachability_grounding = false;
-            config.global.enable_action_removal = true;
         }
         else if (arg == "--no-numeric-grounding") {
             config.global.numeric_grounding = false;
-        }
-        else if (arg == "--no-action-removal") {
-            config.global.enable_action_removal = false;
-            explicit_no_action_removal = true;
         }
         else if (arg == "--smt-rpg-checker") {
             config.global.rpg_interval_checker = false;
@@ -150,10 +140,6 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         }
     }
 
-    // --no-action-removal takes precedence over any flag that enables it.
-    if (explicit_no_action_removal) {
-        config.global.enable_action_removal = false;
-    }
 }
 
 VerbosityLevel CLIParser::parse_verbosity(const std::string& value) const {

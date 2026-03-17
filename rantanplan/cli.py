@@ -76,8 +76,6 @@ Use --list-strategies to see available strategies and their descriptions.
                        help="Enable symmetry detection and breaking")
     parser.add_argument("--no-cnf-normalization", action="store_true",
                        help="Disable CNF normalization of goals and preconditions")
-    parser.add_argument("--no-action-removal", action="store_true",
-                       help="Disable RPG-based action removal optimization")
     parser.add_argument("--smt-rpg-checker", action="store_true",
                        help="Use Z3 SMT solver for RPG applicability checks instead of interval arithmetic (default: interval)")
 
@@ -133,8 +131,6 @@ def _build_planner_params(args) -> Dict[str, object]:
         planner_params['symmetries'] = True
     if args.no_cnf_normalization:
         planner_params['no_cnf_normalization'] = True
-    if args.no_action_removal:
-        planner_params['no_action_removal'] = True
     if args.smt_rpg_checker:
         planner_params['smt_rpg_checker'] = True
     if args.horizon_schedule is not None:

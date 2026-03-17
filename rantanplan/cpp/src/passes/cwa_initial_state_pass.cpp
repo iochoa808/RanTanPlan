@@ -1,10 +1,13 @@
 #include "cwa_initial_state_pass.hpp"
 #include "../util/logger.hpp"
+#include "../util/scoped_timer.hpp"
 #include <unordered_set>
 
 namespace rantanplan {
 
 void CWAInitialStatePass::apply(PipelineResult& result) const {
+    ScopedTimer timer("cwa.time_ms");
+
     auto& problem = result.problem;
     auto pool = problem.pool_ptr();
 
@@ -46,12 +49,17 @@ void CWAInitialStatePass::apply(PipelineResult& result) const {
     }
 
     if (defaults.empty()) {
-        Logger::instance().info("CWA initial state: all grounded fluents already assigned");
+        Logger::instance().component(VerbosityLevel::VERBOSE, "CWA", {
+            {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
+            {"status", "all grounded fluents already assigned"}
+        });
         return;
     }
 
-    Logger::instance().info("CWA initial state: added " +
-                  std::to_string(defaults.size()) + " default assignments");
+    Logger::instance().component(VerbosityLevel::INFO, "CWA", {
+        {"time", std::to_string(static_cast<int>(timer.elapsed_ms())) + "ms"},
+        {"added", std::to_string(defaults.size()) + " default assignments"}
+    });
 
     result.problem = problem.with_additional_initial_state(defaults);
 }

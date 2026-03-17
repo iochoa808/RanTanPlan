@@ -314,7 +314,9 @@ bool NumericRelaxedPlanningGraph::build() {
     // Initialize layer 0 from initial state
     initialize_layer_0();
 
-    Logger::instance().verbose("NumericRelaxedPlanningGraph::build() - Starting layer expansion");
+    Logger::instance().component(VerbosityLevel::VERBOSE, "RPG.Numeric", {
+        {"status", "starting layer expansion"}
+    });
 
     // Debug: Print initial layer (layer 0)
     print_layer_summary(0);
@@ -361,7 +363,7 @@ bool NumericRelaxedPlanningGraph::build() {
         }
 
         std::ostringstream component_name, bool_states;
-        component_name << "RPG.N L" << (layer + 1);
+        component_name << "RPG.Numeric L" << (layer + 1);
         bool_states << "F:" << false_only_count << "/T:" << true_only_count << "/B:" << both_count;
 
         Logger::instance().component(VerbosityLevel::VERBOSE, component_name.str(), {
@@ -427,15 +429,22 @@ bool NumericRelaxedPlanningGraph::build() {
     std::ostringstream actions_str;
     actions_str << total_actions << " (" << reachable_actions << " reachable, " << removed_actions << " removed)";
 
-    Logger::instance().component(VerbosityLevel::INFO, "RPG.Numeric", {
+    std::vector<std::pair<std::string, std::string>> log_fields = {
         {"time", std::to_string(static_cast<int>(build_time_ms_)) + "ms"},
         {"layers", std::to_string(layer_states_.size())},
         {"actions", actions_str.str()},
-        {"SMT queries", std::to_string(total_smt_queries_)},
-        {"optimization", std::to_string(total_optimization_queries_)},
-        {"mem", std::to_string(static_cast<int>(memory_used)) + "MB"},
-        {"goals", goals_reachable ? "REACHABLE" : "UNREACHABLE"}
-    });
+    };
+    if (goals_reachable) {
+        int lower_bound = get_minimum_steps_lower_bound();
+        log_fields.push_back({"lower bound", std::to_string(lower_bound)});
+    }
+    if (total_smt_queries_ > 0) {
+        log_fields.push_back({"SMT queries", std::to_string(total_smt_queries_)});
+    }
+    log_fields.push_back({"mem", std::to_string(static_cast<int>(memory_used)) + "MB"});
+    log_fields.push_back({"goals", goals_reachable ? "REACHABLE" : "UNREACHABLE"});
+
+    Logger::instance().component(VerbosityLevel::INFO, "RPG.Numeric", log_fields);
 
     return goals_reachable;
 }
@@ -855,9 +864,10 @@ void NumericRelaxedPlanningGraph::precompute_freezes() {
     }
 
     if (!freeze_upper_.empty() || !freeze_lower_.empty()) {
-        Logger::instance().info("RPG.Numeric: freeze analysis — " +
-            std::to_string(freeze_upper_.size()) + " upper frozen, " +
-            std::to_string(freeze_lower_.size()) + " lower frozen");
+        Logger::instance().component(VerbosityLevel::VERBOSE, "RPG.Numeric", {
+            {"freeze analysis", std::to_string(freeze_upper_.size()) + " upper, " +
+                                std::to_string(freeze_lower_.size()) + " lower"}
+        });
     }
 }
 
@@ -1507,11 +1517,15 @@ void NumericRelaxedPlanningGraph::print_layer_summary(int layer) const {
         else if (reach == BooleanReachability::BOTH) both++;
     }
 
-    std::cout << "[Layer " << layer << "] "
-              << "Actions: " << applicable.size() << " | "
-              << "Bool: F=" << false_only << " T=" << true_only << " B=" << both << " | "
-              << "Num: " << layer_state.numeric_bounds.size()
-              << std::endl;
+    std::ostringstream component_name, bool_states;
+    component_name << "RPG.Numeric L" << layer;
+    bool_states << "F:" << false_only << "/T:" << true_only << "/B:" << both;
+
+    Logger::instance().component(VerbosityLevel::VERBOSE, component_name.str(), {
+        {"actions", std::to_string(applicable.size())},
+        {"bool", std::to_string(layer_state.boolean_reachability.size()) + " (" + bool_states.str() + ")"},
+        {"num", std::to_string(layer_state.numeric_bounds.size())}
+    });
 }
 
 void NumericRelaxedPlanningGraph::print_action_applicability(

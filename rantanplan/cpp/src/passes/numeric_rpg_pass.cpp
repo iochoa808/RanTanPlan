@@ -1,5 +1,6 @@
 #include "numeric_rpg_pass.hpp"
 #include "../analysis/numeric_relaxed_planning_graph.hpp"
+#include "../config/config.hpp"
 
 #include <z3++.h>
 #include <algorithm>
@@ -28,6 +29,10 @@ void NumericRPGPass::apply(PipelineResult& result) const {
     }
 
     result.lower_bound = std::max(result.lower_bound, numeric_rpg.get_minimum_steps_lower_bound());
+
+    if (!Config::instance().global.enable_action_removal) {
+        return;
+    }
 
     auto removed_indices = numeric_rpg.get_removable_action_indices();
 

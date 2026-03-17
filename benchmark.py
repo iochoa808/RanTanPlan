@@ -512,23 +512,6 @@ def main():
         help="Use Unified Planning cross-product grounding instead of C++ reachability-based grounding"
     )
 
-    # RPG / action removal options
-    parser.add_argument(
-        "--no-action-removal",
-        action="store_true",
-        help="Disable RPG-based action removal optimization"
-    )
-    parser.add_argument(
-        "--boolean-rpg",
-        action="store_true",
-        help="Use Boolean RPG for action removal (faster, less precise)"
-    )
-    parser.add_argument(
-        "--numeric-rpg",
-        action="store_true",
-        help="Use Numeric RPG for action removal (slower, more precise)"
-    )
-
     # Generic passthrough for any additional planner flags
     parser.add_argument(
         "--extra-args",
@@ -576,12 +559,6 @@ def main():
     extra_flags = []
     if args.up_grounding:
         extra_flags.append("--up-grounding")
-    if args.no_action_removal:
-        extra_flags.append("--no-action-removal")
-    if args.boolean_rpg:
-        extra_flags.append("--boolean-rpg")
-    if args.numeric_rpg:
-        extra_flags.append("--numeric-rpg")
     extra_flags.extend(args.extra_args)
 
     if extra_flags:
