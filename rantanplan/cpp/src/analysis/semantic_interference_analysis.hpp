@@ -59,6 +59,9 @@ private:
     // Cache for semantic interference results to avoid recomputation
     // Keyed by (action_id_1, action_id_2) pair for correct per-instance caching
     mutable std::unordered_map<std::pair<int,int>, bool, PairHash> semantic_cache_;
+
+    // Cache for per-action conflicting conditional effects check
+    mutable std::unordered_map<int, bool> conflicting_effects_cache_;
     
     
     /**
@@ -128,7 +131,18 @@ private:
      * @return Z3 expression representing the effect applied to the base variable
      */
     z3::expr convert_effect_to_z3(const EffectExpression& effect, const z3::expr& base_var_z3) const;
-    
+
+    /**
+     * @brief Check if an action has non-exclusive conditional effects on any fluent.
+     *
+     * For each fluent with multiple conditional effects, checks whether
+     * pre(action) ∧ cond_i ∧ cond_j is satisfiable for any pair (i,j).
+     * If so, the nested ite composition may not faithfully model the effects,
+     * and interference should be reported conservatively.
+     * Results are cached per action ID.
+     */
+    bool has_conflicting_conditional_effects(const Action& action) const;
+
 };
 
 } // namespace rantanplan

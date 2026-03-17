@@ -59,19 +59,19 @@ bool SemanticInterferenceAnalysis::action_affects_semantically(const Action& a1,
     auto cache_it = semantic_cache_.find(cache_key);
     if (cache_it != semantic_cache_.end()) return cache_it->second;
     
-    // Based on Definition 3.9 from the paper:
-    // Action a affects action b if either:
-    // 1. a can prevent b's execution (pre(b) ∧ σ(a, ¬pre(b)) is satisfiable)
-    // 2. a's effects don't commute properly with b's effects
-    
-    // Check condition 1: prevention of execution
-    bool check1_result = check1(a1, a2);
-    if (check1_result) {
+    // If a1 has conditional effects on the same fluent with non-exclusive
+    // conditions, the ite-based substitution may not faithfully model the
+    // combined effect. Conservatively report interference in that case.
+    if (has_conflicting_conditional_effects(a1)) {
         affects = true;
     } else {
-        // Check condition 2: effect commutativity
-        bool check2_result = check2(a1, a2);
-        if (check2_result) {
+        // Based on Definition 3.9 from the paper:
+        // Action a affects action b if either:
+        // 1. a can prevent b's execution (pre(b) ∧ σ(a, ¬pre(b)) is satisfiable)
+        // 2. a's effects don't commute properly with b's effects
+        if (check1(a1, a2)) {
+            affects = true;
+        } else if (check2(a1, a2)) {
             affects = true;
         }
     }
@@ -112,12 +112,10 @@ z3::expr SemanticInterferenceAnalysis::apply_action_effects_substitution(const A
         z3::expr fluent_z3 = grounded_visitor_->convert_from_pool(fid, -1);
         z3::expr composed = fluent_z3; // start with unchanged fluent
 
-        // Compose effects into a nested ite chain. This is correct when
-        // conditions on the same fluent are mutually exclusive, which is
-        // the expected pattern in well-formed PDDL (e.g., (when C (f))
-        // paired with (when (not C) (not (f)))). If conditions overlap,
-        // the last-added effect wins — a conservative choice for the
-        // interference analysis since it still models a concrete outcome.
+        // Compose effects into a nested ite chain. Correct when conditions
+        // are mutually exclusive (the common PDDL pattern). Non-exclusive
+        // conditions are detected by has_conflicting_conditional_effects()
+        // which conservatively reports interference for those actions.
         for (const Effect* effect : effects_by_fluent[fid]) {
             const EffectExpression& eff_expr = effect->effect_expression();
             z3::expr new_value_z3 = convert_effect_to_z3(eff_expr, fluent_z3);
@@ -396,6 +394,46 @@ const std::vector<int>& SemanticInterferenceAnalysis::get_neighbours(int node_id
 void SemanticInterferenceAnalysis::output_interference_graph_dot(const std::string& filename) const {
     throw std::runtime_error("SemanticInterferenceAnalysis does not support output_interference_graph_dot(). "
                             "This method is only available with eager analysis as it requires the full graph.");
+}
+
+bool SemanticInterferenceAnalysis::has_conflicting_conditional_effects(const Action& action) const {
+    auto cache_it = conflicting_effects_cache_.find(action.id());
+    if (cache_it != conflicting_effects_cache_.end()) return cache_it->second;
+
+    bool has_conflict = false;
+
+    // Group conditional effects by fluent
+    std::unordered_map<ExprID, std::vector<const Effect*>> cond_by_fluent;
+    for (const Effect& effect : action.effects()) {
+        if (effect.is_conditional()) {
+            cond_by_fluent[effect.effect_expression().fluent_id()].push_back(&effect);
+        }
+    }
+
+    z3::expr pre = convert_precondition_to_z3(action);
+
+    for (const auto& [fid, effects] : cond_by_fluent) {
+        if (effects.size() < 2) continue;
+
+        // Check all pairs of conditions for simultaneous satisfiability
+        for (size_t i = 0; i < effects.size() && !has_conflict; ++i) {
+            for (size_t j = i + 1; j < effects.size() && !has_conflict; ++j) {
+                z3::expr ci = grounded_visitor_->convert_from_pool(
+                    effects[i]->effect_expression().condition_id(), -1);
+                z3::expr cj = grounded_visitor_->convert_from_pool(
+                    effects[j]->effect_expression().condition_id(), -1);
+
+                z3_solver_->push();
+                z3_solver_->add(pre && ci && cj);
+                has_conflict = (z3_solver_->check() == z3::sat);
+                z3_solver_->pop();
+            }
+        }
+        if (has_conflict) break;
+    }
+
+    conflicting_effects_cache_[action.id()] = has_conflict;
+    return has_conflict;
 }
 
 } // namespace rantanplan
