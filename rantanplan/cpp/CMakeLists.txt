@@ -122,6 +122,7 @@ add_executable(rantanplan
     src/analysis/eager_semantic_interference_analysis.cpp
     src/analysis/lazy_interference_analysis.cpp
     src/analysis/semantic_interference_analysis.cpp
+    src/analysis/numeric_constraint_analyzer.cpp
     src/passes/pipeline.cpp
     src/passes/numeric_rpg_pass.cpp
     src/passes/symmetry_pass.cpp

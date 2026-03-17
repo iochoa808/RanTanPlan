@@ -73,11 +73,15 @@ void BasePlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> pr
     z3::params p(ctx_);
     p.set("random_seed", (uint)42);  // Fixed seed for reproducibility
     //set_unsat_config(p);
-    // TODO: Check if Z3 already chooses the best solver for the numeric part
-    // ....
 
-    // hopefully something interesting to learn ...
-    //p.set("smt.core.minimize", true);
+    // Set Z3 logic hint based on numeric constraint analysis.
+    // This triggers SMT parameter tuning (relevancy, phase
+    // selection, restarts, etc.) without changing the arithmetic backend.
+    const char* logic = recommended_logic(arithmetic_profile_);
+    if (logic) {
+        p.set("logic", logic);
+    }
+
     solver_.set(p);
 }
 

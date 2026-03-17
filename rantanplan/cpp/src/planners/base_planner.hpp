@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../analysis/arithmetic_profile.hpp"
 #include "../problem/problem.hpp"
 #include "../problem/plan.hpp"
 #include "../encoders/base_encoder.hpp"
@@ -100,6 +101,9 @@ public:
     /// Whether the search ended due to timeout.
     bool timed_out() const { return timed_out_; }
 
+    /// Set the arithmetic profile for Z3 solver tuning.
+    void set_arithmetic_profile(ArithmeticProfile profile) { arithmetic_profile_ = profile; }
+
     /// Set the propagator strategy for this planner.
     void set_propagator_strategy(std::unique_ptr<PropagatorStrategy> propagator);
 
@@ -128,6 +132,8 @@ protected:
 
     /// Horizon schedule; concrete planners initialise this from Config in their constructor.
     HorizonSchedule schedule_;
+
+    ArithmeticProfile arithmetic_profile_ = ArithmeticProfile::LINEAR;
 
     bool solution_found_ = false;
     bool timed_out_ = false;

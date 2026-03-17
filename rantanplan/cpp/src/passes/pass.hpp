@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "../analysis/arithmetic_profile.hpp"
 #include "../config/strategy_spec.hpp"
 #include "../problem/problem.hpp"
 #include "../symmetries/smt_symmetry_checker.hpp"
@@ -26,6 +27,7 @@ struct PipelineResult {
     std::vector<ObjectSwap> detected_object_swaps; ///< From SymmetryDetectionPass (pre-grounding)
     std::vector<SymmetryInfo> symmetry_data; ///< From SymmetryCompletionPass (post-CWA)
     std::vector<double> sdac_cost_lower_bounds; ///< SDAC cost lower bounds (from NumericRPGPass); empty if not SDAC
+    ArithmeticProfile arithmetic_profile = ArithmeticProfile::LINEAR; ///< Numeric constraint class (set after pipeline)
     StrategySpec resolved_spec{};               ///< Finalized strategy spec (from StrategyResolutionPass)
     std::unique_ptr<InterferenceAnalysis> interference; ///< Pre-built interference analyzer (from InterferencePass)
 };

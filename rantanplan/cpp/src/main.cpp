@@ -29,6 +29,7 @@
 #include "passes/cwa_initial_state_pass.hpp"
 #include "passes/strategy_resolution_pass.hpp"
 #include "passes/interference_pass.hpp"
+#include "analysis/numeric_constraint_analyzer.hpp"
 
 #include "z3++.h"
 
@@ -133,6 +134,7 @@ PlanGenerationResult solve_planning_problem(rantanplan::PipelineResult& pipeline
 
     auto planner = rantanplan::StrategyFactory::create_planner(
         spec, problem, *encoder, ctx, interference_ptr);
+    planner->set_arithmetic_profile(pipeline_result.arithmetic_profile);
     rantanplan::StrategyFactory::configure_planner(*planner, spec, pipeline_result);
 
     // Get solver reference and create propagator using factory
@@ -291,6 +293,17 @@ int main(int argc, char* argv[]) {
 
     auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);
     config.planner.start_timestep = pipeline_result.lower_bound;
+
+    // Analyze numeric constraint structure for Z3 solver tuning
+    auto constraint_analysis = rantanplan::NumericConstraintAnalyzer::analyze(pipeline_result.problem);
+    pipeline_result.arithmetic_profile = constraint_analysis.profile;
+
+    const char* logic_hint = rantanplan::recommended_logic(constraint_analysis.profile);
+    rantanplan::Logger::instance().component(rantanplan::VerbosityLevel::INFO, "ArithProfile", {
+        {"class", rantanplan::arithmetic_profile_to_string(constraint_analysis.profile)},
+        {"numeric fluents", std::to_string(constraint_analysis.num_numeric_fluents)},
+        {"logic", logic_hint ? logic_hint : "default"}
+    });
 
     // Record final action count after all pipeline passes (used for grounding analysis).
     rantanplan::Stats::instance().set("pipeline.final_actions",
