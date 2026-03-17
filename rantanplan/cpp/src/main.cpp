@@ -305,11 +305,14 @@ int main(int argc, char* argv[]) {
     // Analyze numeric constraint structure for Z3 solver tuning
     auto constraint_analysis = rantanplan::NumericConstraintAnalyzer::analyze(pipeline_result.problem);
     pipeline_result.arithmetic_profile = constraint_analysis.profile;
+    pipeline_result.problem.set_all_integer(constraint_analysis.all_integer);
 
-    const char* logic_hint = rantanplan::recommended_logic(constraint_analysis.profile);
+    const char* logic_hint = rantanplan::recommended_logic(constraint_analysis.profile, constraint_analysis.all_integer);
     rantanplan::Logger::instance().component(rantanplan::VerbosityLevel::INFO, "ArithProfile", {
         {"class", rantanplan::arithmetic_profile_to_string(constraint_analysis.profile)},
         {"numeric fluents", std::to_string(constraint_analysis.num_numeric_fluents)},
+        {"integer", constraint_analysis.num_numeric_fluents > 0
+            ? (constraint_analysis.all_integer ? "yes" : "no") : "n/a"},
         {"logic", logic_hint ? logic_hint : "default"}
     });
 

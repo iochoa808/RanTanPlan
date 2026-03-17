@@ -77,7 +77,9 @@ void BasePlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> pr
     // Set Z3 logic hint based on numeric constraint analysis.
     // This triggers SMT parameter tuning (relevancy, phase
     // selection, restarts, etc.) without changing the arithmetic backend.
-    const char* logic = recommended_logic(arithmetic_profile_);
+    // When the problem is all-integer, use integer logics (QF_IDL/QF_LIA)
+    // for tighter integer-specific reasoning.
+    const char* logic = recommended_logic(arithmetic_profile_, problem_.all_integer());
     if (logic) {
         p.set("logic", logic);
     }

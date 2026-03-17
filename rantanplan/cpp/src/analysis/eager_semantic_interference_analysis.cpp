@@ -38,6 +38,7 @@ void EagerSemanticInterferenceAnalysis::initialize(const Problem& problem) {
 
     // Create grounded visitor for expression conversion
     z3_variable_factory_ = std::make_unique<Z3VariableFactory>(*z3_context_);
+    z3_variable_factory_->set_problem(problem_);
     grounded_visitor_ = std::make_unique<GroundedEncodingVisitor>(*z3_context_, problem_, z3_variable_factory_.get());
 
     // Report initialization completion

@@ -11,6 +11,8 @@
 
 namespace rantanplan {
 
+class Problem;  // forward declaration
+
 /**
  * @brief Factory class responsible for creating and managing Z3 variables
  * 
@@ -43,6 +45,9 @@ private:
 public:
     // Constructor
     explicit Z3VariableFactory(z3::context& ctx);
+
+    /// Set the problem pointer for integer mode detection.
+    void set_problem(const Problem* p) { problem_ = p; }
     
     // Basic variable creation methods (create new variables without caching)
     z3::expr create_bool_variable(const std::string& name);
@@ -79,11 +84,18 @@ public:
     std::vector<std::pair<std::shared_ptr<z3::expr>, int>> get_all_fluent_variables() const;
     std::vector<std::pair<std::shared_ptr<z3::expr>, int>> get_all_action_variables() const;
     
+    // Numeric constant creation (Int or Real depending on all_integer mode)
+    z3::expr make_numeric_val(int64_t v) const;
+    z3::expr make_numeric_val(double v) const;
+    z3::expr make_zero() const;
+
     // Timestep management queries
     int get_max_timestep() const;
     bool has_variables_for_timestep(int timestep) const;
 
 private:
+    const Problem* problem_ = nullptr;
+
     // Helper methods for variable creation and management
     void ensure_timestep_capacity(int timestep);
     z3::expr create_new_fluent_variable(const Fluent& fluent, const std::string& var_name);

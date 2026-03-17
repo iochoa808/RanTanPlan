@@ -141,6 +141,12 @@ public:
     MetricKind metric_kind() const { return metric_kind_; }
     void set_metric_kind(MetricKind kind) { metric_kind_ = kind; }
     bool has_state_dependent_costs() const;
+
+    // Integer arithmetic mode: true iff all numeric fluents are int-typed,
+    // no variable division exists, and all numeric constants are integer-valued.
+    // When true, encoders use Int-sorted Z3 variables instead of Real.
+    bool all_integer() const { return all_integer_; }
+    void set_all_integer(bool v) { all_integer_ = v; }
     
     // Type access
     const std::vector<Type>& types() const { return *types_; }
@@ -192,6 +198,7 @@ private:
     
     // Metric
     MetricKind metric_kind_ = MetricKind::NONE;
+    bool all_integer_ = false;
 
     // Expression interning pool
     std::shared_ptr<ExprPool> pool_ = std::make_shared<ExprPool>();

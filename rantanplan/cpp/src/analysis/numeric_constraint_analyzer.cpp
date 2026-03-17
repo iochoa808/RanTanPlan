@@ -1,6 +1,88 @@
 #include "numeric_constraint_analyzer.hpp"
+#include <cmath>
 
 namespace rantanplan {
+
+// ============================================================================
+// Integer-safety detection helpers
+// ============================================================================
+
+struct IntegerCheckState {
+    bool has_variable_division = false;
+    bool has_non_integer_constant = false;
+};
+
+/// Check if a double value is exactly representable as an integer.
+static bool is_integer_valued(double v) {
+    return std::isfinite(v) && std::floor(v) == v;
+}
+
+/// Walk an arithmetic expression tree, checking for non-integer constants
+/// and variable division.
+static void check_integer_arith(ExprID id, const ExprPool& pool, IntegerCheckState& state) {
+    if (!id.valid() || (state.has_variable_division && state.has_non_integer_constant)) return;
+
+    ExprKind kind = pool.kind(id);
+
+    // Leaf constant — check if integer-valued
+    if (kind == ExprKind::CONSTANT) {
+        if (pool.payload_is_double(id) && !is_integer_valued(pool.payload_double(id))) {
+            state.has_non_integer_constant = true;
+        }
+        // int64_t payloads are always integer-valued; bool/string are non-numeric
+        return;
+    }
+
+    // Leaf: parameter, variable, fluent symbol, state variable — no constant to check
+    if (pool.is_leaf(id) || kind == ExprKind::STATE_VARIABLE) return;
+
+    if (kind != ExprKind::FUNCTION_APPLICATION) return;
+
+    ExprOperator op = pool.op(id);
+
+    // Check for division with variable arguments
+    if (op == ExprOperator::DIVIDE) {
+        state.has_variable_division = true;
+        return;
+    }
+
+    // Recurse into arguments
+    for (ExprID arg : pool.arguments(id)) {
+        check_integer_arith(arg, pool, state);
+    }
+}
+
+/// Walk a formula tree, delegating numeric sub-expressions to check_integer_arith.
+static void check_integer_formula(ExprID id, const ExprPool& pool,
+                                   const Problem& problem, IntegerCheckState& state) {
+    if (!id.valid() || (state.has_variable_division && state.has_non_integer_constant)) return;
+
+    ExprKind kind = pool.kind(id);
+    if (kind == ExprKind::CONSTANT || kind == ExprKind::STATE_VARIABLE) return;
+    if (kind != ExprKind::FUNCTION_APPLICATION) return;
+
+    ExprOperator op = pool.op(id);
+
+    if (is_logical_operator(op)) {
+        for (ExprID arg : pool.arguments(id)) {
+            check_integer_formula(arg, pool, problem, state);
+        }
+        return;
+    }
+
+    if (is_comparison_operator(op) && pool.argument_count(id) == 2) {
+        ExprID lhs = pool.argument(id, 0);
+        ExprID rhs = pool.argument(id, 1);
+        if (!(problem.is_bool_type(lhs) && problem.is_bool_type(rhs))) {
+            check_integer_arith(lhs, pool, state);
+            check_integer_arith(rhs, pool, state);
+        }
+        return;
+    }
+
+    // Arithmetic at formula level — check it
+    check_integer_arith(id, pool, state);
+}
 
 // ============================================================================
 // Arithmetic expression classifier
@@ -246,6 +328,62 @@ ConstraintAnalysisResult NumericConstraintAnalyzer::analyze(const Problem& probl
     }
 
     result.profile = worst;
+
+    // ================================================================
+    // Integer detection: check if the problem is purely integer-safe.
+    // PDDL (via Unified Planning) typically types all numeric fluents as
+    // real, so we cannot rely on fluent types alone.  Instead we check:
+    //   1. No division operators anywhere (int division ≠ real division)
+    //   2. All numeric constants are integer-valued
+    //   3. All initial-state numeric values are integer-valued
+    // If all hold, Int sort is safe and enables tighter Z3 reasoning.
+    // ================================================================
+    if (result.num_numeric_fluents > 0) {
+        IntegerCheckState istate;
+
+        // Check action preconditions, effects, and costs
+        for (const auto& action : problem.actions()) {
+            if (action.has_precondition()) {
+                check_integer_formula(action.precondition_id(), pool, problem, istate);
+            }
+            for (const auto& effect : action.effects()) {
+                const auto& ee = effect.effect_expression();
+                check_integer_arith(ee.value_id(), pool, istate);
+                if (ee.is_conditional()) {
+                    check_integer_formula(ee.condition_id(), pool, problem, istate);
+                }
+            }
+            if (action.has_explicit_cost()) {
+                check_integer_arith(action.cost_id(), pool, istate);
+            }
+            if (istate.has_variable_division && istate.has_non_integer_constant) break;
+        }
+
+        // Check goal formulas
+        if (!istate.has_variable_division && !istate.has_non_integer_constant) {
+            for (const auto& goal : problem.goals()) {
+                check_integer_formula(goal.goal_id(), pool, problem, istate);
+                if (istate.has_non_integer_constant) break;
+            }
+        }
+
+        // Check initial-state numeric values
+        if (!istate.has_variable_division && !istate.has_non_integer_constant) {
+            for (const auto& assignment : problem.initial_state()) {
+                const ExprNode& val_node = pool.get(assignment.value_id());
+                if (std::holds_alternative<double>(val_node.payload)) {
+                    if (!is_integer_valued(std::get<double>(val_node.payload))) {
+                        istate.has_non_integer_constant = true;
+                        break;
+                    }
+                }
+                // int64_t and bool payloads are always integer-safe
+            }
+        }
+
+        result.all_integer = !istate.has_variable_division && !istate.has_non_integer_constant;
+    }
+
     return result;
 }
 

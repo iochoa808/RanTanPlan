@@ -17,6 +17,7 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     // Initialize SMT infrastructure
     ctx_ = std::make_unique<z3::context>();
     variable_factory_ = std::make_unique<Z3VariableFactory>(*ctx_);
+    variable_factory_->set_problem(problem_);
     visitor_ = std::make_unique<GroundedEncodingVisitor>(*ctx_, problem_, variable_factory_.get());
 
     // Initialize persistent solver for push/pop approach
@@ -326,19 +327,19 @@ void AchieversAnalysis::add_bounds_constraints_to_solver() {
         // Add bounds for current state (timestep 0)
         z3::expr fluent_current = visitor_->convert_from_pool(fluent_eid, 0);
         if (!std::isinf(interval.lower())) {
-            persistent_solver_->add(fluent_current >= ctx_->real_val(std::to_string(interval.lower()).c_str()));
+            persistent_solver_->add(fluent_current >= variable_factory_->make_numeric_val(interval.lower()));
         }
         if (!std::isinf(interval.upper())) {
-            persistent_solver_->add(fluent_current <= ctx_->real_val(std::to_string(interval.upper()).c_str()));
+            persistent_solver_->add(fluent_current <= variable_factory_->make_numeric_val(interval.upper()));
         }
 
         // Add bounds for next state (timestep 1)
         z3::expr fluent_next = visitor_->convert_from_pool(fluent_eid, 1);
         if (!std::isinf(interval.lower())) {
-            persistent_solver_->add(fluent_next >= ctx_->real_val(std::to_string(interval.lower()).c_str()));
+            persistent_solver_->add(fluent_next >= variable_factory_->make_numeric_val(interval.lower()));
         }
         if (!std::isinf(interval.upper())) {
-            persistent_solver_->add(fluent_next <= ctx_->real_val(std::to_string(interval.upper()).c_str()));
+            persistent_solver_->add(fluent_next <= variable_factory_->make_numeric_val(interval.upper()));
         }
     }
 }

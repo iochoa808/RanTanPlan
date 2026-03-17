@@ -175,8 +175,8 @@ Plan BranchAndBoundPlanner::search() {
             z3::expr cost_bound_lit = ctx_.bool_const(cost_name.c_str());
             bool have_bound = !std::isinf(upper_bound);
             if (have_bound) {
-                solver_.add(z3::implies(cost_bound_lit,
-                    total_cost < ctx_.real_val(std::to_string(upper_bound).c_str())));
+                z3::expr bound_val = encoder_.get_variable_factory().make_numeric_val(upper_bound);
+                solver_.add(z3::implies(cost_bound_lit, total_cost < bound_val));
             }
 
             z3::expr_vector assumptions(ctx_);

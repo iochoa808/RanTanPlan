@@ -11,6 +11,7 @@ namespace rantanplan {
 GroundedEncoder::GroundedEncoder(const Problem& problem, z3::context& ctx)
     : problem_(problem), ctx_(ctx), variable_factory_(ctx), grounded_visitor_(ctx_, &problem_, &variable_factory_) {
     layers_encoded_ = -1;
+    variable_factory_.set_problem(&problem_);
     build_epc_index();
 }
 

@@ -113,6 +113,7 @@ Problem Problem::clone_base() const {
     result.initial_state_ = initial_state_;
     result.goals_ = goals_;
     result.metric_kind_ = metric_kind_;
+    result.all_integer_ = all_integer_;
 
     result.object_name_to_index_ = object_name_to_index_;
     result.fluent_name_to_index_ = fluent_name_to_index_;

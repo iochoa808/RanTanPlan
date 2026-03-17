@@ -479,7 +479,7 @@ z3::expr AbstractSuffixEncoder::encode_abstract_goal(int n) {
 // ============================================================================
 
 z3::expr AbstractSuffixEncoder::build_total_cost(int n) {
-    z3::expr total = ctx_.real_val(0);
+    z3::expr total = encoder_.get_variable_factory().make_zero();
     for (int i = 0; i < n; ++i) {
         total = total + build_concrete_cost_term(i);
     }
@@ -514,27 +514,30 @@ bool AbstractSuffixEncoder::is_concrete_solution(const z3::model& model) const {
 // ============================================================================
 
 z3::expr AbstractSuffixEncoder::build_concrete_cost_term(int i) {
-    z3::expr cost = ctx_.real_val(0);
     auto& vf = encoder_.get_variable_factory();
+    z3::expr zero = vf.make_zero();
+    z3::expr cost = zero;
 
     for (const auto& action : problem_.actions()) {
         const z3::expr& a_var = vf.get_action_variable(action, i);
         z3::expr c_a = encoder_.convert_cost_to_z3(action, i);
-        cost = cost + z3::ite(a_var, c_a, ctx_.real_val(0));
+        cost = cost + z3::ite(a_var, c_a, zero);
     }
     return cost;
 }
 
 z3::expr AbstractSuffixEncoder::build_abstract_cost_term() {
-    z3::expr cost = ctx_.real_val(0);
+    auto& vf = encoder_.get_variable_factory();
+    z3::expr zero = vf.make_zero();
+    z3::expr cost = zero;
     const auto& actions = problem_.actions();
     for (size_t i = 0; i < action_abs_.size(); ++i) {
         // For constant costs: exact via Z3 expression.
         // For SDAC: use externally provided lower bound from RPG interval analysis.
         z3::expr c_a = (!cost_lower_bounds_.empty())
-            ? ctx_.real_val(std::to_string(cost_lower_bounds_[i]).c_str())
+            ? vf.make_numeric_val(cost_lower_bounds_[i])
             : encoder_.convert_expr_id_to_z3(actions[i].cost_id(), 0);
-        cost = cost + z3::ite(action_abs_[i], c_a, ctx_.real_val(0));
+        cost = cost + z3::ite(action_abs_[i], c_a, zero);
     }
     return cost;
 }

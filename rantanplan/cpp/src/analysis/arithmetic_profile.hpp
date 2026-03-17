@@ -36,18 +36,22 @@ inline std::string arithmetic_profile_to_string(ArithmeticProfile p) {
  * All logics use solver 6 (modern LRA) — the gains come from SMT-level
  * parameter tuning, not from switching arithmetic backends.
  *
- * For nonlinear problems, we still use QF_LRA — solver 6's embedded
+ * When all_integer is true (all numeric fluents are int-typed, no division,
+ * all constants integer-valued), integer logics (QF_IDL, QF_LIA) are used.
+ * These enable tighter integer-specific reasoning in Z3's theory solver.
+ *
+ * For nonlinear problems, we still use QF_LRA/QF_LIA — solver 6's embedded
  * nla::solver handles nonlinear constraints automatically. QF_NRA would
  * trigger NLSAT which is incompatible with incremental solving.
  *
  * @return Logic string, or nullptr if no logic hint is appropriate.
  */
-inline const char* recommended_logic(ArithmeticProfile p) {
+inline const char* recommended_logic(ArithmeticProfile p, bool all_integer = false) {
     switch (p) {
         case ArithmeticProfile::NONE:             return nullptr;
-        case ArithmeticProfile::DIFFERENCE_LOGIC: return "QF_RDL";
-        case ArithmeticProfile::LINEAR:           return "QF_LRA";
-        case ArithmeticProfile::NONLINEAR:        return "QF_LRA";
+        case ArithmeticProfile::DIFFERENCE_LOGIC: return all_integer ? "QF_IDL" : "QF_RDL";
+        case ArithmeticProfile::LINEAR:           return all_integer ? "QF_LIA" : "QF_LRA";
+        case ArithmeticProfile::NONLINEAR:        return all_integer ? "QF_LIA" : "QF_LRA";
         default:                                  return nullptr;
     }
 }

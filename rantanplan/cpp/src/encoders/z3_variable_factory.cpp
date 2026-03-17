@@ -1,5 +1,6 @@
 #include "z3_variable_factory.hpp"
 #include "../problem/action.hpp"
+#include "../problem/problem.hpp"
 #include <iostream>
 
 namespace rantanplan {
@@ -40,7 +41,8 @@ z3::expr Z3VariableFactory::create_symbol_variable(const std::string& name, cons
     } else if (type->is_int()) {
         return create_int_variable(name);
     } else if (type->is_real()) {
-        return create_real_variable(name);
+        return (problem_ && problem_->all_integer())
+            ? create_int_variable(name) : create_real_variable(name);
     } else if (type->is_object()) {
         return create_object_variable(name);
     } else {
@@ -130,8 +132,11 @@ z3::expr Z3VariableFactory::create_new_fluent_variable(const Fluent& fluent, con
     if (fluent.is_bool_fluent()) {
         return create_bool_variable(var_name);
     } else if (fluent.is_int_fluent() || fluent.is_real_fluent()) {
-        // Force all numeric fluents to be real to avoid mixed int/real type issues
-        return create_real_variable(var_name);
+        // Use Int sort when the entire problem is proven integer-safe
+        // (all numeric fluents int-typed, no division, all constants integer).
+        // Otherwise use Real to avoid mixed int/real type issues.
+        return (problem_ && problem_->all_integer())
+            ? create_int_variable(var_name) : create_real_variable(var_name);
     } else if (fluent.is_object_fluent()) {
         return create_object_variable(var_name);
     } else {
@@ -259,6 +264,24 @@ std::vector<std::pair<std::shared_ptr<z3::expr>, int>> Z3VariableFactory::get_al
     }
 
     return variables;
+}
+
+// Numeric constant creation (Int or Real depending on all_integer mode)
+z3::expr Z3VariableFactory::make_numeric_val(int64_t v) const {
+    return (problem_ && problem_->all_integer())
+        ? ctx_.int_val(static_cast<int64_t>(v))
+        : ctx_.real_val(static_cast<int>(v));
+}
+
+z3::expr Z3VariableFactory::make_numeric_val(double v) const {
+    if (problem_ && problem_->all_integer()) {
+        return ctx_.int_val(static_cast<int64_t>(v));
+    }
+    return ctx_.real_val(std::to_string(v).c_str());
+}
+
+z3::expr Z3VariableFactory::make_zero() const {
+    return make_numeric_val(static_cast<int64_t>(0));
 }
 
 // Timestep management queries
