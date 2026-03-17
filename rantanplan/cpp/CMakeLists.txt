@@ -130,6 +130,7 @@ add_executable(rantanplan
     src/passes/cwa_initial_state_pass.cpp
     src/passes/strategy_resolution_pass.cpp
     src/passes/interference_pass.cpp
+    src/passes/static_fluent_pass.cpp
     src/problem/substitution.cpp
     src/grounding/fact_index.cpp
     src/grounding/binding_matcher.cpp

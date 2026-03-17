@@ -29,6 +29,7 @@
 #include "passes/cwa_initial_state_pass.hpp"
 #include "passes/strategy_resolution_pass.hpp"
 #include "passes/interference_pass.hpp"
+#include "passes/static_fluent_pass.hpp"
 #include "analysis/numeric_constraint_analyzer.hpp"
 
 #include "z3++.h"
@@ -255,6 +256,7 @@ int main(int argc, char* argv[]) {
     rantanplan::SymmetryCompletionPass symmetry_completion_pass;
     rantanplan::GroundingPass grounding_pass;
     rantanplan::CWAInitialStatePass cwa_pass;
+    rantanplan::StaticFluentPass static_fluent_pass;
     std::vector<const rantanplan::Pass*> passes;
 
     // Strategy resolution runs first — stores the finalized spec in PipelineResult.
@@ -276,6 +278,12 @@ int main(int argc, char* argv[]) {
     // implicit-zero numerics are filled in here).
     // No-op when Python/UP already provides complete initial state.
     passes.push_back(&cwa_pass);
+
+    // Static fluent simplification: replaces fluents that no effect writes to
+    // with their constant initial-state values and folds constant expressions.
+    // Runs after CWA (needs complete initial state) and before RPG (simpler
+    // expressions → tighter bounds, fewer variables).
+    passes.push_back(&static_fluent_pass);
 
     if (config.global.enable_rpg) {
         passes.push_back(&numeric_rpg_pass);

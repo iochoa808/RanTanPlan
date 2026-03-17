@@ -247,6 +247,23 @@ public:
         return intern(std::move(node));
     }
 
+    /// Intern a double constant and return its ExprID.
+    ExprID intern_double_constant(double value, int type_id = -1) {
+        ExprNode node;
+        node.kind = static_cast<int>(ExprKind::CONSTANT);
+        node.type_id = type_id;
+        node.payload = value;
+        return intern(std::move(node));
+    }
+
+    /// Intern a boolean constant and return its ExprID.
+    ExprID intern_bool_constant(bool value) {
+        ExprNode node;
+        node.kind = static_cast<int>(ExprKind::CONSTANT);
+        node.payload = value;
+        return intern(std::move(node));
+    }
+
     /// Check if this is a boolean constant with value true.
     bool is_true_constant(ExprID id) const {
         if (!id.valid()) return false;

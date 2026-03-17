@@ -107,6 +107,17 @@ public:
     Problem with_actions(std::vector<Action> new_actions) const;
 
     /**
+     * Returns a new Problem with replaced actions, goals, and initial state.
+     * ExprPool and types vector are shared (not copied) via shared_ptr.
+     * Grounded fluents are re-collected from the new data.
+     * Used by static fluent simplification to rebuild the problem after
+     * substituting static fluents with constants.
+     */
+    Problem with_simplified(std::vector<Action> new_actions,
+                            std::vector<Goal> new_goals,
+                            std::vector<Assignment> new_initial_state) const;
+
+    /**
      * Returns a new Problem with extra assignments appended to the initial state.
      * ExprPool and types vector are shared (not copied) via shared_ptr.
      * All other data (objects, fluents, actions, goals, grounded fluents) is copied.

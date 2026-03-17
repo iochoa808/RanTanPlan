@@ -160,6 +160,29 @@ Problem Problem::with_actions(std::vector<Action> new_actions) const {
     return result;
 }
 
+Problem Problem::with_simplified(std::vector<Action> new_actions,
+                                  std::vector<Goal> new_goals,
+                                  std::vector<Assignment> new_initial_state) const {
+    Problem result = clone_base();
+
+    // Replace actions with contiguous IDs
+    result.actions_ = std::move(new_actions);
+    for (size_t i = 0; i < result.actions_.size(); ++i) {
+        result.actions_[i].set_id(static_cast<int>(i));
+    }
+    result.build_action_mappings();
+
+    // Replace goals and initial state
+    result.goals_ = std::move(new_goals);
+    result.initial_state_ = std::move(new_initial_state);
+
+    // Rebuild grounded fluents from the new data (static fluents are now
+    // constants in expressions, so they won't be collected).
+    result.collect_grounded_fluents();
+
+    return result;
+}
+
 Problem Problem::with_additional_initial_state(const std::vector<Assignment>& extra_assignments) const {
     if (extra_assignments.empty()) return *this;
 
