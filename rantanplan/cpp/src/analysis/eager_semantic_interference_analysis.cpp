@@ -493,6 +493,12 @@ bool EagerSemanticInterferenceAnalysis::has_conflicting_conditional_effects(cons
         if (has_conflict) break;
     }
 
+    if (has_conflict) {
+        Logger::instance().verbose("Action '" + action.name() +
+            "' (id=" + std::to_string(action.id()) +
+            ") has non-exclusive conditional effects — forcing interference");
+    }
+
     conflicting_effects_cache_[action.id()] = has_conflict;
     return has_conflict;
 }

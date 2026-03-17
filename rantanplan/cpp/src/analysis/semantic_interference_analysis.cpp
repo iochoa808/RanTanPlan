@@ -1,5 +1,6 @@
 #include "semantic_interference_analysis.hpp"
 #include "../util/memory_tracker.hpp"
+#include "../util/logger.hpp"
 #include "../config/config.hpp"
 #include <iostream>
 #include <algorithm>
@@ -430,6 +431,12 @@ bool SemanticInterferenceAnalysis::has_conflicting_conditional_effects(const Act
             }
         }
         if (has_conflict) break;
+    }
+
+    if (has_conflict) {
+        Logger::instance().verbose("Action '" + action.name() +
+            "' (id=" + std::to_string(action.id()) +
+            ") has non-exclusive conditional effects — forcing interference");
     }
 
     conflicting_effects_cache_[action.id()] = has_conflict;
