@@ -45,7 +45,7 @@ def get_available_strategies():
 
 # Benchmark strategies (excluding sequential for performance focus)
 BENCHMARK_STRATEGIES = [
-    #"r2e",
+    "r2e",
     #"dec",
     "exists-lazy-semantic-chain",
     #"forall-lazy-semantic-chain",

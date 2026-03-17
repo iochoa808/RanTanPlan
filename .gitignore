@@ -203,4 +203,5 @@ pddl/pb-test
 *.png
 
 # results
+experiments
 *.csv
