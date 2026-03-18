@@ -352,12 +352,65 @@ class _RantanPlanBase(Engine):
 
     # ── Protobuf result reading ──────────────────────────────────────────
 
+    @staticmethod
+    def _check_no_nested_fluents(problem: Problem):
+        """Reject function composition (nested fluent terms) which is not supported.
+
+        Detects patterns like (city-of (vehicle-location ?t)) where one fluent
+        application appears as an argument to another fluent application.
+        """
+        def has_nested_fluent(node, inside_fluent=False):
+            if node.is_fluent_exp():
+                if inside_fluent:
+                    return node
+                for arg in node.args:
+                    result = has_nested_fluent(arg, inside_fluent=True)
+                    if result is not None:
+                        return result
+                return None
+            for arg in node.args:
+                result = has_nested_fluent(arg, inside_fluent)
+                if result is not None:
+                    return result
+            return None
+
+        for action in problem.actions:
+            for prec in action.preconditions:
+                nested = has_nested_fluent(prec)
+                if nested is not None:
+                    raise UPException(
+                        f"Function composition (nested fluent terms) is not supported. "
+                        f"Action '{action.name}' precondition contains nested fluent: {nested}. "
+                        f"Rewrite using auxiliary parameters or boolean predicates.")
+            for effect in action.effects:
+                nested = has_nested_fluent(effect.value)
+                if nested is not None:
+                    raise UPException(
+                        f"Function composition (nested fluent terms) is not supported. "
+                        f"Action '{action.name}' effect value contains nested fluent: {nested}. "
+                        f"Rewrite using auxiliary parameters or boolean predicates.")
+                nested = has_nested_fluent(effect.fluent)
+                if nested is not None:
+                    raise UPException(
+                        f"Function composition (nested fluent terms) is not supported. "
+                        f"Action '{action.name}' effect fluent contains nested fluent: {nested}. "
+                        f"Rewrite using auxiliary parameters or boolean predicates.")
+
+        for goal in problem.goals:
+            nested = has_nested_fluent(goal)
+            if nested is not None:
+                raise UPException(
+                    f"Function composition (nested fluent terms) is not supported. "
+                    f"Goal contains nested fluent: {nested}. "
+                    f"Rewrite using auxiliary parameters or boolean predicates.")
+
     def _prepare_and_serialize(self, problem: Problem):
         """Initialize fluents, compile, serialize to protobuf, create temp files.
 
         Returns (compiled_problem, compilation_result,
                  problem_filepath, solution_filepath).
         """
+        self._check_no_nested_fluents(problem)
         self._initialize_fluents(problem)
         compiled_problem, compilation_result = self._compile_problem(problem)
 

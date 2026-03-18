@@ -218,7 +218,11 @@ z3::expr GroundedEncodingVisitor::convert_node(ExprID id) {
         for (ExprID arg_id : pool.arguments(id)) {
             const ExprNode& arg = pool.get(arg_id);
             if (!std::holds_alternative<std::string>(arg.payload)) {
-                throw std::runtime_error("Non-symbol argument in grounded fluent: " + fluent_name);
+                throw std::runtime_error(
+                    "Function composition (nested fluent terms) is not supported. "
+                    "Fluent '" + fluent_name + "' has a non-constant argument "
+                    "(another fluent application). Rewrite the domain using "
+                    "auxiliary action parameters or boolean predicates.");
             }
             const Type* param_type = nullptr;
             if (arg_index < fluent_def->parameters().size()) {
