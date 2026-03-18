@@ -185,6 +185,7 @@ Problem load_problem_from_protobuf(const ::Problem& pb_problem) {
     problem.type_name_to_ptr_.clear();
     problem.types_->emplace_back("up:bool");
     problem.types_->emplace_back("up:int");
+    problem.types_->emplace_back("up:integer");
     problem.types_->emplace_back("up:real");
     for (const auto& pb_type : pb_problem.types()) {
         problem.types_->emplace_back(pb_type.type_name());

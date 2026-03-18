@@ -12,6 +12,7 @@ from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.exceptions import UPException
 from .cnf_condition_compiler import CNFConditionCompiler
+from .bounded_types_simplifier import BoundedTypesSimplifier
 from unified_planning.model import ProblemKind, Problem
 from unified_planning.plans import SequentialPlan, ActionInstance
 from unified_planning.shortcuts import get_environment
@@ -411,8 +412,25 @@ class _RantanPlanBase(Engine):
                  problem_filepath, solution_filepath).
         """
         self._check_no_nested_fluents(problem)
+
+        # Strip bounded types before _initialize_fluents, which cannot handle
+        # bounded int/real types in defaults or fluent parameter enumeration.
+        pre_compilation_maps = []
+        if BoundedTypesSimplifier._has_bounded_types(problem):
+            self._log_verbose("  Stripping bounded integer/real types...")
+            bounded_simplifier = BoundedTypesSimplifier()
+            bounded_result = bounded_simplifier.compile(
+                problem, CompilationKind.BOUNDED_TYPES_REMOVING
+            )
+            problem = bounded_result.problem
+            pre_compilation_maps.append(bounded_result)
+            self._log_verbose("  Bounded types simplified.")
+
         self._initialize_fluents(problem)
         compiled_problem, compilation_result = self._compile_problem(problem)
+
+        # Prepend bounded-types maps so map_back_action_instance unwinds them last
+        compilation_result.compilation_maps = pre_compilation_maps + compilation_result.compilation_maps
 
         pb_problem_msg = self._pb_writer.convert(compiled_problem)
 
