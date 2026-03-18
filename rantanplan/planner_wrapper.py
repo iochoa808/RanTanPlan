@@ -148,6 +148,8 @@ class _RantanPlanBase(Engine):
         supported_kind.set_effects_kind('INCREASE_EFFECTS')
         supported_kind.set_effects_kind('DECREASE_EFFECTS')
         supported_kind.set_effects_kind('FLUENTS_IN_NUMERIC_ASSIGNMENTS')
+        supported_kind.set_effects_kind('STATIC_FLUENTS_IN_OBJECT_ASSIGNMENTS')
+        supported_kind.set_effects_kind('FLUENTS_IN_OBJECT_ASSIGNMENTS')
         supported_kind.set_effects_kind('FORALL_EFFECTS')
         supported_kind.set_quality_metrics('FINAL_VALUE')
         supported_kind.set_quality_metrics('ACTIONS_COST')
@@ -260,6 +262,15 @@ class _RantanPlanBase(Engine):
 
         initialized_fluents  = list(task.explicit_initial_values.keys())
         unintialized_fluents = list(filter(lambda x: not x in initialized_fluents, fluentslist))
+
+        # Object fluents have no sensible default — they must be explicitly initialized.
+        obj_fluents_missing_init = [fe for fe in unintialized_fluents
+                                    if fe.type not in task.initial_defaults]
+        if obj_fluents_missing_init:
+            names = [str(f) for f in obj_fluents_missing_init]
+            raise UPException(
+                f"Object fluent(s) missing initial value (no default exists): {', '.join(names)}. "
+                "All object fluents must be explicitly initialized in the problem's :init block.")
 
         real_int_fluents_to_init = []
         for fe in unintialized_fluents:

@@ -78,6 +78,18 @@ int Problem::find_object_index(const std::string& name) const {
     return -1;
 }
 
+std::vector<int> Problem::objects_of_type(const Type* type) const {
+    std::vector<int> result;
+    if (!type) return result;
+    for (size_t i = 0; i < objects_.size(); ++i) {
+        const Type* obj_type = objects_[i].type();
+        if (obj_type && obj_type->is_subtype_of(type)) {
+            result.push_back(static_cast<int>(i));
+        }
+    }
+    return result;
+}
+
 bool Problem::has_fluent(const std::string& name) const {
     return fluent_name_to_index_.find(name) != fluent_name_to_index_.end();
 }

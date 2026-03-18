@@ -57,6 +57,10 @@ public:
     bool has_object(const std::string& name) const;
     const Object* find_object(const std::string& name) const;
     int find_object_index(const std::string& name) const;
+
+    /// Returns global indices of all objects whose type is (or is a subtype of) the given type.
+    /// Respects the type hierarchy via Type::is_subtype_of().
+    std::vector<int> objects_of_type(const Type* type) const;
     
     // Fluent access
     const std::vector<Fluent>& fluents() const { return fluents_; }

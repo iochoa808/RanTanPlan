@@ -165,13 +165,16 @@ z3::expr GroundedEncodingVisitor::convert_node(ExprID id) {
             if (node.type_id >= 0 && node.type_id < static_cast<int>(problem_->types().size())) {
                 type = &problem_->types()[node.type_id];
             }
-            // Object constants must be encoded as concrete integer values,
-            // not free Z3 variables, to preserve distinct-object semantics
-            // in equality comparisons like (= ?dir output).
+            // Object constants must be encoded as concrete numeric values
+            // (not free Z3 variables) to preserve distinct-object semantics
+            // in equality comparisons like (= (location ?p) city0).
+            // We use make_numeric_val to respect the all_integer sort policy:
+            // Int sort when all_integer is true, Real sort otherwise.
+            // This avoids Int/Real sort mixing that would crash Z3.
             if (type && type->is_object() && problem_) {
                 int idx = problem_->find_object_index(symbol);
                 if (idx >= 0) {
-                    return ctx_.int_val(idx);
+                    return variable_factory_->make_numeric_val(static_cast<int64_t>(idx));
                 }
             }
             return variable_factory_->create_symbol_variable(symbol, type);

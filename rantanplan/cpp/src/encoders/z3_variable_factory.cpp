@@ -26,8 +26,14 @@ z3::expr Z3VariableFactory::create_real_variable(const std::string& name) {
 }
 
 z3::expr Z3VariableFactory::create_object_variable(const std::string& name) {
-    // Objects are typically mapped to integers in SMT encoding for distinctness
-    return ctx_.int_const(name.c_str());
+    // Object fluents are encoded as numeric values (each object maps to its global index).
+    // They must use the same Z3 sort as numeric fluents to avoid Int/Real mixing,
+    // which would crash Z3 when a single-sort logic hint (e.g. QF_LRA) is active.
+    // Using Real sort when all_integer is false is safe because object values are always
+    // integer-valued (assigned via equality with concrete object constants).
+    return (problem_ && problem_->all_integer())
+        ? ctx_.int_const(name.c_str())
+        : ctx_.real_const(name.c_str());
 }
 
 z3::expr Z3VariableFactory::create_symbol_variable(const std::string& name, const Type* type) {
@@ -44,6 +50,7 @@ z3::expr Z3VariableFactory::create_symbol_variable(const std::string& name, cons
         return (problem_ && problem_->all_integer())
             ? create_int_variable(name) : create_real_variable(name);
     } else if (type->is_object()) {
+        // Object types follow the same sort policy as numeric fluents (see create_object_variable).
         return create_object_variable(name);
     } else {
         // For unknown types, default to integer
@@ -138,6 +145,8 @@ z3::expr Z3VariableFactory::create_new_fluent_variable(const Fluent& fluent, con
         return (problem_ && problem_->all_integer())
             ? create_int_variable(var_name) : create_real_variable(var_name);
     } else if (fluent.is_object_fluent()) {
+        // Object fluents use the same sort as numeric fluents (Int or Real)
+        // to maintain Z3's single-sort invariant. See create_object_variable().
         return create_object_variable(var_name);
     } else {
         // For unknown types, default to real (safer than integer for mixed arithmetic)

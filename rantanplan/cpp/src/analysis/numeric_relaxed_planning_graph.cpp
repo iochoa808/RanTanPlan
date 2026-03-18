@@ -268,8 +268,9 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
                     is_true ? BooleanReachability::TRUE_ONLY
                             : BooleanReachability::FALSE_ONLY;
             } else {
-                std::cerr << "Warning: Boolean fluent has non-Boolean value in initial state: "
-                          << pool.to_string(fluent_eid) << std::endl;
+                // Object-typed fluents end up here: their initial values are object
+                // constants (not true/false), so this is expected. We treat them as
+                // FALSE_ONLY for reachability purposes (conservative over-approximation).
                 initial_layer.boolean_reachability[fluent_id] = BooleanReachability::FALSE_ONLY;
             }
         } else if (numeric_fluent_ids_.contains(fluent_id)) {

@@ -1,15 +1,13 @@
-;; Object-fluent version of Zenotravel.
-;; Replaces predicates (located ?x ?c) and (in ?p ?a) with
-;; object fluents (location ?x) and (aboard ?p).
+;; Hybrid object-fluent version of Zenotravel.
+;; Uses an object fluent for aircraft location (always at exactly one city),
+;; and boolean predicates for person locations and boarding (partial relations).
 
 (define (domain obj-zenotravel)
 (:requirements :typing :numeric-fluents :object-fluents)
-(:types locatable city - object
-	aircraft person - locatable)
-(:constants nowhere - city
-            no-aircraft - aircraft)
-(:functions (location ?x - locatable) - city
-            (aboard ?p - person) - aircraft
+(:types aircraft person city - object)
+(:predicates (at ?p - person ?c - city)
+             (in ?p - person ?a - aircraft))
+(:functions (aircraft-at ?a - aircraft) - city
             (fuel ?a - aircraft)
             (distance ?c1 - city ?c2 - city)
             (slow-burn ?a - aircraft)
@@ -17,33 +15,31 @@
             (capacity ?a - aircraft)
             (total-fuel-used)
 	    (onboard ?a - aircraft)
-            (zoom-limit ?a - aircraft)
-            )
-
+            (zoom-limit ?a - aircraft))
 
 (:action board
  :parameters (?p - person ?a - aircraft ?c - city)
- :precondition (and (= (location ?p) ?c)
-                 (= (location ?a) ?c))
- :effect (and (assign (location ?p) nowhere)
-              (assign (aboard ?p) ?a)
-		(increase (onboard ?a) 1)))
-
+ :precondition (and (at ?p ?c)
+                 (= (aircraft-at ?a) ?c))
+ :effect (and (not (at ?p ?c))
+              (in ?p ?a)
+	      (increase (onboard ?a) 1)))
 
 (:action debark
  :parameters (?p - person ?a - aircraft ?c - city)
- :precondition (and (= (aboard ?p) ?a)
-                 (= (location ?a) ?c))
- :effect (and (assign (aboard ?p) no-aircraft)
-              (assign (location ?p) ?c)
-		(decrease (onboard ?a) 1)))
+ :precondition (and (in ?p ?a)
+                 (= (aircraft-at ?a) ?c))
+ :effect (and (not (in ?p ?a))
+              (at ?p ?c)
+	      (decrease (onboard ?a) 1)))
 
 (:action fly-slow
  :parameters (?a - aircraft ?c1 ?c2 - city)
- :precondition (and (= (location ?a) ?c1)
+ :precondition (and (= (aircraft-at ?a) ?c1)
+                 (not (= ?c1 ?c2))
                  (>= (fuel ?a)
                          (* (distance ?c1 ?c2) (slow-burn ?a))))
- :effect (and (assign (location ?a) ?c2)
+ :effect (and (assign (aircraft-at ?a) ?c2)
               (increase (total-fuel-used)
                          (* (distance ?c1 ?c2) (slow-burn ?a)))
               (decrease (fuel ?a)
@@ -51,22 +47,20 @@
 
 (:action fly-fast
  :parameters (?a - aircraft ?c1 ?c2 - city)
- :precondition (and (= (location ?a) ?c1)
+ :precondition (and (= (aircraft-at ?a) ?c1)
+                 (not (= ?c1 ?c2))
                  (>= (fuel ?a)
                          (* (distance ?c1 ?c2) (fast-burn ?a)))
                  (<= (onboard ?a) (zoom-limit ?a)))
- :effect (and (assign (location ?a) ?c2)
+ :effect (and (assign (aircraft-at ?a) ?c2)
               (increase (total-fuel-used)
                          (* (distance ?c1 ?c2) (fast-burn ?a)))
               (decrease (fuel ?a)
-                         (* (distance ?c1 ?c2) (fast-burn ?a)))
-	)
-)
+                         (* (distance ?c1 ?c2) (fast-burn ?a)))))
 
 (:action refuel
  :parameters (?a - aircraft)
  :precondition (and (> (capacity ?a) (fuel ?a)))
- :effect (and (assign (fuel ?a) (capacity ?a)))
-)
+ :effect (and (assign (fuel ?a) (capacity ?a))))
 
 )
