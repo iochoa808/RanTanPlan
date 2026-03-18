@@ -20,8 +20,9 @@
     :numeric-fluents 
     :equality 
     :negative-preconditions
+    :existential-preconditions
     :action-costs
-    :disjunctive-preconditions 
+    :disjunctive-preconditions
   )
 
 
