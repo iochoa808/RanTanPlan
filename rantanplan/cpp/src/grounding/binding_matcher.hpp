@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "fact_index.hpp"
+#include "object_fluent_index.hpp"
 #include "../problem/problem.hpp"
 
 namespace rantanplan {
@@ -72,7 +73,8 @@ using PartialBinding = std::unordered_map<int, int>;
 ///     Final count might be ~500 instead of 1,000,000.
 class BindingMatcher {
 public:
-    explicit BindingMatcher(const Problem& problem, const FactIndex& facts);
+    explicit BindingMatcher(const Problem& problem, const FactIndex& facts,
+                            const ObjectFluentIndex* obj_fluents = nullptr);
 
     /// Find all complete parameter bindings for a lifted action such that
     /// all boolean preconditions are satisfiable in the current FactIndex.
@@ -85,6 +87,7 @@ public:
 private:
     const Problem& problem_;
     const FactIndex& facts_;
+    const ObjectFluentIndex* obj_fluents_;
 
     // -----------------------------------------------------------------------
     // Internal: Precondition atom representation
@@ -99,13 +102,17 @@ private:
     ///   Atom 2: fluent_schema_id = id_of("road"),
     ///           arg_param_index  = [1, 2]
     ///           arg_constant_obj = [-1, -1]
+    /// Where the atom's tuples come from — boolean FactIndex or ObjectFluentIndex.
+    enum class AtomSource { BOOLEAN, OBJECT_FLUENT };
+
     struct PrecondAtom {
         int fluent_schema_id;                // Index in Problem::fluents()
-        std::vector<int> arg_param_index;    // For each fluent arg: which action
+        std::vector<int> arg_param_index;    // For each column: which action
                                              //   parameter it is (-1 if constant)
-        std::vector<int> arg_constant_obj;   // For each fluent arg: object index
+        std::vector<int> arg_constant_obj;   // For each column: object index
                                              //   if constant (-1 if parameterized)
         bool negated;                        // Whether this atom was under NOT
+        AtomSource source = AtomSource::BOOLEAN;  // Tuple source for join
     };
 
     /// An equality constraint between two action parameters or a parameter
@@ -116,6 +123,19 @@ private:
         int const_a;        // Object index if first arg is constant (-1 otherwise)
         int const_b;        // Object index if second arg is constant (-1 otherwise)
         bool negated;       // false => must be equal, true => must differ
+    };
+
+    /// Pattern C: equality between two object fluent applications.
+    /// (= (fluent1 ?x ...) (fluent2 ?y ...)) — checked as post-filter
+    /// by testing whether their reachable value sets intersect.
+    struct ObjectFluentEqualityFilter {
+        int lhs_schema_id;
+        std::vector<int> lhs_arg_param_index;
+        std::vector<int> lhs_arg_constant_obj;
+        int rhs_schema_id;
+        std::vector<int> rhs_arg_param_index;
+        std::vector<int> rhs_arg_constant_obj;
+        bool negated;
     };
 
     /// Extract all boolean fluent atoms from a precondition ExprID tree.
@@ -129,7 +149,8 @@ private:
                        const Action& action,
                        bool negated,
                        std::vector<PrecondAtom>& out_atoms,
-                       std::vector<EqualityConstraint>& out_equalities) const;
+                       std::vector<EqualityConstraint>& out_equalities,
+                       std::vector<ObjectFluentEqualityFilter>& out_obj_filters) const;
 
     /// Order atoms by selectivity for the join: process the most constraining
     /// atom first (fewest matching tuples per new parameter bound).
@@ -176,6 +197,16 @@ private:
     std::vector<PartialBinding> filter_by_negated_atoms(
         const std::vector<PartialBinding>& bindings,
         const std::vector<PrecondAtom>& negated_atoms) const;
+
+    /// Filter bindings by Pattern C: (= (fluent1 args) (fluent2 args)).
+    /// For each binding, resolve both fluent arg tuples, look up value sets
+    /// in ObjectFluentIndex, and keep only bindings where the sets intersect.
+    /// Negated filters are skipped (under delete-relaxation, negated conditions
+    /// are always satisfiable since value sets only grow).
+    std::vector<PartialBinding> filter_by_object_fluent_equality(
+        const std::vector<PartialBinding>& bindings,
+        const std::vector<ObjectFluentEqualityFilter>& filters,
+        const Action& action) const;
 
     /// Check type consistency: is the object at index `obj_idx` in
     /// Problem::objects() compatible with the declared type of the action

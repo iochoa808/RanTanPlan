@@ -5,20 +5,23 @@
 
 namespace rantanplan {
 
-BindingMatcher::BindingMatcher(const Problem& problem, const FactIndex& facts)
-    : problem_(problem), facts_(facts) {}
+BindingMatcher::BindingMatcher(const Problem& problem, const FactIndex& facts,
+                               const ObjectFluentIndex* obj_fluents)
+    : problem_(problem), facts_(facts), obj_fluents_(obj_fluents) {}
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 std::vector<PartialBinding> BindingMatcher::find_bindings(const Action& action) const {
-    // Step 1: Extract boolean precondition atoms AND equality constraints.
+    // Step 1: Extract precondition atoms (boolean + object fluent),
+    // equality constraints, and object fluent equality filters.
     std::vector<PrecondAtom> atoms;
     std::vector<EqualityConstraint> equalities;
+    std::vector<ObjectFluentEqualityFilter> obj_filters;
     if (action.has_precondition()) {
         extract_atoms(action.precondition_id(), action, /*negated=*/false,
-                      atoms, equalities);
+                      atoms, equalities, obj_filters);
     }
 
     // Step 2: Order by selectivity (most constraining first).
@@ -64,7 +67,9 @@ std::vector<PartialBinding> BindingMatcher::find_bindings(const Action& action) 
         }
 
         size_t before = bindings.size();
-        size_t fact_count = facts_.get_facts(atom.fluent_schema_id).size();
+        size_t fact_count = (atom.source == AtomSource::OBJECT_FLUENT && obj_fluents_)
+            ? obj_fluents_->get_extended_tuples(atom.fluent_schema_id).size()
+            : facts_.get_facts(atom.fluent_schema_id).size();
         bindings = extend_bindings(bindings, atom, action);
 
         std::string fname = "(?)";
@@ -123,6 +128,12 @@ std::vector<PartialBinding> BindingMatcher::find_bindings(const Action& action) 
         bindings = filter_by_equality(bindings, equalities);
     }
 
+    // Step 7: Filter by Pattern C object fluent equalities
+    // (= (fluent1 ?x) (fluent2 ?y)) — check value set intersection.
+    if (!obj_filters.empty() && obj_fluents_) {
+        bindings = filter_by_object_fluent_equality(bindings, obj_filters, action);
+    }
+
     // (Negated atom filtering removed — see Step 3 comment above.)
 
     return bindings;
@@ -136,7 +147,8 @@ void BindingMatcher::extract_atoms(ExprID expr_id,
                                     const Action& action,
                                     bool negated,
                                     std::vector<PrecondAtom>& out_atoms,
-                                    std::vector<EqualityConstraint>& out_equalities) const {
+                                    std::vector<EqualityConstraint>& out_equalities,
+                                    std::vector<ObjectFluentEqualityFilter>& out_obj_filters) const {
     if (!expr_id.valid()) return;
     const auto& pool = problem_.pool();
 
@@ -151,11 +163,11 @@ void BindingMatcher::extract_atoms(ExprID expr_id,
     if (pool.is_and(expr_id)) {
         if (pool.has_head_and_arguments(expr_id)) {
             for (ExprID arg : pool.arguments(expr_id)) {
-                extract_atoms(arg, action, negated, out_atoms, out_equalities);
+                extract_atoms(arg, action, negated, out_atoms, out_equalities, out_obj_filters);
             }
         } else {
             for (ExprID child : pool.children(expr_id)) {
-                extract_atoms(child, action, negated, out_atoms, out_equalities);
+                extract_atoms(child, action, negated, out_atoms, out_equalities, out_obj_filters);
             }
         }
         return;
@@ -166,11 +178,11 @@ void BindingMatcher::extract_atoms(ExprID expr_id,
         if (pool.has_head_and_arguments(expr_id)) {
             assert(pool.argument_count(expr_id) == 1);
             extract_atoms(pool.argument(expr_id, 0), action, !negated,
-                          out_atoms, out_equalities);
+                          out_atoms, out_equalities, out_obj_filters);
         } else {
             assert(pool.child_count(expr_id) == 1);
             extract_atoms(pool.child(expr_id, 0), action, !negated,
-                          out_atoms, out_equalities);
+                          out_atoms, out_equalities, out_obj_filters);
         }
         return;
     }
@@ -189,6 +201,7 @@ void BindingMatcher::extract_atoms(ExprID expr_id,
             ExprID lhs = pool.argument(expr_id, 0);
             ExprID rhs = pool.argument(expr_id, 1);
 
+            // Resolve a simple argument (parameter or constant) to param/const indices.
             auto resolve_arg = [&](ExprID arg, int& param_out, int& const_out) -> bool {
                 param_out = -1;
                 const_out = -1;
@@ -213,6 +226,51 @@ void BindingMatcher::extract_atoms(ExprID expr_id,
                 return false; // complex expression — can't handle
             };
 
+            // Decompose an object fluent STATE_VARIABLE into schema_id + per-arg
+            // param/constant indices. Returns false if not an object fluent.
+            auto decompose_fluent_arg = [&](ExprID arg,
+                                             int& schema_out,
+                                             std::vector<int>& arg_params,
+                                             std::vector<int>& arg_consts) -> bool {
+                if (!pool.is_state_variable(arg)) return false;
+
+                ExprID head = pool.head_symbol_id(arg);
+                if (!pool.is_fluent_symbol(head)) return false;
+
+                const std::string& fname = pool.payload_string(head);
+                const Fluent* fluent = problem_.find_fluent(fname);
+                if (!fluent || !fluent->is_object_fluent()) return false;
+
+                schema_out = fluent->id();
+                size_t nargs = pool.argument_count(arg);
+                arg_params.resize(nargs, -1);
+                arg_consts.resize(nargs, -1);
+
+                for (size_t i = 0; i < nargs; ++i) {
+                    ExprID a = pool.argument(arg, i);
+                    if (pool.is_parameter(a)) {
+                        const std::string& pname = pool.payload_string(a);
+                        bool found = false;
+                        for (size_t p = 0; p < action.parameter_count(); ++p) {
+                            if (action.parameter(p).name() == pname) {
+                                arg_params[i] = static_cast<int>(p);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) return false;
+                    } else if (pool.is_constant(a) && pool.payload_is_string(a)) {
+                        const Object* obj = problem_.find_object(pool.payload_string(a));
+                        if (!obj) return false;
+                        arg_consts[i] = static_cast<int>(obj - &problem_.objects()[0]);
+                    } else {
+                        return false;  // Nested expression in fluent arg.
+                    }
+                }
+                return true;
+            };
+
+            // Try simple param/constant resolution first (existing behavior).
             EqualityConstraint eq;
             bool lhs_ok = resolve_arg(lhs, eq.param_a, eq.const_a);
             bool rhs_ok = resolve_arg(rhs, eq.param_b, eq.const_b);
@@ -220,6 +278,53 @@ void BindingMatcher::extract_atoms(ExprID expr_id,
             if (lhs_ok && rhs_ok) {
                 eq.negated = negated;
                 out_equalities.push_back(eq);
+            } else if (obj_fluents_) {
+                // Try object fluent decomposition.
+                int lhs_schema = -1, rhs_schema = -1;
+                std::vector<int> lhs_aparams, lhs_aconsts, rhs_aparams, rhs_aconsts;
+                bool lhs_fluent = decompose_fluent_arg(lhs, lhs_schema, lhs_aparams, lhs_aconsts);
+                bool rhs_fluent = decompose_fluent_arg(rhs, rhs_schema, rhs_aparams, rhs_aconsts);
+
+                if (lhs_fluent && !rhs_fluent && rhs_ok) {
+                    // Pattern A/B: (= (fluent ?x...) ?y) or (= (fluent ?x...) const)
+                    // Create PrecondAtom with source=OBJECT_FLUENT.
+                    // Extended tuple columns = [fluent_args..., value].
+                    PrecondAtom atom;
+                    atom.fluent_schema_id = lhs_schema;
+                    atom.arg_param_index  = std::move(lhs_aparams);
+                    atom.arg_constant_obj = std::move(lhs_aconsts);
+                    // Append value column from RHS.
+                    atom.arg_param_index.push_back(eq.param_b);
+                    atom.arg_constant_obj.push_back(eq.const_b);
+                    atom.negated = negated;
+                    atom.source  = AtomSource::OBJECT_FLUENT;
+                    out_atoms.push_back(std::move(atom));
+                } else if (!lhs_fluent && lhs_ok && rhs_fluent) {
+                    // Pattern A/B: (= ?y (fluent ?x...)) — swapped sides.
+                    PrecondAtom atom;
+                    atom.fluent_schema_id = rhs_schema;
+                    atom.arg_param_index  = std::move(rhs_aparams);
+                    atom.arg_constant_obj = std::move(rhs_aconsts);
+                    // Append value column from LHS.
+                    atom.arg_param_index.push_back(eq.param_a);
+                    atom.arg_constant_obj.push_back(eq.const_a);
+                    atom.negated = negated;
+                    atom.source  = AtomSource::OBJECT_FLUENT;
+                    out_atoms.push_back(std::move(atom));
+                } else if (lhs_fluent && rhs_fluent) {
+                    // Pattern C: (= (fluent1 ?x...) (fluent2 ?y...))
+                    // Handle as post-filter.
+                    ObjectFluentEqualityFilter filter;
+                    filter.lhs_schema_id       = lhs_schema;
+                    filter.lhs_arg_param_index = std::move(lhs_aparams);
+                    filter.lhs_arg_constant_obj = std::move(lhs_aconsts);
+                    filter.rhs_schema_id       = rhs_schema;
+                    filter.rhs_arg_param_index = std::move(rhs_aparams);
+                    filter.rhs_arg_constant_obj = std::move(rhs_aconsts);
+                    filter.negated = negated;
+                    out_obj_filters.push_back(std::move(filter));
+                }
+                // else: neither side is an object fluent — skip (numeric, etc.)
             }
         }
         return;
@@ -308,13 +413,17 @@ void BindingMatcher::order_by_selectivity(std::vector<PrecondAtom>& atoms) const
             for (int idx : a.arg_param_index) { if (idx >= 0) ++a_params; }
             for (int idx : b.arg_param_index) { if (idx >= 0) ++b_params; }
 
-            double a_facts = static_cast<double>(
-                facts_.get_facts(a.fluent_schema_id).size());
-            double b_facts = static_cast<double>(
-                facts_.get_facts(b.fluent_schema_id).size());
+            auto get_fact_count = [this](const PrecondAtom& atom) -> double {
+                if (atom.source == AtomSource::OBJECT_FLUENT && obj_fluents_) {
+                    return static_cast<double>(
+                        obj_fluents_->get_extended_tuples(atom.fluent_schema_id).size());
+                }
+                return static_cast<double>(
+                    facts_.get_facts(atom.fluent_schema_id).size());
+            };
 
-            double a_score = a_facts / std::max(1, a_params);
-            double b_score = b_facts / std::max(1, b_params);
+            double a_score = get_fact_count(a) / std::max(1, a_params);
+            double b_score = get_fact_count(b) / std::max(1, b_params);
 
             return a_score < b_score;
         });
@@ -331,7 +440,9 @@ std::vector<PartialBinding> BindingMatcher::extend_bindings(
 {
     std::vector<PartialBinding> result;
 
-    const auto& tuples = facts_.get_facts(atom.fluent_schema_id);
+    const auto& tuples = (atom.source == AtomSource::OBJECT_FLUENT && obj_fluents_)
+        ? obj_fluents_->get_extended_tuples(atom.fluent_schema_id)
+        : facts_.get_facts(atom.fluent_schema_id);
 
     for (const auto& binding : current_bindings) {
         for (const auto& tuple : tuples) {
@@ -547,6 +658,93 @@ std::vector<PartialBinding> BindingMatcher::filter_by_negated_atoms(
             // The atom is negated: precondition says "NOT fluent(args)".
             // If the fact IS present, the precondition is violated ⇒ prune.
             if (facts_.contains(atom.fluent_schema_id, ground_tuple)) {
+                pass = false;
+                break;
+            }
+        }
+        if (pass) result.push_back(binding);
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Object fluent equality filter (Pattern C)
+// ---------------------------------------------------------------------------
+
+std::vector<PartialBinding> BindingMatcher::filter_by_object_fluent_equality(
+    const std::vector<PartialBinding>& bindings,
+    const std::vector<ObjectFluentEqualityFilter>& filters,
+    const Action& action) const
+{
+    if (!obj_fluents_) return bindings;
+
+    std::vector<PartialBinding> result;
+    result.reserve(bindings.size());
+
+    for (const auto& binding : bindings) {
+        bool pass = true;
+        for (const auto& filter : filters) {
+            // Under delete-relaxation, negated conditions are always satisfiable
+            // (value sets only grow, so disequality can't be guaranteed). Skip.
+            if (filter.negated) continue;
+
+            // Resolve LHS fluent arg tuple.
+            auto resolve_args = [&](const std::vector<int>& param_idx,
+                                     const std::vector<int>& const_obj) -> std::vector<int> {
+                std::vector<int> args(param_idx.size());
+                for (size_t i = 0; i < param_idx.size(); ++i) {
+                    if (const_obj[i] >= 0) {
+                        args[i] = const_obj[i];
+                    } else if (param_idx[i] >= 0) {
+                        auto it = binding.find(param_idx[i]);
+                        if (it != binding.end()) {
+                            args[i] = it->second;
+                        } else {
+                            return {};  // Unbound parameter — can't check.
+                        }
+                    } else {
+                        return {};
+                    }
+                }
+                return args;
+            };
+
+            auto lhs_args = resolve_args(filter.lhs_arg_param_index,
+                                          filter.lhs_arg_constant_obj);
+            auto rhs_args = resolve_args(filter.rhs_arg_param_index,
+                                          filter.rhs_arg_constant_obj);
+
+            // If we couldn't fully resolve args, skip the filter (safe).
+            if (lhs_args.empty() || rhs_args.empty()) continue;
+
+            const auto& lhs_values = obj_fluents_->get_values(
+                filter.lhs_schema_id, lhs_args);
+            const auto& rhs_values = obj_fluents_->get_values(
+                filter.rhs_schema_id, rhs_args);
+
+            // Both fluent instances must have at least one reachable value,
+            // and their value sets must intersect for equality to be satisfiable.
+            if (lhs_values.empty() || rhs_values.empty()) {
+                pass = false;
+                break;
+            }
+
+            // Check intersection: iterate the smaller set, probe the larger.
+            const auto& smaller = (lhs_values.size() <= rhs_values.size())
+                ? lhs_values : rhs_values;
+            const auto& larger  = (lhs_values.size() <= rhs_values.size())
+                ? rhs_values : lhs_values;
+
+            bool intersects = false;
+            for (int v : smaller) {
+                if (larger.count(v)) {
+                    intersects = true;
+                    break;
+                }
+            }
+
+            if (!intersects) {
                 pass = false;
                 break;
             }

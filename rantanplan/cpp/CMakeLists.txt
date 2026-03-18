@@ -137,6 +137,7 @@ add_executable(rantanplan
     src/grounding/action_instantiator.cpp
     src/grounding/reachability_grounder.cpp
     src/grounding/numeric_bounds_index.cpp
+    src/grounding/object_fluent_index.cpp
     src/grounding/interval_evaluator.cpp
 )
 

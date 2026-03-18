@@ -2,6 +2,7 @@
 
 #include "fact_index.hpp"
 #include "numeric_bounds_index.hpp"
+#include "object_fluent_index.hpp"
 #include "interval_evaluator.hpp"
 #include "binding_matcher.hpp"
 #include "../problem/problem.hpp"
@@ -80,6 +81,11 @@ private:
     /// NumericBoundsIndex. Returns true if any bounds changed.
     bool collect_numeric_effects(const Action& ground_action,
                                  NumericBoundsIndex& bounds) const;
+
+    /// Collect object fluent ASSIGN effects from a ground action and update
+    /// the ObjectFluentIndex. Returns the number of new values added.
+    size_t collect_object_fluent_effects(const Action& ground_action,
+                                          ObjectFluentIndex& obj_fluents) const;
 
     /// Check if all positive boolean goal atoms are in the FactIndex,
     /// and (if numeric bounds are provided) numeric goals are achievable.

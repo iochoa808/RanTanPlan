@@ -109,6 +109,73 @@ size_t ReachabilityGrounder::collect_add_effects(const Action& ground_action,
 }
 
 // ---------------------------------------------------------------------------
+// collect_object_fluent_effects
+// ---------------------------------------------------------------------------
+
+size_t ReachabilityGrounder::collect_object_fluent_effects(
+    const Action& ground_action, ObjectFluentIndex& obj_fluents) const
+{
+    size_t new_values = 0;
+    const auto& pool = lifted_problem_.pool();
+
+    for (const auto& eff : ground_action.effects()) {
+        const auto& ee = eff.effect_expression();
+
+        // Only ASSIGN effects are relevant for object fluents.
+        if (!ee.is_assign()) continue;
+
+        ExprID fluent_eid = ee.fluent_id();
+        ExprID value_eid  = ee.value_id();
+
+        // Decompose fluent — only object fluents.
+        if (!pool.is_state_variable(fluent_eid)) continue;
+
+        ExprID head = pool.head_symbol_id(fluent_eid);
+        if (!pool.is_fluent_symbol(head)) continue;
+
+        const std::string& fname = pool.payload_string(head);
+        const Fluent* fluent_schema = lifted_problem_.find_fluent(fname);
+        if (!fluent_schema || !fluent_schema->is_object_fluent()) continue;
+
+        // Extract object indices from the ground fluent arguments.
+        size_t nargs = pool.argument_count(fluent_eid);
+        std::vector<int> arg_indices;
+        arg_indices.reserve(nargs);
+
+        bool valid = true;
+        for (size_t i = 0; i < nargs && valid; ++i) {
+            ExprID arg = pool.argument(fluent_eid, i);
+            if (pool.is_constant(arg) && pool.payload_is_string(arg)) {
+                const Object* obj = lifted_problem_.find_object(pool.payload_string(arg));
+                if (obj) {
+                    arg_indices.push_back(
+                        static_cast<int>(obj - &lifted_problem_.objects()[0]));
+                } else {
+                    valid = false;
+                }
+            } else {
+                valid = false;
+            }
+        }
+        if (!valid) continue;
+
+        // Resolve the value to an object index.
+        if (!pool.is_constant(value_eid) || !pool.payload_is_string(value_eid)) continue;
+
+        const Object* val_obj = lifted_problem_.find_object(pool.payload_string(value_eid));
+        if (!val_obj) continue;
+
+        int val_idx = static_cast<int>(val_obj - &lifted_problem_.objects()[0]);
+
+        if (obj_fluents.add_value(fluent_schema->id(), arg_indices, val_idx)) {
+            ++new_values;
+        }
+    }
+
+    return new_values;
+}
+
+// ---------------------------------------------------------------------------
 // collect_numeric_effects
 // ---------------------------------------------------------------------------
 
@@ -269,6 +336,16 @@ GroundingResult ReachabilityGrounder::ground() {
     FactIndex facts(lifted_problem_);
     facts.initialize_from_initial_state();
 
+    // 1a. Initialize ObjectFluentIndex from initial state.
+    ObjectFluentIndex obj_fluents(lifted_problem_);
+    obj_fluents.initialize_from_initial_state();
+
+    if (obj_fluents.total_entry_count() > 0) {
+        Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+            {"initial object fluent values", std::to_string(obj_fluents.total_entry_count())}
+        });
+    }
+
     // 1b. Optionally initialize NumericBoundsIndex.
     std::unique_ptr<NumericBoundsIndex> numeric_bounds;
     if (use_numeric) {
@@ -313,7 +390,7 @@ GroundingResult ReachabilityGrounder::ground() {
         changed = false;
         ++iteration;
 
-        BindingMatcher matcher(lifted_problem_, facts);
+        BindingMatcher matcher(lifted_problem_, facts, &obj_fluents);
 
         size_t new_actions_this_iter = 0;
         size_t new_facts_this_iter   = 0;
@@ -367,6 +444,13 @@ GroundingResult ReachabilityGrounder::ground() {
                 size_t nf = collect_add_effects(ga, facts);
                 if (nf > 0) {
                     new_facts_this_iter += nf;
+                    changed = true;
+                }
+
+                // Collect object fluent effects.
+                size_t new_obj = collect_object_fluent_effects(ga, obj_fluents);
+                if (new_obj > 0) {
+                    new_facts_this_iter += new_obj;
                     changed = true;
                 }
 
