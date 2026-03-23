@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <cstddef>  // This defines size_t
 
 namespace rantanplan {
 
