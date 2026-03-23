@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 
 # ==============================================================================
 # PROJECT CONFIGURATION
@@ -16,15 +16,45 @@ endif()
 # ==============================================================================
 # PROTOBUF SETUP
 # ==============================================================================
-# https://github.com/protocolbuffers/protobuf/issues/12637
-if(APPLE)
-    find_package(Protobuf REQUIRED CONFIG)
-else()
-    find_package(Protobuf REQUIRED)
+option(FETCH_PROTOBUF "Force fetching protobuf via FetchContent instead of using system protobuf" OFF)
+
+# Try system protobuf first (unless forced to fetch)
+if(NOT FETCH_PROTOBUF)
+    # https://github.com/protocolbuffers/protobuf/issues/12637
+    if(APPLE)
+        find_package(Protobuf QUIET CONFIG)
+    else()
+        find_package(Protobuf QUIET)
+    endif()
 endif()
-# Abseil (Google's C++ common libraries) for protobuf
-#find_package(absl REQUIRED)
-# no longer needed, protobuf now uses absl internally
+
+if(Protobuf_FOUND OR PROTOBUF_FOUND)
+    message(STATUS "Found system protobuf: ${Protobuf_VERSION}")
+else()
+    message(STATUS "System protobuf not found, fetching via FetchContent...")
+    include(FetchContent)
+
+    # Configure protobuf build options before fetching
+    set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+    set(protobuf_ABSL_PROVIDER "module" CACHE STRING "" FORCE)
+    set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+    set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        protobuf
+        GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+        GIT_TAG        v25.6
+        GIT_SHALLOW    TRUE
+        GIT_SUBMODULES "third_party/abseil-cpp"
+    )
+    FetchContent_MakeAvailable(protobuf)
+
+    # protobuf_generate is not automatically available via FetchContent,
+    # include it explicitly from the fetched protobuf source
+    include(${protobuf_SOURCE_DIR}/cmake/protobuf-generate.cmake)
+endif()
 
 # ==============================================================================
 # Z3 SOLVER SETUP
@@ -169,7 +199,6 @@ target_include_directories(rantanplan PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/analysis/        # analysis headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/passes/          # pass system headers
     ${CMAKE_CURRENT_SOURCE_DIR}/src/grounding/       # grounding headers
-    ${Protobuf_INCLUDE_DIRS}                         # protobuf lib headers
     ${Z3_INCLUDE_DIR}                                # Z3 headers
 )
 
