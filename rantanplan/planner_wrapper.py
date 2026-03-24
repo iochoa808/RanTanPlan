@@ -280,7 +280,7 @@ class _RantanPlanBase(Engine):
 
         if real_int_fluents_to_init:
             fluent_names = [str(f) for f in real_int_fluents_to_init]
-            self._log_warning(f"WARNING: Initializing {len(real_int_fluents_to_init)} real/integer fluents to 0: {', '.join(fluent_names)}")
+            self._log_warning(f"WARNING: Initializing {len(real_int_fluents_to_init)} real/integer fluents to 0")
             self._log_warning("         This is not semantically correct but is done in practice for planning purposes.")
 
         for fe in unintialized_fluents:
