@@ -103,7 +103,7 @@ def generate_commands(instances_by_domain, strategies, modes, output_dir, timeou
                 for mode in modes:
                     prefix = f"{domain_name}_{instance_name}_{strategy}_{mode}"
                     planfile = os.path.join(output_dir, f"{prefix}.plan")
-                    statsfile = os.path.join(output_dir, f"{prefix}.json")
+                    statsfile = os.path.join(output_dir, f"{prefix}.stat")
 
                     echo = make_echo_header(domain_name, instance_name, strategy, mode)
                     cmd = COMMAND_TEMPLATE.format(

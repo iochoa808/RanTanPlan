@@ -68,7 +68,7 @@ std::string Plan::write_ipc(const std::string& base_path, int solution_number,
         return "";
     }
     file << to_ipc_string(cost, unit_cost, strategy, mode, elapsed_seconds);
-    Logger::instance().info("  Plan written to: " + filename);
+    Logger::instance().info("Plan written to: " + filename);
     return filename;
 }
 
