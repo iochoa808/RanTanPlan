@@ -218,7 +218,7 @@ class _RantanPlanBase(Engine):
             command.extend(["--mode", self._mode])
         if self._output_plan is not None:
             command.extend(["--output-plan", self._output_plan])
-        if timeout is not None:
+        if timeout:
             command.extend(["--timeout", str(int(timeout))])
 
         return command
@@ -602,7 +602,7 @@ class RantanPlanPlanner(_RantanPlanBase, OneshotPlannerMixin):
             stdout_thread.start()
             stderr_thread.start()
 
-            process_timeout = timeout + 10 if timeout is not None else None
+            process_timeout = timeout + 10 if timeout else None
             try:
                 return_code = process.wait(timeout=process_timeout)
             except subprocess.TimeoutExpired:
@@ -682,7 +682,7 @@ class RantanPlanOptimalPlanner(_RantanPlanBase, OneshotPlannerMixin):
             stdout_thread.start()
             stderr_thread.start()
 
-            process_timeout = timeout + 10 if timeout is not None else None
+            process_timeout = timeout + 10 if timeout else None
             try:
                 return_code = process.wait(timeout=process_timeout)
             except subprocess.TimeoutExpired:
