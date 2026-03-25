@@ -9,7 +9,7 @@ enum class EncoderFamily { Grounded, Chained, R2E };
 enum class SemanticsKind { Sequential, Forall, Exists };
 enum class InterferenceKind { None, EagerSyntactic, EagerSemantic, LazySyntactic, LazySemantic };
 enum class PropagatorKind { Null, Forall, LazyForall, Exists, DecisionHeuristic };
-enum class PlannerKind { Sequential, DoubleTail, BranchAndBound };
+enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, LazyR2E };
 
 /// Search mode — orthogonal to strategy (encoding/semantics/interference/propagator).
 ///   Satisficing: find first valid plan, return immediately.
@@ -47,6 +47,11 @@ inline PlannerKind resolve_planner_kind(SearchMode mode, const StrategySpec& spe
         throw std::invalid_argument(
             "Mode '" + mode_str + "' is incompatible with double-tail strategies. "
             "Use a non-dt strategy (e.g., 'forall-lazy' instead of 'forall-lazy-dt').");
+    }
+    if (spec.planner == PlannerKind::LazyR2E) {
+        std::string mode_str = (mode == SearchMode::Optimal) ? "optimal" : "anytime";
+        throw std::invalid_argument(
+            "Mode '" + mode_str + "' is incompatible with lazy-r2e strategies.");
     }
     return PlannerKind::BranchAndBound;
 }

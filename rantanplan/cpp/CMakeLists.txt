@@ -133,6 +133,7 @@ add_executable(rantanplan
     src/planners/sequential.cpp
     src/planners/double_tail_planner.cpp
     src/planners/branch_and_bound_planner.cpp
+    src/planners/lazy_r2e_planner.cpp
     src/planners/formula_exporter.cpp
     src/encoders/abstract_suffix_encoder.cpp
     src/planners/propagators/propagator_strategy.cpp

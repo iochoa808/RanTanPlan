@@ -52,6 +52,9 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         {"exists-lazy-dt",                 {E::Grounded, S::Exists,     I::LazySyntactic,   P::Exists,            K::DoubleTail}},
         {"exists-lazy-semantic-dt",        {E::Grounded, S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail}},
         {"exists-lazy-semantic-chain-dt",  {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail}},
+
+        // Lazy R2E with flowing frontier (core-guided, no interference/propagators needed)
+        {"lazy-r2e",                       {E::Grounded, S::Sequential, I::None,             P::Null,              K::LazyR2E}},
     };
     return registry;
 }
