@@ -14,6 +14,7 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass, field
+from itertools import combinations
 from pathlib import Path
 
 import matplotlib
@@ -385,6 +386,110 @@ def plot_cactus(ax, cactus_data: dict[str, list[float]], timeout: float, title: 
     ax.grid(True, which="both", alpha=0.3)
 
 
+MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*", "p", "h", "<", ">", "d", "H", "8"]
+
+
+def get_domain_styles(domains: list[str]) -> dict[str, tuple[str, object]]:
+    """Assign (marker, color) pairs to domains."""
+    cmap = matplotlib.colormaps["tab20"]
+    styles: dict[str, tuple[str, object]] = {}
+    for i, d in enumerate(sorted(domains)):
+        marker = MARKERS[i % len(MARKERS)]
+        color = cmap(i % 20)
+        styles[d] = (marker, color)
+    return styles
+
+
+def build_scatter_data(
+    runs: list["BenchmarkRun"], timeout: float,
+) -> tuple[list[str], list[str], dict[tuple[str, str, str], float]]:
+    """Build lookup for scatter plots.
+
+    Returns (configs, domains, times_by_key) where
+    times_by_key maps (domain/instance, config_label) -> time (timeout if unsolved).
+    """
+    two_dir = len(runs) > 1
+    configs: list[str] = []
+    domains: set[str] = set()
+    times: dict[tuple[str, str], float] = {}
+
+    for run in runs:
+        for job in run.jobs:
+            label = f"{run.label}/{job.config}" if two_dir else job.config
+            key = (instance_key(job), label)
+            if job.solved and job.total_time is not None:
+                times[key] = job.total_time
+            else:
+                times[key] = timeout
+            domains.add(job.domain)
+
+    # Collect unique config labels preserving order
+    seen: set[str] = set()
+    for run in runs:
+        for job in run.jobs:
+            label = f"{run.label}/{job.config}" if two_dir else job.config
+            if label not in seen:
+                configs.append(label)
+                seen.add(label)
+
+    return configs, sorted(domains), times
+
+
+def plot_scatter_pair(
+    ax,
+    config_a: str,
+    config_b: str,
+    instances: list[str],
+    times: dict[tuple[str, str], float],
+    domain_styles: dict[str, tuple[str, object]],
+    timeout: float,
+    log_scale: bool,
+) -> None:
+    """Plot a single scatter comparison on the given axes."""
+    plotted_domains: set[str] = set()
+
+    for inst in instances:
+        key_a = (inst, config_a)
+        key_b = (inst, config_b)
+        if key_a not in times or key_b not in times:
+            continue
+
+        domain = inst.split("/")[0]
+        marker, color = domain_styles.get(domain, ("o", "gray"))
+        label = domain if domain not in plotted_domains else None
+        plotted_domains.add(domain)
+
+        ax.scatter(
+            times[key_a], times[key_b],
+            marker=marker, color=color, s=30, alpha=0.7,
+            label=label, edgecolors="none",
+        )
+
+    # Diagonal reference line
+    lo = 0.01 if log_scale else 0
+    hi = timeout * 1.1
+    ax.plot([lo, hi], [lo, hi], "k--", linewidth=0.5, alpha=0.5)
+
+    # Timeout reference lines
+    ax.axhline(y=timeout, color="gray", linestyle=":", linewidth=0.5, alpha=0.5)
+    ax.axvline(x=timeout, color="gray", linestyle=":", linewidth=0.5, alpha=0.5)
+
+    ax.set_xlabel(config_a)
+    ax.set_ylabel(config_b)
+
+    if log_scale:
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_title(f"{config_a} vs {config_b} (log)")
+    else:
+        ax.set_title(f"{config_a} vs {config_b} (linear)")
+
+    ax.set_xlim(left=lo if log_scale else -timeout * 0.02, right=hi)
+    ax.set_ylim(bottom=lo if log_scale else -timeout * 0.02, top=hi)
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(True, which="both", alpha=0.3)
+
+
 def plot_timestep(ax, inst_key: str, series: list[tuple[str, list[TimestepData]]], timeout: float) -> None:
     """Render per-instance timestep plot."""
     labels = [s[0] for s in series]
@@ -414,6 +519,7 @@ def generate_pdf(
     timeout: float,
 ) -> None:
     """Generate the full PDF report."""
+    num_pages = 0
     with PdfPages(str(output_path)) as pdf:
         # Page 1: Cactus plot
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -422,6 +528,40 @@ def generate_pdf(
         fig.tight_layout()
         pdf.savefig(fig)
         plt.close(fig)
+        num_pages += 1
+
+        # Pairwise scatter plots
+        configs, domains, times = build_scatter_data(runs, timeout)
+        if len(configs) >= 2:
+            domain_styles = get_domain_styles(domains)
+            # Collect all instance keys
+            instances = sorted({
+                instance_key(job)
+                for run in runs
+                for job in run.jobs
+            })
+
+            for config_a, config_b in combinations(configs, 2):
+                fig, (ax_lin, ax_log) = plt.subplots(1, 2, figsize=(16, 7))
+                plot_scatter_pair(ax_lin, config_a, config_b, instances, times, domain_styles, timeout, False)
+                plot_scatter_pair(ax_log, config_a, config_b, instances, times, domain_styles, timeout, True)
+
+                # Shared legend from log axis
+                handles, labels = ax_log.get_legend_handles_labels()
+                if handles:
+                    fig.legend(
+                        handles, labels,
+                        loc="center right",
+                        fontsize=7,
+                        bbox_to_anchor=(1.0, 0.5),
+                        ncol=1,
+                    )
+
+                fig.suptitle(f"{config_a} vs {config_b}", fontsize=13)
+                fig.tight_layout(rect=[0, 0, 0.85, 0.95])
+                pdf.savefig(fig)
+                plt.close(fig)
+                num_pages += 1
 
         # Per-instance timestep pages
         timestep_data = build_timestep_data(runs)
@@ -432,8 +572,9 @@ def generate_pdf(
             fig.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
+            num_pages += 1
 
-    print(f"Report written to {output_path} ({1 + len(timestep_data)} pages)")
+    print(f"Report written to {output_path} ({num_pages} pages)")
 
 
 # --- CLI ---
