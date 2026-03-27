@@ -387,7 +387,16 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
         return false;
     }
 
-    // Step 2: Add frame axioms for fluents not modified by this action
+    // Step 2: Encode action precondition — the action can only fire when
+    // its precondition holds.  Without this, we over-approximate: e.g.
+    // fly(city2, city2) would be reported as an achiever of "at city2"
+    // even though it can only fire when the plane is already at city2.
+    if (action.has_precondition()) {
+        z3::expr precond_z3 = visitor_->convert_from_pool(action.precondition_id(), 0);
+        persistent_solver_->add(precond_z3);
+    }
+
+    // Step 3: Add frame axioms for fluents not modified by this action
     auto modified_fluents = get_action_modified_fluents(action);
     auto condition_fluents = collect_fluents_in_expression(condition_eid);
 
@@ -399,7 +408,7 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
         }
     }
 
-    // Step 3: Encode the transition requirement: condition becomes true
+    // Step 4: Encode the transition requirement: condition becomes true
     z3::expr condition_current = visitor_->convert_from_pool(condition_eid, 0);
     z3::expr condition_next = visitor_->convert_from_pool(condition_eid, 1);
 
@@ -407,7 +416,7 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
     persistent_solver_->add(!condition_current);  // condition is currently false
     persistent_solver_->add(condition_next);       // condition becomes true after action
 
-    // Step 4: Check if there exists such a transition
+    // Step 5: Check if there exists such a transition
     ++z3_query_count_;
     z3::check_result result = persistent_solver_->check();
 
