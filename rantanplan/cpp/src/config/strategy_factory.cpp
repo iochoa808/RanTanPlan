@@ -18,6 +18,7 @@
 #include "../planners/branch_and_bound_planner.hpp"
 #include "../planners/lazy_r2e_planner.hpp"
 #include "../planners/causal_lazy_r2e_planner.hpp"
+#include "../planners/causal_exists_planner.hpp"
 
 #include "../planners/propagators/null_propagator.hpp"
 #include "../planners/propagators/forall_propagator.hpp"
@@ -92,6 +93,11 @@ void StrategyFactory::validate(const StrategySpec& spec,
     if (spec.planner == PlannerKind::CausalLazyR2E && spec.encoder != EncoderFamily::Grounded) {
         throw std::invalid_argument(
             "Causal Lazy R2E planner requires Grounded encoder. Strategy: '" + strategy_name + "'.");
+    }
+    if (spec.planner == PlannerKind::CausalExists &&
+        spec.encoder != EncoderFamily::Grounded && spec.encoder != EncoderFamily::Chained) {
+        throw std::invalid_argument(
+            "Causal Exists planner requires Grounded or Chained encoder. Strategy: '" + strategy_name + "'.");
     }
 
     if (horizon_schedule != "linear" && uses_double_tail(spec)) {
@@ -229,6 +235,8 @@ std::unique_ptr<BasePlanner> StrategyFactory::create_planner(
             return std::make_unique<LazyR2EPlanner>(problem, encoder, ctx);
         case PlannerKind::CausalLazyR2E:
             return std::make_unique<CausalLazyR2EPlanner>(problem, encoder, ctx);
+        case PlannerKind::CausalExists:
+            return std::make_unique<CausalExistsPlanner>(problem, encoder, ctx);
     }
     throw std::invalid_argument("Unknown planner kind");
 }

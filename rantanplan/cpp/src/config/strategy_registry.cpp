@@ -56,6 +56,9 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         // Lazy R2E with flowing frontier (core-guided, no interference/propagators needed)
         {"lazy-r2e",                       {E::Grounded, S::Sequential, I::None,             P::Null,              K::LazyR2E}},
         {"causal-lazy-r2e",                {E::Grounded, S::Sequential, I::None,             P::Null,              K::CausalLazyR2E}},
+
+        // Causal exists: core-guided lazy activation over exists-step encoding
+        {"causal-exists",                  {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::CausalExists}},
     };
     return registry;
 }
