@@ -316,12 +316,6 @@ Plan LazyR2EPlanner::search() {
 
     Logger::instance().info("Starting Lazy R2E search, timeout: " + format_timeout_string());
 
-    // Enable minimal UNSAT cores: prevents activating unnecessary actions
-    // from overly large cores, keeping the chain lean.
-    //z3::params p(ctx_);
-    //p.set("smt.core.minimize", true);
-    //solver_.set(p);
-
     // 1. Encode initial state at timestep 0
     solver_.add(*encoder_.encode_initial_state());
 
@@ -350,12 +344,7 @@ Plan LazyR2EPlanner::search() {
     // 5. Setup goal assumptions
     setup_goal_assumptions();
 
-    // 6. Also constrain non-modifiable fluents that appear in goals:
-    //    they must retain their init value, which is already encoded.
-    //    No extra constraints needed — the goals reference fluent@0 directly
-    //    (since non-modifiable fluents aren't in var_info_ and won't be substituted).
-
-    // 7. Search loop
+    // 6. Search loop
     int max_chain_length = config.planner.max_steps * static_cast<int>(problem_.actions().size());
     int round = 0;
     int extensions = 0;
@@ -431,24 +420,6 @@ Plan LazyR2EPlanner::search() {
             }
 
             if (activated == 0) {
-                // Diagnostic: what's in the core?
-                size_t blocked_in_map = block_id_to_chain_index_.size();
-                Logger::instance().info("  activated==0 diagnostic: core_size=" +
-                    std::to_string(core.size()) + " blocked_in_map=" +
-                    std::to_string(blocked_in_map));
-                for (unsigned ci = 0; ci < core.size() && ci < 10; ++ci) {
-                    Logger::instance().info("    core[" + std::to_string(ci) + "]: id=" +
-                        std::to_string(core[ci].id()) + " " + core[ci].to_string());
-                }
-                // Show a few map entries for comparison
-                int shown = 0;
-                for (const auto& [bid, idx] : block_id_to_chain_index_) {
-                    if (shown++ >= 5) break;
-                    Logger::instance().info("    map: id=" + std::to_string(bid) +
-                        " → slot " + std::to_string(idx) + " (" +
-                        chain_[idx].blocking_lit.to_string() + ")");
-                }
-
                 // No blocking literals in core → current capacity insufficient
                 if (static_cast<int>(chain_.size()) >= max_chain_length) {
                     Logger::instance().info("Chain length limit reached (" +

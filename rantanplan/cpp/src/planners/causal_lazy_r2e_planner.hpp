@@ -14,32 +14,20 @@
 namespace rantanplan {
 
 /**
- * @brief Causal Lazy R2E planner — LazyR2E with achiever disjunctions
+ * @brief Causal Lazy R2E planner — LazyR2E with achiever-based core filtering
  *
- * Extends the LazyR2E approach with redundant achiever disjunctions that
- * provide the solver with shorter proof paths.  This results in more
- * precise (causal) UNSAT cores: instead of activating all slots that
- * modify a fluent, the solver activates only those that can actually
- * ACHIEVE the required condition (e.g., for goal fuel>=20, only slots
- * whose action increases fuel, not those that decrease it).
+ * Extends LazyR2E with causal UNSAT core filtering: AchieversAnalysis
+ * (SMT-based, run once at startup) determines which actions can
+ * transition each condition from false to true.  A transitive closure
+ * from goal conditions through the achiever graph identifies
+ * "goal-relevant" actions.  Blocking literals for non-relevant actions
+ * (e.g. self-loop flights) are filtered from UNSAT cores, preventing
+ * the planner from activating useless slots.
  *
- * Two types of achiever disjunctions:
- *
- * 1. Goal achiever disjunctions (assumption-guarded, refreshed):
- *      goal_ach_lit => (act_a_s5 | act_b_s12 | ...)
- *    "At least one achiever of goal condition g must fire."
- *
- * 2. Precondition achiever disjunctions (permanent, per slot):
- *      act_a_sN => (act_b_sM1 | act_c_sM2 | ...)   where M < N
- *    "If action a fires at slot N, at least one preceding achiever of
- *     each precondition must fire (unless init satisfies it)."
- *
- * These clauses are logically redundant (already implied by the chain
- * equations) but provide short-cut proof paths.  The solver naturally
- * prefers shorter proofs, producing smaller, causally-focused cores.
- *
- * AchieversAnalysis (SMT-based, run once at startup) determines which
- * actions can transition each condition from false to true.
+ * Additionally uses VSIDS-inspired multiplicity tracking: core hits
+ * bump action scores, cascade propagation bumps enablers, and global
+ * decay ensures old evidence fades.  When an action's score exceeds
+ * its active slot count, new slots are threshold-activated.
  */
 class CausalLazyR2EPlanner : public BasePlanner {
 public:
@@ -68,13 +56,7 @@ private:
     struct GoalAssumption {
         z3::expr lit;             ///< The assumption literal
         bool active;              ///< Include in next check()?
-    };
-
-    /// Assumption-guarded achiever disjunction for a goal condition.
-    struct GoalAchieverDisjunction {
-        z3::expr lit;             ///< Assumption literal
-        bool active;              ///< Include in next check()?
-        ExprID condition;         ///< The goal condition this covers
+        ExprID goal_id;           ///< The goal ExprID this assumption guards
     };
 
     // ---- Chain data (same as LazyR2EPlanner) ----
@@ -90,8 +72,6 @@ private:
     std::unordered_set<ExprID> modifiable_fluents_;
     std::unordered_map<const Action*,
         std::unordered_map<ExprID, std::vector<const Effect*>>> action_effects_by_fluent_;
-    bool achiever_activation_pending_ = false;
-
     // ---- Achiever data (new) ----
 
     /// AchieversAnalysis instance (run once at startup).
@@ -106,15 +86,36 @@ private:
     /// Conditions that are already true in the initial state.
     std::unordered_set<ExprID> init_satisfied_conditions_;
 
-    /// Goal achiever disjunctions (assumption-guarded, refreshed with goals).
-    std::vector<GoalAchieverDisjunction> goal_achiever_disjunctions_;
-    int next_goal_ach_version_ = 0;
-
     /// Goal condition ExprIDs (from AchieversAnalysis).
     std::vector<ExprID> goal_condition_ids_;
 
     /// Per-action precondition literal ExprIDs (from AchieversAnalysis).
     std::unordered_map<const Action*, std::vector<ExprID>> action_precondition_ids_;
+
+    /// Actions that are goal achievers (computed once at init).
+    std::unordered_set<const Action*> goal_achiever_actions_;
+
+    /// Actions that are transitive achievers of any goal condition
+    /// (computed once at init).  Used to filter non-achiever noise from
+    /// UNSAT cores — blocking lits for actions outside this set are
+    /// ignored since they can never contribute to goal achievement.
+    std::unordered_set<const Action*> goal_relevant_actions_;
+
+    // ---- VSIDS-inspired multiplicity tracking ----
+
+    /// Activity score per action type (VSIDS-style).  Bumped on core
+    /// hits and cascade propagation.  Globally decayed each round so
+    /// that old evidence fades and only actions with fresh support
+    /// maintain high scores.  When floor(activity) exceeds active_count,
+    /// new slots are activated via threshold_activate().
+    std::unordered_map<const Action*, double> multiplicity_;
+
+    /// Current number of active slots per action type.
+    std::unordered_map<const Action*, int> active_count_;
+
+    /// VSIDS decay factor applied to ALL multiplicity scores each round.
+    /// Recent core/cascade evidence dominates; old evidence fades.
+    static constexpr double vsids_decay_ = 0.95;
 
     // ---- Setup ----
 
@@ -141,11 +142,6 @@ private:
         const z3::expr& running_value,
         const z3::expr_vector& sub_from, const z3::expr_vector& sub_to);
 
-    // ---- Achiever disjunctions (new) ----
-
-    void add_precondition_achiever_disjunctions(size_t slot_idx);
-    void refresh_goal_achiever_disjunctions();
-
     // ---- Goal management ----
 
     void setup_goal_assumptions();
@@ -155,7 +151,9 @@ private:
 
     z3::expr_vector build_assumptions();
     int process_core(const z3::expr_vector& core);
-    int activate_goal_achievers();
+    void cascade_bump(const std::vector<const Action*>& seeds, double bump_amount);
+    int threshold_activate();
+    void decay_multiplicity();
     void extend_chain();
 
     // ---- Plan extraction ----
