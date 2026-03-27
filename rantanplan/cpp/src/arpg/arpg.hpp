@@ -265,6 +265,22 @@ public:
 
         // Handle numeric comparisons
         if (pool.is_function_application(eid) && pool.argument_count(eid) >= 2) {
+            // For equality checks on object constants, compare string
+            // representations directly.  Interval arithmetic maps all unknown
+            // constants to the same default value, making distinct objects
+            // look equal and breaking NOT(= obj1 obj2) preconditions.
+            if (pool.is_equals(eid)) {
+                ExprID lhs = pool.argument(eid, 0);
+                ExprID rhs = pool.argument(eid, 1);
+                if (pool.is_constant(lhs) && pool.is_constant(rhs) &&
+                    !pool.payload_is_bool(lhs) && !pool.payload_is_bool(rhs) &&
+                    !pool.payload_is_int(lhs) && !pool.payload_is_int(rhs) &&
+                    !pool.payload_is_double(lhs) && !pool.payload_is_double(rhs)) {
+                    // Both are object constants — compare by identity
+                    return lhs == rhs;
+                }
+            }
+
             Interval left = evaluate_expression(pool.argument(eid, 0), pool);
             Interval right = evaluate_expression(pool.argument(eid, 1), pool);
 
