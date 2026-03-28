@@ -40,6 +40,13 @@ public:
     // Get access to parallelism strategy for plan extraction
     const ParallelismStrategy* get_parallelism_strategy() const override { return parallelism_strategy_.get(); }
     
+    // Encode precondition + effect constraints for a single action at timestep t.
+    // Returns nullptr if the action has no effects (nothing to encode).
+    std::shared_ptr<z3::expr> encode_single_action(const Action& action, int t);
+
+    // Create action variables for all actions at timestep t without encoding constraints.
+    void ensure_action_variables(int t);
+
     // Plan extraction from Z3 model
     Plan extract_plan(const z3::model& model, int max_timestep) const override;
     

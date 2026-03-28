@@ -79,38 +79,44 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_actions(int t) {
     auto& stats = Stats::instance();
 
     for (const Action& action : problem_.actions()) {
-        z3::expr action_var = variable_factory_.get_action_variable(action, t); 
-        
-        // if the action has no effects, we skip it as it cannot change any fluents
-        if (!action.effects().empty()) {
-
-            // Create precondition constraints: action_var => precondition
-            if (action.has_precondition()) {
-                z3::expr z3_precond = convert_expr_id_to_z3(action.precondition_id(), t);
-                action_constraints.push_back(z3::implies(action_var, z3_precond));
-            }
-
-            // Create effect constraints: action_var => effects
-            z3::expr_vector effect_exprs(ctx_);
-            for (const Effect& effect : action.effects()) {
-                effect_exprs.push_back(convert_effect_to_z3(effect.effect_expression(), t));
-            }
-            z3::expr effect_conjunction = z3::mk_and(effect_exprs);
-            // action_var => effect_conjunction
-            //std::cout << "eff:" << action_var.to_string() << " -> " << effect_conjunction.to_string() << std::endl;
-            action_constraints.push_back(z3::implies(action_var, effect_conjunction));
+        auto single = encode_single_action(action, t);
+        if (single) {
+            action_constraints.push_back(*single);
         }
     }
-    
-    // Collect statistics
+
     stats.add("encoder.action_constraints", action_constraints.size());
-    
-    // Combine all action constraints. Can't see why we could have no actions, but handle it gracefully.
+
     if (action_constraints.empty()) {
-        auto expr = std::make_shared<z3::expr>(ctx_.bool_val(true));
-        return expr;
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
     }
     return std::make_shared<z3::expr>(z3::mk_and(action_constraints));
+}
+
+std::shared_ptr<z3::expr> GroundedEncoder::encode_single_action(const Action& action, int t) {
+    if (action.effects().empty()) return nullptr;
+
+    z3::expr_vector constraints(ctx_);
+    z3::expr action_var = variable_factory_.get_action_variable(action, t);
+
+    if (action.has_precondition()) {
+        z3::expr z3_precond = convert_expr_id_to_z3(action.precondition_id(), t);
+        constraints.push_back(z3::implies(action_var, z3_precond));
+    }
+
+    z3::expr_vector effect_exprs(ctx_);
+    for (const Effect& effect : action.effects()) {
+        effect_exprs.push_back(convert_effect_to_z3(effect.effect_expression(), t));
+    }
+    constraints.push_back(z3::implies(action_var, z3::mk_and(effect_exprs)));
+
+    return std::make_shared<z3::expr>(z3::mk_and(constraints));
+}
+
+void GroundedEncoder::ensure_action_variables(int t) {
+    for (const Action& action : problem_.actions()) {
+        variable_factory_.get_action_variable(action, t);
+    }
 }
 
 /**

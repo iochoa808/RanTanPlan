@@ -1,11 +1,11 @@
 #include "causal_exists_planner.hpp"
+#include "../encoders/grounded_encoder.hpp"
 #include "../config/config.hpp"
 #include "../util/logger.hpp"
 #include "../util/stats.hpp"
 #include "../util/memory_tracker.hpp"
 #include <algorithm>
 #include <chrono>
-#include <limits>
 
 namespace rantanplan {
 
@@ -16,6 +16,13 @@ namespace rantanplan {
 CausalExistsPlanner::CausalExistsPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx)
     : BasePlanner(problem, encoder, ctx),
       goal_assumption_(ctx.bool_val(true)) {
+}
+
+GroundedEncoder& CausalExistsPlanner::grounded_encoder() {
+    if (!grounded_encoder_) {
+        grounded_encoder_ = &dynamic_cast<GroundedEncoder&>(encoder_);
+    }
+    return *grounded_encoder_;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,19 +45,6 @@ void CausalExistsPlanner::build_condition_achiever_cache() {
             if (it != action_id_to_ptr_.end()) {
                 ptrs.push_back(it->second);
             }
-        }
-    }
-
-    for (ExprID cond : achievers_->get_goal_conditions()) {
-        goal_condition_ids_.push_back(cond);
-    }
-
-    for (const Action& a : problem_.actions()) {
-        const auto& precs = achievers_->get_preconditions(a);
-        if (!precs.empty()) {
-            auto* ptr = action_id_to_ptr_[a.id()];
-            auto& vec = action_precondition_ids_[ptr];
-            vec.assign(precs.begin(), precs.end());
         }
     }
 }
@@ -79,6 +73,19 @@ void CausalExistsPlanner::initialize_achievers() {
     build_condition_achiever_cache();
     compute_init_satisfied_conditions();
 
+    for (ExprID cond : achievers_->get_goal_conditions()) {
+        goal_condition_ids_.push_back(cond);
+    }
+
+    for (const Action& a : problem_.actions()) {
+        const auto& precs = achievers_->get_preconditions(a);
+        if (!precs.empty()) {
+            auto* ptr = action_id_to_ptr_[a.id()];
+            auto& vec = action_precondition_ids_[ptr];
+            vec.assign(precs.begin(), precs.end());
+        }
+    }
+
     auto init_end = std::chrono::high_resolution_clock::now();
     double init_time = std::chrono::duration<double>(init_end - init_start).count();
 
@@ -89,9 +96,8 @@ void CausalExistsPlanner::initialize_achievers() {
         "(" + std::to_string(init_time) + "s)");
 
     // Direct goal achievers
-    for (ExprID cond : goal_condition_ids_) {
-        if (init_satisfied_conditions_.count(cond)) continue;
-        auto it = condition_achievers_.find(cond);
+    for (ExprID g : goal_condition_ids_) {
+        auto it = condition_achievers_.find(g);
         if (it != condition_achievers_.end()) {
             for (const Action* a : it->second) {
                 goal_achiever_actions_.insert(a);
@@ -134,87 +140,61 @@ void CausalExistsPlanner::initialize_achievers() {
             std::to_string(problem_.actions().size()));
     }
 
-    if (Config::instance().is_verbose()) {
-        for (ExprID cond : goal_condition_ids_) {
-            std::string cond_str = problem_.pool().to_string(cond);
-            auto it = condition_achievers_.find(cond);
-            std::string achievers_str;
-            if (it != condition_achievers_.end()) {
-                for (const Action* a : it->second) {
-                    if (!achievers_str.empty()) achievers_str += ", ";
-                    achievers_str += a->name() + "(id=" + std::to_string(a->id()) + ")";
-                }
-            }
-            bool init_sat = init_satisfied_conditions_.count(cond) > 0;
-            Logger::instance().info("  Goal cond: " + cond_str +
-                (init_sat ? " [INIT]" : "") +
-                " -> achievers: [" + achievers_str + "]");
-        }
-    }
-
-    // Extract h^ff relaxed plan
+    // Extract relaxed plan (h^ff-style)
     extract_relaxed_plan();
 }
 
-// ---------------------------------------------------------------------------
-// Relaxed plan extraction (h^ff-style backward chaining)
-// ---------------------------------------------------------------------------
-
 void CausalExistsPlanner::extract_relaxed_plan() {
+    // h^ff-style backward extraction from ARPG
     relaxed_plan_.clear();
-    std::unordered_set<const Action*> in_plan;
 
-    // BFS backward from goal conditions: for each unsatisfied condition,
-    // pick the achiever with the earliest ARPG layer (h^ff tie-breaking)
-    std::vector<ExprID> needed;
-    std::unordered_set<ExprID> processed;
-
-    for (ExprID cond : goal_condition_ids_) {
-        if (!init_satisfied_conditions_.count(cond)) {
-            needed.push_back(cond);
-            processed.insert(cond);
+    std::unordered_set<ExprID> unsatisfied;
+    for (ExprID g : goal_condition_ids_) {
+        if (!init_satisfied_conditions_.count(g)) {
+            unsatisfied.insert(g);
         }
     }
 
-    while (!needed.empty()) {
-        ExprID cond = needed.back();
-        needed.pop_back();
+    std::unordered_set<const Action*> used;
+    int max_layer = achievers_->get_arpg_num_layers();
 
-        auto ach_it = condition_achievers_.find(cond);
-        if (ach_it == condition_achievers_.end() || ach_it->second.empty()) continue;
+    for (int layer = max_layer - 1; layer >= 0 && !unsatisfied.empty(); layer--) {
+        std::vector<ExprID> newly_satisfied;
 
-        // Pick earliest-layer achiever (h^ff: prefer supporter from lowest RPG layer)
-        const Action* best = nullptr;
-        int best_layer = std::numeric_limits<int>::max();
-        for (const Action* a : ach_it->second) {
-            int layer = achievers_->get_action_first_layer(a->id());
-            if (layer < best_layer) {
-                best_layer = layer;
-                best = a;
+        for (ExprID cond : unsatisfied) {
+            auto it = condition_achievers_.find(cond);
+            if (it == condition_achievers_.end()) continue;
+
+            const Action* best = nullptr;
+            int best_layer = -1;
+            for (const Action* a : it->second) {
+                int a_layer = achievers_->get_action_first_layer(a->id());
+                if (a_layer <= layer && a_layer > best_layer) {
+                    best = a;
+                    best_layer = a_layer;
+                }
             }
-        }
-        if (!best) continue;
 
-        if (!in_plan.insert(best).second) continue; // already in relaxed plan
+            if (best && !used.count(best)) {
+                used.insert(best);
+                relaxed_plan_.push_back(best);
+                newly_satisfied.push_back(cond);
 
-        // Add this action's unsatisfied preconditions to the queue
-        auto prec_it = action_precondition_ids_.find(best);
-        if (prec_it != action_precondition_ids_.end()) {
-            for (ExprID prec : prec_it->second) {
-                if (!init_satisfied_conditions_.count(prec) &&
-                    processed.insert(prec).second) {
-                    needed.push_back(prec);
+                auto prec_it = action_precondition_ids_.find(best);
+                if (prec_it != action_precondition_ids_.end()) {
+                    for (ExprID prec : prec_it->second) {
+                        if (!init_satisfied_conditions_.count(prec)) {
+                            unsatisfied.insert(prec);
+                        }
+                    }
                 }
             }
         }
+
+        for (ExprID cond : newly_satisfied) {
+            unsatisfied.erase(cond);
+        }
     }
-
-    relaxed_plan_.assign(in_plan.begin(), in_plan.end());
-
-    Logger::instance().info("  h^ff relaxed plan: " +
-        std::to_string(relaxed_plan_.size()) + " actions (vs " +
-        std::to_string(goal_achiever_actions_.size()) + " goal achievers, " +
-        std::to_string(goal_relevant_actions_.size()) + " goal-relevant)");
 
     if (Config::instance().is_verbose()) {
         for (const Action* a : relaxed_plan_) {
@@ -229,9 +209,12 @@ void CausalExistsPlanner::extract_relaxed_plan() {
 // ---------------------------------------------------------------------------
 
 void CausalExistsPlanner::add_timestep(int t) {
-    // Encode standard exists-step constraints at this timestep
-    add_timestep_constraints(solver_, encoder_, *propagator_strategy_, t,
-                             /*prefix_monotone=*/false);
+    // Lazy population: create all action variables + frames + symmetries,
+    // but defer precondition/effect encoding until activation.
+    grounded_encoder().ensure_action_variables(t);
+    solver_.add(*encoder_.encode_frames(t));
+    solver_.add(*encoder_.encode_symmetries(t));
+    propagator_strategy_->register_timestep_variables(t + 1);
 
     // Add blocking constraints: block_a_t -> not act_a_t
     auto& vf = encoder_.get_variable_factory();
@@ -261,14 +244,13 @@ void CausalExistsPlanner::refresh_goal(int t) {
 void CausalExistsPlanner::extend_horizon() {
     current_horizon_++;
     add_timestep(current_horizon_);
-    // Goal at the last state: transition t produces state t+1
     refresh_goal(current_horizon_ + 1);
 
-    int pred_count = predictive_activate(current_horizon_);
+    int act_count = predictive_activate(current_horizon_);
 
-    if (Config::instance().is_verbose() && pred_count > 0) {
-        Logger::instance().info("  Predictive: activated " +
-            std::to_string(pred_count) + " actions at t=" +
+    if (Config::instance().is_verbose() && act_count > 0) {
+        Logger::instance().info("  Extended horizon: activated " +
+            std::to_string(act_count) + " actions at t=" +
             std::to_string(current_horizon_));
     }
 }
@@ -293,39 +275,6 @@ z3::expr_vector CausalExistsPlanner::build_assumptions() {
     return assumptions;
 }
 
-z3::expr_vector CausalExistsPlanner::reduce_core(const z3::expr_vector& core) {
-    // Quick-core-reduce (idea 5): re-check with just the core literals as
-    // assumptions.  Z3 often finds a strictly smaller sub-core on a second
-    // proof path.  Repeat up to max_reduce_passes_ times or until stable.
-    z3::expr_vector current(ctx_);
-    for (unsigned i = 0; i < core.size(); ++i) {
-        current.push_back(core[i]);
-    }
-
-    for (int pass = 0; pass < max_reduce_passes_; ++pass) {
-        z3::check_result res = solver_.check(current);
-        if (res != z3::unsat) {
-            // Should not happen — core subset should still be UNSAT.
-            // Return what we have.
-            break;
-        }
-        z3::expr_vector smaller = solver_.unsat_core();
-        if (smaller.size() >= current.size()) {
-            break;  // no improvement
-        }
-
-        Stats::instance().add("planner.core_reduce_shrinks");
-
-        if (Config::instance().is_verbose()) {
-            Logger::instance().info("  Core-reduce pass " + std::to_string(pass + 1) +
-                ": " + std::to_string(current.size()) + " -> " +
-                std::to_string(smaller.size()));
-        }
-        current = smaller;
-    }
-    return current;
-}
-
 int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
     int activated = 0;
     int filtered = 0;
@@ -345,10 +294,8 @@ int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
                 continue;
             }
 
-            // Activate: deactivate the blocking entry
-            entry.active = false;
-            block_id_to_index_.erase(it);
-            blocked_count_[action]--;
+            // Activate: encode constraints, deactivate blocking
+            deactivate_block_entry(idx);
             activity_[action] += 1.0;
             bumped_actions.push_back(action);
             activated++;
@@ -427,8 +374,6 @@ void CausalExistsPlanner::cascade_bump(
 int CausalExistsPlanner::predictive_activate(int timestep) {
     // Cap: activate at most K actions, where K is proportional to
     // the number of actions activated from cores so far.
-    // This prevents over-activation on extension while still being
-    // responsive to problem difficulty.
     int budget = std::max(1, cumulative_core_activations_);
 
     // Collect candidates above threshold, sorted by score descending
@@ -441,7 +386,6 @@ int CausalExistsPlanner::predictive_activate(int timestep) {
         candidates.push_back({score, i});
     }
 
-    // Sort descending by score — activate highest-scoring first
     std::sort(candidates.begin(), candidates.end(),
               [](const auto& a, const auto& b) { return a.first > b.first; });
 
@@ -449,17 +393,14 @@ int CausalExistsPlanner::predictive_activate(int timestep) {
     for (const auto& [score, idx] : candidates) {
         if (activated >= budget) break;
 
-        BlockEntry& entry = block_entries_[idx];
-        entry.active = false;
-        block_id_to_index_.erase(entry.lit.id());
-        blocked_count_[entry.action]--;
+        const Action* action = deactivate_block_entry(idx);
         activated++;
 
         if (Config::instance().is_verbose()) {
             Logger::instance().info("    Predictive activate: " +
-                entry.action->name() + " at t=" + std::to_string(timestep) +
+                action->name() + " at t=" + std::to_string(timestep) +
                 " (activity=" + std::to_string(score) +
-                ", blocked_remaining=" + std::to_string(blocked_count_[entry.action]) +
+                ", blocked_remaining=" + std::to_string(blocked_count_[action]) +
                 ", budget=" + std::to_string(budget) + ")");
         }
     }
@@ -473,13 +414,31 @@ void CausalExistsPlanner::decay_activity() {
     }
 }
 
+const Action* CausalExistsPlanner::deactivate_block_entry(size_t idx) {
+    BlockEntry& entry = block_entries_[idx];
+    ensure_action_encoded(entry.action, entry.timestep);
+    entry.active = false;
+    block_id_to_index_.erase(entry.lit.id());
+    blocked_count_[entry.action]--;
+    return entry.action;
+}
+
+void CausalExistsPlanner::ensure_action_encoded(const Action* action, int timestep) {
+    auto key = std::make_pair(action->id(), timestep);
+    if (action_encoded_.count(key)) return;
+    action_encoded_.insert(key);
+
+    auto constraints = grounded_encoder().encode_single_action(*action, timestep);
+    if (constraints) {
+        solver_.add(*constraints);
+    }
+}
+
 bool CausalExistsPlanner::activate_action_at(const Action* action, int timestep) {
     for (size_t i = 0; i < block_entries_.size(); ++i) {
         BlockEntry& entry = block_entries_[i];
         if (entry.active && entry.action == action && entry.timestep == timestep) {
-            entry.active = false;
-            block_id_to_index_.erase(entry.lit.id());
-            blocked_count_[action]--;
+            deactivate_block_entry(i);
             return true;
         }
     }
@@ -682,6 +641,9 @@ Plan CausalExistsPlanner::search() {
             for (const auto& e : block_entries_) if (!e.active) final_active++;
             stats.set("planner.activated_entries", static_cast<double>(final_active));
             stats.set("planner.total_entries", static_cast<double>(block_entries_.size()));
+            stats.set("planner.lazy_encoded_actions", static_cast<double>(action_encoded_.size()));
+            size_t total_possible = problem_.actions().size() * static_cast<size_t>(current_horizon_ + 1);
+            stats.set("planner.lazy_total_possible", static_cast<double>(total_possible));
 
             plan.write_ipc(config.planner.output_plan, 1,
                            -1.0, true,
@@ -692,13 +654,7 @@ Plan CausalExistsPlanner::search() {
             return plan;
 
         } else if (result == z3::unsat) {
-            z3::expr_vector raw_core = solver_.unsat_core();
-            size_t raw_core_size = raw_core.size();
-
-            // Quick-core-reduce: re-check with core-only assumptions to shrink
-            z3::expr_vector core = enable_core_reduce_
-                ? reduce_core(raw_core)
-                : raw_core;
+            z3::expr_vector core = solver_.unsat_core();
 
             if (config.is_verbose() || config.is_debug()) {
                 int core_blocking = 0, core_goals = 0;
@@ -710,17 +666,12 @@ Plan CausalExistsPlanner::search() {
                         core_goals++;
                     }
                 }
-                std::string reduce_info = enable_core_reduce_
-                    ? " (raw=" + std::to_string(raw_core_size) + ")"
-                    : "";
                 Logger::instance().info("  Core size: " + std::to_string(core.size()) +
                     " (blocking=" + std::to_string(core_blocking) +
-                    ", goals=" + std::to_string(core_goals) + ")" + reduce_info);
+                    ", goals=" + std::to_string(core_goals) + ")");
             }
 
-            // Track core sizes for stats
             stats.add("planner.total_core_size", static_cast<double>(core.size()));
-            stats.add("planner.total_raw_core_size", static_cast<double>(raw_core_size));
             stats.add("planner.core_count");
 
             int activated = process_core(core);

@@ -16,14 +16,17 @@ namespace rantanplan {
 /**
  * @brief Causal Exists planner — core-guided lazy activation over exists-step encoding
  *
- * Adapts CausalLazyR2EPlanner's core-guided lazy activation to the classic
- * exists-step encoding.  Uses per-(action, timestep) blocking literals:
+ * Uses per-(action, timestep) blocking literals:
  *
  *     block_a_t → ¬act_a_t
  *
  * UNSAT cores reveal which (action, timestep) pairs are needed.  AchieversAnalysis
  * filters non-goal-relevant actions from cores.  The ExistsPropagator handles
  * interference/cycle detection among activated actions.
+ *
+ * Lazy population: timestep creation encodes frame axioms over all action
+ * variables but defers precondition/effect constraints.  These are added
+ * on-demand when an action is activated (blocking literal removed).
  *
  * Replenishment invariant: every action always has at least one blocked copy
  * across all timesteps.  When violated, extend the horizon (add new timestep
@@ -87,10 +90,21 @@ private:
     static constexpr double activation_threshold_ = 0.5;
     int cumulative_core_activations_ = 0;  ///< Total actions activated from cores so far
 
-    // ---- Core-reduce: re-check with core-only assumptions to shrink ----
+    // ---- Lazy population tracking ----
 
-    static constexpr bool enable_core_reduce_ = false;  ///< Internal switch (off by default)
-    static constexpr int max_reduce_passes_ = 3;        ///< Max re-check passes for core shrinking
+    /// Tracks (action_id, timestep) pairs whose precondition/effect constraints
+    /// have been encoded.
+    struct PairHash {
+        size_t operator()(const std::pair<int, int>& p) const {
+            return std::hash<long long>()(
+                (static_cast<long long>(p.first) << 32) | static_cast<unsigned>(p.second));
+        }
+    };
+    std::unordered_set<std::pair<int, int>, PairHash> action_encoded_;
+
+    // Cached downcast to avoid repeated dynamic_cast in hot path
+    class GroundedEncoder* grounded_encoder_ = nullptr;
+    GroundedEncoder& grounded_encoder();
 
     // ---- Achiever setup ----
 
@@ -109,12 +123,13 @@ private:
     // ---- Search loop helpers ----
 
     z3::expr_vector build_assumptions();
-    z3::expr_vector reduce_core(const z3::expr_vector& core);
     int process_core(const z3::expr_vector& core);
     void cascade_bump(const std::vector<const Action*>& seeds, double bump_amount);
     int predictive_activate(int timestep);
     void decay_activity();
     bool activate_action_at(const Action* action, int timestep);
+    void ensure_action_encoded(const Action* action, int timestep);
+    const Action* deactivate_block_entry(size_t idx);
 
     // ---- Plan extraction ----
 
