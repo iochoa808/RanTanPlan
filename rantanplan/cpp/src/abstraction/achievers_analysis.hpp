@@ -61,9 +61,13 @@ public:
     
     // Output method
     void print_analysis() const;
-    
+
     // Clear the analysis
     void clear();
+
+    // ARPG layer ordering: which layer an action first becomes applicable
+    int get_action_first_layer(int action_id) const;
+    int get_arpg_num_layers() const { return arpg_num_layers_; }
 
 private:
     // Map from precondition to set of actions that require it
@@ -97,7 +101,11 @@ private:
     
     // State variable bounds from ARPG for SMT constraint generation
     std::unordered_map<ExprID, Interval> state_variable_bounds_;
-    
+
+    // ARPG action layer ordering: action_id → first ARPG layer where applicable
+    std::unordered_map<int, int> action_id_to_first_layer_;
+    int arpg_num_layers_ = 1;
+
     // Statistics tracking
     mutable size_t z3_query_count_ = 0;
 

@@ -5,6 +5,7 @@
 #include "../util/memory_tracker.hpp"
 #include <algorithm>
 #include <chrono>
+#include <limits>
 
 namespace rantanplan {
 
@@ -150,6 +151,77 @@ void CausalExistsPlanner::initialize_achievers() {
                 " -> achievers: [" + achievers_str + "]");
         }
     }
+
+    // Extract h^ff relaxed plan
+    extract_relaxed_plan();
+}
+
+// ---------------------------------------------------------------------------
+// Relaxed plan extraction (h^ff-style backward chaining)
+// ---------------------------------------------------------------------------
+
+void CausalExistsPlanner::extract_relaxed_plan() {
+    relaxed_plan_.clear();
+    std::unordered_set<const Action*> in_plan;
+
+    // BFS backward from goal conditions: for each unsatisfied condition,
+    // pick the achiever with the earliest ARPG layer (h^ff tie-breaking)
+    std::vector<ExprID> needed;
+    std::unordered_set<ExprID> processed;
+
+    for (ExprID cond : goal_condition_ids_) {
+        if (!init_satisfied_conditions_.count(cond)) {
+            needed.push_back(cond);
+            processed.insert(cond);
+        }
+    }
+
+    while (!needed.empty()) {
+        ExprID cond = needed.back();
+        needed.pop_back();
+
+        auto ach_it = condition_achievers_.find(cond);
+        if (ach_it == condition_achievers_.end() || ach_it->second.empty()) continue;
+
+        // Pick earliest-layer achiever (h^ff: prefer supporter from lowest RPG layer)
+        const Action* best = nullptr;
+        int best_layer = std::numeric_limits<int>::max();
+        for (const Action* a : ach_it->second) {
+            int layer = achievers_->get_action_first_layer(a->id());
+            if (layer < best_layer) {
+                best_layer = layer;
+                best = a;
+            }
+        }
+        if (!best) continue;
+
+        if (!in_plan.insert(best).second) continue; // already in relaxed plan
+
+        // Add this action's unsatisfied preconditions to the queue
+        auto prec_it = action_precondition_ids_.find(best);
+        if (prec_it != action_precondition_ids_.end()) {
+            for (ExprID prec : prec_it->second) {
+                if (!init_satisfied_conditions_.count(prec) &&
+                    processed.insert(prec).second) {
+                    needed.push_back(prec);
+                }
+            }
+        }
+    }
+
+    relaxed_plan_.assign(in_plan.begin(), in_plan.end());
+
+    Logger::instance().info("  h^ff relaxed plan: " +
+        std::to_string(relaxed_plan_.size()) + " actions (vs " +
+        std::to_string(goal_achiever_actions_.size()) + " goal achievers, " +
+        std::to_string(goal_relevant_actions_.size()) + " goal-relevant)");
+
+    if (Config::instance().is_verbose()) {
+        for (const Action* a : relaxed_plan_) {
+            Logger::instance().info("    RP action: " + a->name() +
+                " (ARPG layer=" + std::to_string(achievers_->get_action_first_layer(a->id())) + ")");
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +293,39 @@ z3::expr_vector CausalExistsPlanner::build_assumptions() {
     return assumptions;
 }
 
+z3::expr_vector CausalExistsPlanner::reduce_core(const z3::expr_vector& core) {
+    // Quick-core-reduce (idea 5): re-check with just the core literals as
+    // assumptions.  Z3 often finds a strictly smaller sub-core on a second
+    // proof path.  Repeat up to max_reduce_passes_ times or until stable.
+    z3::expr_vector current(ctx_);
+    for (unsigned i = 0; i < core.size(); ++i) {
+        current.push_back(core[i]);
+    }
+
+    for (int pass = 0; pass < max_reduce_passes_; ++pass) {
+        z3::check_result res = solver_.check(current);
+        if (res != z3::unsat) {
+            // Should not happen — core subset should still be UNSAT.
+            // Return what we have.
+            break;
+        }
+        z3::expr_vector smaller = solver_.unsat_core();
+        if (smaller.size() >= current.size()) {
+            break;  // no improvement
+        }
+
+        Stats::instance().add("planner.core_reduce_shrinks");
+
+        if (Config::instance().is_verbose()) {
+            Logger::instance().info("  Core-reduce pass " + std::to_string(pass + 1) +
+                ": " + std::to_string(current.size()) + " -> " +
+                std::to_string(smaller.size()));
+        }
+        current = smaller;
+    }
+    return current;
+}
+
 int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
     int activated = 0;
     int filtered = 0;
@@ -255,8 +360,7 @@ int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
             " non-achiever blocking lits from core");
     }
 
-    // Cascade bump enablers
-    cascade_bump(bumped_actions, 1.0);
+    cumulative_core_activations_ += activated;
 
     // Check replenishment invariant: if any activated action has no
     // remaining blocked timestep, we need to extend the horizon
@@ -312,28 +416,52 @@ void CausalExistsPlanner::cascade_bump(
             frontier.push_back(achiever);
 
             if (Config::instance().is_debug()) {
-                Logger::instance().info("    Bump: " + achiever->name() +
+                Logger::instance().info("    Cascade bump: " + achiever->name() +
                     " += " + std::to_string(capped) +
-                    " -> a=" + std::to_string(activity_[achiever]));
+                    " -> activity=" + std::to_string(activity_[achiever]));
             }
         }
     }
 }
 
 int CausalExistsPlanner::predictive_activate(int timestep) {
-    int activated = 0;
+    // Cap: activate at most K actions, where K is proportional to
+    // the number of actions activated from cores so far.
+    // This prevents over-activation on extension while still being
+    // responsive to problem difficulty.
+    int budget = std::max(1, cumulative_core_activations_);
 
+    // Collect candidates above threshold, sorted by score descending
+    std::vector<std::pair<double, size_t>> candidates;
     for (size_t i = 0; i < block_entries_.size(); ++i) {
         BlockEntry& entry = block_entries_[i];
         if (!entry.active || entry.timestep != timestep) continue;
-
         double score = activity_[entry.action];
         if (score <= activation_threshold_) continue;
+        candidates.push_back({score, i});
+    }
 
+    // Sort descending by score — activate highest-scoring first
+    std::sort(candidates.begin(), candidates.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    int activated = 0;
+    for (const auto& [score, idx] : candidates) {
+        if (activated >= budget) break;
+
+        BlockEntry& entry = block_entries_[idx];
         entry.active = false;
         block_id_to_index_.erase(entry.lit.id());
         blocked_count_[entry.action]--;
         activated++;
+
+        if (Config::instance().is_verbose()) {
+            Logger::instance().info("    Predictive activate: " +
+                entry.action->name() + " at t=" + std::to_string(timestep) +
+                " (activity=" + std::to_string(score) +
+                ", blocked_remaining=" + std::to_string(blocked_count_[entry.action]) +
+                ", budget=" + std::to_string(budget) + ")");
+        }
     }
 
     return activated;
@@ -343,6 +471,19 @@ void CausalExistsPlanner::decay_activity() {
     for (auto& [action, score] : activity_) {
         score *= activity_decay_;
     }
+}
+
+bool CausalExistsPlanner::activate_action_at(const Action* action, int timestep) {
+    for (size_t i = 0; i < block_entries_.size(); ++i) {
+        BlockEntry& entry = block_entries_[i];
+        if (entry.active && entry.action == action && entry.timestep == timestep) {
+            entry.active = false;
+            block_id_to_index_.erase(entry.lit.id());
+            blocked_count_[action]--;
+            return true;
+        }
+    }
+    return false;
 }
 
 Plan CausalExistsPlanner::extract_plan(const z3::model& model) {
@@ -372,34 +513,92 @@ Plan CausalExistsPlanner::search() {
     // 2. Initialize achiever analysis
     initialize_achievers();
 
-    // 3. First horizon: timestep 0 with all actions blocked
-    extend_horizon();
-
-    // 4. Seed: activate goal achievers at timestep 0
+    // 3. Pre-extend horizon using RPG lower bound + ARPG layer ordering
     {
-        int seeded = 0;
-        for (size_t i = 0; i < block_entries_.size(); ++i) {
-            BlockEntry& entry = block_entries_[i];
-            if (!entry.active || entry.timestep != 0) continue;
-            if (!goal_achiever_actions_.count(entry.action)) continue;
+        int start_ts = config.planner.start_timestep;
+        int num_timesteps = std::max(1, start_ts);
 
-            entry.active = false;
-            block_id_to_index_.erase(entry.lit.id());
-            blocked_count_[entry.action]--;
-            activity_[entry.action] = 1.0;
-            seeded++;
+        for (int t = 0; t < num_timesteps; t++) {
+            current_horizon_++;
+            add_timestep(current_horizon_);
+        }
+        refresh_goal(current_horizon_ + 1);
+
+        if (start_ts > 1) {
+            Logger::instance().info("Pre-extended horizon to " +
+                std::to_string(current_horizon_) +
+                " (RPG lower bound: " + std::to_string(start_ts) + ")");
+        }
+    }
+
+    // 4. ARPG-guided seeding: place goal achievers and their enablers
+    //    at timesteps proportional to their ARPG layer
+    {
+        int arpg_layers = achievers_->get_arpg_num_layers();
+
+        auto target_timestep = [&](const Action* a) -> int {
+            if (current_horizon_ == 0 || arpg_layers <= 1) return 0;
+            int layer = achievers_->get_action_first_layer(a->id());
+            return std::min(current_horizon_,
+                            layer * current_horizon_ / (arpg_layers - 1));
+        };
+
+        // Seed goal achievers at ARPG-proportional timesteps
+        int seeded = 0;
+        for (const Action* action : goal_achiever_actions_) {
+            int t = target_timestep(action);
+            if (activate_action_at(action, t)) {
+                activity_[action] = 1.0;
+                seeded++;
+                if (config.is_verbose()) {
+                    Logger::instance().info("  Seed goal achiever: " +
+                        action->name() + " at t=" + std::to_string(t) +
+                        " (ARPG layer=" +
+                        std::to_string(achievers_->get_action_first_layer(action->id())) + ")");
+                }
+            }
         }
 
-        // Cascade bump from goal achievers and predictive-activate enablers
+        // Cascade bump from goal achievers
         std::vector<const Action*> seeds(goal_achiever_actions_.begin(),
                                          goal_achiever_actions_.end());
         cascade_bump(seeds, 1.0);
-        int pred_count = predictive_activate(0);
+
+        // Activate cascade-bumped enablers at ARPG-proportional timesteps.
+        // Cap to top-K by score, where K = number of goal achievers seeded.
+        std::vector<std::pair<double, const Action*>> enabler_candidates;
+        for (auto& [action, score] : activity_) {
+            if (score <= activation_threshold_) continue;
+            if (goal_achiever_actions_.count(action)) continue;
+            enabler_candidates.push_back({score, action});
+        }
+        std::sort(enabler_candidates.begin(), enabler_candidates.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+
+        int enabler_budget = std::max(1, 2 * seeded);
+        int enabler_count = 0;
+        for (const auto& [score, action] : enabler_candidates) {
+            if (enabler_count >= enabler_budget) break;
+            int t = target_timestep(action);
+            if (activate_action_at(action, t)) {
+                enabler_count++;
+                if (config.is_verbose()) {
+                    Logger::instance().info("  Seed enabler: " +
+                        action->name() + " at t=" + std::to_string(t) +
+                        " (ARPG layer=" +
+                        std::to_string(achievers_->get_action_first_layer(action->id())) +
+                        ", activity=" + std::to_string(score) + ")");
+                }
+            }
+        }
 
         Logger::instance().info("Initial: " + std::to_string(seeded) +
-            " goal achievers seeded + " + std::to_string(pred_count) +
-            " cascade enablers at t=0, " +
-            std::to_string(problem_.actions().size()) + " actions");
+            " goal achievers + " + std::to_string(enabler_count) +
+            " cascade enablers across " + std::to_string(current_horizon_ + 1) +
+            " timesteps (RPG lb: " + std::to_string(config.planner.start_timestep) +
+            ", ARPG layers: " + std::to_string(arpg_layers) + "), " +
+            std::to_string(problem_.actions().size()) + " actions" +
+            ", h^ff RP: " + std::to_string(relaxed_plan_.size()) + " actions");
     }
 
     // 5. Check replenishment after seeding
@@ -408,10 +607,15 @@ Plan CausalExistsPlanner::search() {
         for (const Action& action : problem_.actions()) {
             if (blocked_count_[&action] <= 0) {
                 need_ext = true;
-                break;
+                if (config.is_verbose()) {
+                    Logger::instance().info("  Replenishment needed: " +
+                        action.name() + " has no remaining blocked entries");
+                }
             }
         }
         if (need_ext) {
+            Logger::instance().info("  Extending horizon for replenishment (current_horizon=" +
+                std::to_string(current_horizon_) + ")");
             extend_horizon();
         }
     }
@@ -471,6 +675,13 @@ Plan CausalExistsPlanner::search() {
             stats.set("planner.plan_length", static_cast<double>(plan.length()));
             stats.set("planner.rounds", static_cast<double>(round));
             stats.set("planner.solution_horizon", static_cast<double>(current_horizon_));
+            stats.set("planner.total_activations", static_cast<double>(cumulative_core_activations_));
+
+            // Count final active (unblocked) entries for activation tightness metric
+            size_t final_active = 0;
+            for (const auto& e : block_entries_) if (!e.active) final_active++;
+            stats.set("planner.activated_entries", static_cast<double>(final_active));
+            stats.set("planner.total_entries", static_cast<double>(block_entries_.size()));
 
             plan.write_ipc(config.planner.output_plan, 1,
                            -1.0, true,
@@ -481,7 +692,13 @@ Plan CausalExistsPlanner::search() {
             return plan;
 
         } else if (result == z3::unsat) {
-            z3::expr_vector core = solver_.unsat_core();
+            z3::expr_vector raw_core = solver_.unsat_core();
+            size_t raw_core_size = raw_core.size();
+
+            // Quick-core-reduce: re-check with core-only assumptions to shrink
+            z3::expr_vector core = enable_core_reduce_
+                ? reduce_core(raw_core)
+                : raw_core;
 
             if (config.is_verbose() || config.is_debug()) {
                 int core_blocking = 0, core_goals = 0;
@@ -493,10 +710,18 @@ Plan CausalExistsPlanner::search() {
                         core_goals++;
                     }
                 }
+                std::string reduce_info = enable_core_reduce_
+                    ? " (raw=" + std::to_string(raw_core_size) + ")"
+                    : "";
                 Logger::instance().info("  Core size: " + std::to_string(core.size()) +
                     " (blocking=" + std::to_string(core_blocking) +
-                    ", goals=" + std::to_string(core_goals) + ")");
+                    ", goals=" + std::to_string(core_goals) + ")" + reduce_info);
             }
+
+            // Track core sizes for stats
+            stats.add("planner.total_core_size", static_cast<double>(core.size()));
+            stats.add("planner.total_raw_core_size", static_cast<double>(raw_core_size));
+            stats.add("planner.core_count");
 
             int activated = process_core(core);
 

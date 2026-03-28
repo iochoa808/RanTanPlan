@@ -24,7 +24,6 @@
 #include "../planners/propagators/forall_propagator.hpp"
 #include "../planners/propagators/lazy_forall_propagator.hpp"
 #include "../planners/propagators/exists_propagator.hpp"
-#include "../planners/propagators/decision_heuristic_propagator.hpp"
 
 #include "../util/logger.hpp"
 
@@ -70,13 +69,6 @@ void StrategyFactory::validate(const StrategySpec& spec,
         throw std::invalid_argument(
             "No interference analysis requires Sequential semantics "
             "(Forall/Exists semantics need interference for mutex constraints)");
-    }
-
-    // DecisionHeuristicPropagator is designed for exists semantics.
-    if (spec.propagator == PropagatorKind::DecisionHeuristic &&
-        spec.semantics != SemanticsKind::Exists) {
-        throw std::invalid_argument(
-            "DecisionHeuristic propagator requires Exists semantics");
     }
 
     // --- Spec-vs-config constraints ---
@@ -213,8 +205,6 @@ std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
             return std::make_unique<LazyForallPropagator>(solver, problem, encoder);
         case PropagatorKind::Exists:
             return std::make_unique<ExistsPropagator>(solver, problem, encoder);
-        case PropagatorKind::DecisionHeuristic:
-            return std::make_unique<DecisionHeuristicPropagator>(solver, problem, encoder);
     }
     throw std::invalid_argument("Unknown propagator kind");
 }

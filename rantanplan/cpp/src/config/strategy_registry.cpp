@@ -30,7 +30,6 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
 
         // Special strategies
         {"r2e",                            {E::R2E,      S::Sequential, I::None,             P::Null,              K::Sequential}},
-        {"dec",                            {E::Chained,  S::Exists,     I::LazySemantic,    P::DecisionHeuristic, K::Sequential}},
 
         // Experimental eager-semantic
         {"forall-eager-semantic",          {E::Grounded, S::Forall,     I::EagerSemantic,   P::Null,              K::Sequential}},

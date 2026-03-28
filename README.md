@@ -52,8 +52,8 @@ rantanplan -d domain.pddl -p problem.pddl --strategy r2e --output-plan solution.
 # Double-tail bidirectional search
 rantanplan -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chain-dt
 
-# Exists-step with decision heuristics
-rantanplan -d domain.pddl -p problem.pddl --strategy dec --detect-symmetries
+# Core-guided lazy activation over exists-step encoding
+rantanplan -d domain.pddl -p problem.pddl --strategy causal-exists --detect-symmetries
 ```
 
 ### Search Modes
@@ -83,7 +83,6 @@ rantanplan -d domain.pddl -p problem.pddl --strategy dec --detect-symmetries
 | `exists-eager-semantic` | ∃-step | Eager semantic | Grounded | Experimental |
 | `exists-eager-semantic-chain` | ∃-step | Eager semantic | Chained | Experimental |
 | `r2e` | R2∃-step | ARPG-based order | R2E | Novel encoding |
-| `dec` | ∃-step | Lazy semantic | Chained | With heuristics |
 
 All strategies (except `-dt` variants) support `--mode optimal` and `--mode anytime` for cost-optimal and anytime planning respectively.
 

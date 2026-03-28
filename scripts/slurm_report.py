@@ -65,6 +65,8 @@ class ExperimentData:
     timeout: float
     strategies: List[str]
     domains: List[str]
+    skipped_empty: int = 0
+    skipped_no_metadata: int = 0
 
     def job_for(
         self, domain: str, instance: str, strategy: str
@@ -84,13 +86,32 @@ class ExperimentData:
 
 RE_TIMESTEP = re.compile(
     r"\[Solving T(\d+)\s*\]\s+"
+    r"(?:\[(?:Init|Forward|Backward)\]:\s+\|\s+)?"  # optional double-tail prefix
     r"formula:\s+([\d.]+)s\s+\|\s+"
     r"solve:\s+([\d.]+)s\s+\|\s+"
     r"step:\s+([\d.]+)s\s+\|\s+"
     r"mem:\s+(\d+)MB"
 )
+RE_TIMESTEP_CAUSAL = re.compile(
+    r"\[Solving T(\d+)\s*\]\s+"
+    r"solve:\s+([\d.]+)s\s+\|\s+"
+    r"round:\s+([\d.]+)s\s+\|\s+"
+    r"horizon:\s+\d+\s+\|\s+"
+    r"blocked:\s+\d+\s+\|\s+"
+    r"total_entries:\s+\d+\s+\|\s+"
+    r"mem:\s+(\d+)MB"
+)
 RE_PLAN_FOUND = re.compile(
     r"\*\*\* PLAN FOUND: horizon=(\d+), actions=(\d+) \(total time: ([\d.]+)s\)"
+)
+RE_DT_PLAN_FOUND = re.compile(
+    r"\*\*\* PLAN FOUND at iteration \d+ \(plan length (\d+), total time: ([\d.]+)s\)"
+)
+RE_R2E_PLAN_FOUND = re.compile(
+    r"\*\*\* PLAN FOUND: (\d+) actions, (\d+) rounds, \d+ extensions \(total time: ([\d.]+)s\)"
+)
+RE_CAUSAL_EXISTS_PLAN_FOUND = re.compile(
+    r"\*\*\* PLAN FOUND: (\d+) actions, (\d+) rounds, horizon=(\d+) \(total time: ([\d.]+)s\)"
 )
 RE_OPTIMAL_FOUND = re.compile(
     r"\*\*\* OPTIMAL PLAN FOUND: horizon=(\d+), actions=(\d+), cost=[\d.]+.*\(total time: ([\d.]+)s\)"
@@ -159,6 +180,19 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
                     last_memory_mb = ts.memory_mb
                     return
 
+                m = RE_TIMESTEP_CAUSAL.search(line)
+                if m:
+                    ts = TimestepData(
+                        timestep=int(m.group(1)),
+                        formula_time=0.0,
+                        solve_time=float(m.group(2)),
+                        step_time=float(m.group(3)),
+                        memory_mb=int(m.group(4)),
+                    )
+                    timesteps.append(ts)
+                    last_memory_mb = ts.memory_mb
+                    return
+
                 for pattern in (RE_PLAN_FOUND, RE_OPTIMAL_FOUND, RE_BEST_FOUND):
                     m = pattern.search(line)
                     if m:
@@ -167,6 +201,28 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
                         num_actions = int(m.group(2))
                         total_time = float(m.group(3))
                         return
+
+                m = RE_DT_PLAN_FOUND.search(line)
+                if m:
+                    solved = True
+                    num_actions = int(m.group(1))
+                    total_time = float(m.group(2))
+                    return
+
+                m = RE_R2E_PLAN_FOUND.search(line)
+                if m:
+                    solved = True
+                    num_actions = int(m.group(1))
+                    total_time = float(m.group(3))
+                    return
+
+                m = RE_CAUSAL_EXISTS_PLAN_FOUND.search(line)
+                if m:
+                    solved = True
+                    num_actions = int(m.group(1))
+                    horizon = int(m.group(3))
+                    total_time = float(m.group(4))
+                    return
 
                 if RE_PLANNER_TIMEOUT.search(line):
                     is_timeout = True
@@ -182,6 +238,8 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
                         solved = True
                     elif status_str == "TIMEOUT":
                         is_timeout = True
+                    elif status_str == "INTERNAL_ERROR":
+                        is_error = True
                     return
 
                 if RE_OOM.search(line):
@@ -211,8 +269,8 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
     elif is_error:
         status = Status.ERROR
     else:
-        # No clear status detected — treat as error
-        status = Status.ERROR
+        # No clear status detected — likely killed by SLURM without a message
+        status = Status.TIMEOUT
 
     return SlurmJobResult(
         domain=metadata.get("domain", "unknown"),
@@ -304,14 +362,31 @@ def load_experiment(
 
     print(f"Parsing {len(log_files)} log files...", file=sys.stderr)
     jobs: List[SlurmJobResult] = []
+    skipped_empty = 0
+    skipped_no_metadata = 0
     for i, lf in enumerate(log_files):
         if (i + 1) % 200 == 0:
             print(f"  parsed {i + 1}/{len(log_files)}...", file=sys.stderr)
+        if lf.stat().st_size == 0:
+            skipped_empty += 1
+            continue
         job = parse_slurm_log(lf)
         if job is not None:
             jobs.append(job)
+        else:
+            skipped_no_metadata += 1
 
     print(f"Parsed {len(jobs)} jobs successfully.", file=sys.stderr)
+    if skipped_empty:
+        print(
+            f"Warning: {skipped_empty} empty log files (jobs died before producing output)",
+            file=sys.stderr,
+        )
+    if skipped_no_metadata:
+        print(
+            f"Warning: {skipped_no_metadata} files skipped (missing metadata)",
+            file=sys.stderr,
+        )
 
     # Determine timeout
     if timeout_override is not None:
@@ -359,6 +434,8 @@ def load_experiment(
         timeout=timeout,
         strategies=strategies,
         domains=domains,
+        skipped_empty=skipped_empty,
+        skipped_no_metadata=skipped_no_metadata,
     )
 
 
@@ -394,7 +471,7 @@ def write_summary_by_domain_csv(data: ExperimentData, output_path: Path) -> None
         # Header
         header = ["domain"]
         for s in data.strategies:
-            header.extend([f"{s}_solved", f"{s}_timeout", f"{s}_memout", f"{s}_error"])
+            header.extend([f"{s}_solved", f"{s}_timeout", f"{s}_memout", f"{s}_error", f"{s}_total"])
         writer.writerow(header)
 
         for domain in data.domains:
@@ -408,7 +485,7 @@ def write_summary_by_domain_csv(data: ExperimentData, output_path: Path) -> None
                 timeout = sum(1 for j in domain_jobs if j.status == Status.TIMEOUT)
                 memout = sum(1 for j in domain_jobs if j.status == Status.MEMOUT)
                 error = sum(1 for j in domain_jobs if j.status == Status.ERROR)
-                row.extend([solved, timeout, memout, error])
+                row.extend([solved, timeout, memout, error, len(domain_jobs)])
             writer.writerow(row)
     print(f"Wrote {output_path}", file=sys.stderr)
 
@@ -425,6 +502,9 @@ def write_summary_overall_csv(data: ExperimentData, output_path: Path) -> None:
             memout = sum(1 for j in strat_jobs if j.status == Status.MEMOUT)
             error = sum(1 for j in strat_jobs if j.status == Status.ERROR)
             writer.writerow([strategy, solved, timeout, memout, error, len(strat_jobs)])
+        skipped = data.skipped_empty + data.skipped_no_metadata
+        if skipped:
+            writer.writerow([f"(unparseable: {skipped} log files)", "", "", "", "", skipped])
     print(f"Wrote {output_path}", file=sys.stderr)
 
 
@@ -456,14 +536,21 @@ def plot_cactus(data: ExperimentData, output_path: Path) -> None:
 
     fig, ax = plt.subplots(figsize=(12, 7))
 
+    instance_keys = data.instance_keys()
+    num_instances = len(instance_keys)
+
     for strategy in data.strategies:
-        times = sorted([
-            j.total_time for j in data.jobs
-            if j.strategy == strategy and j.status == Status.SOLVED and j.total_time is not None
-        ])
-        if times:
-            x = list(range(1, len(times) + 1))
-            ax.plot(x, times, marker="o", markersize=4, label=strategy, color=colors[strategy])
+        # Collect solving times; unsolved instances get the timeout value
+        times: List[float] = []
+        for domain, instance in instance_keys:
+            job = data.job_for(domain, instance, strategy)
+            if job is not None and job.status == Status.SOLVED and job.total_time is not None:
+                times.append(job.total_time)
+            else:
+                times.append(data.timeout)
+        times.sort()
+        x = list(range(1, len(times) + 1))
+        ax.plot(x, times, marker="o", markersize=4, label=strategy, color=colors[strategy])
 
     ax.axhline(
         y=data.timeout, color="gray", linestyle="--", linewidth=0.8,
@@ -602,6 +689,14 @@ def generate_all_outputs(data: ExperimentData, output_dir: Path) -> None:
         print(
             f"  {strategy}: {solved} solved, {timeout} timeout, "
             f"{memout} memout, {error} error (total: {len(strat_jobs)})",
+            file=sys.stderr,
+        )
+    skipped = data.skipped_empty + data.skipped_no_metadata
+    if skipped:
+        print(
+            f"\n  Note: {skipped} log files could not be parsed "
+            f"({data.skipped_empty} empty, {data.skipped_no_metadata} missing metadata). "
+            f"These jobs are not included in any strategy totals.",
             file=sys.stderr,
         )
 

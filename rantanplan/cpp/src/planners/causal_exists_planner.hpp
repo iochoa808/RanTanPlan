@@ -76,11 +76,21 @@ private:
     std::unordered_set<const Action*> goal_achiever_actions_;
     std::unordered_set<const Action*> goal_relevant_actions_;
 
+    // ---- Relaxed plan (h^ff-style backward extraction) ----
+
+    std::vector<const Action*> relaxed_plan_;
+
     // ---- Activity tracking (adapted VSIDS) ----
 
     std::unordered_map<const Action*, double> activity_;
-    static constexpr double activity_decay_ = 0.95;
+    static constexpr double activity_decay_ = 0.85;
     static constexpr double activation_threshold_ = 0.5;
+    int cumulative_core_activations_ = 0;  ///< Total actions activated from cores so far
+
+    // ---- Core-reduce: re-check with core-only assumptions to shrink ----
+
+    static constexpr bool enable_core_reduce_ = false;  ///< Internal switch (off by default)
+    static constexpr int max_reduce_passes_ = 3;        ///< Max re-check passes for core shrinking
 
     // ---- Achiever setup ----
 
@@ -88,6 +98,7 @@ private:
     void build_action_id_map();
     void build_condition_achiever_cache();
     void compute_init_satisfied_conditions();
+    void extract_relaxed_plan();
 
     // ---- Timestep management ----
 
@@ -98,10 +109,12 @@ private:
     // ---- Search loop helpers ----
 
     z3::expr_vector build_assumptions();
+    z3::expr_vector reduce_core(const z3::expr_vector& core);
     int process_core(const z3::expr_vector& core);
     void cascade_bump(const std::vector<const Action*>& seeds, double bump_amount);
     int predictive_activate(int timestep);
     void decay_activity();
+    bool activate_action_at(const Action* action, int timestep);
 
     // ---- Plan extraction ----
 

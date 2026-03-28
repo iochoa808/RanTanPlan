@@ -142,7 +142,6 @@ add_executable(rantanplan
     src/planners/propagators/forall_propagator.cpp
     src/planners/propagators/lazy_forall_propagator.cpp
     src/planners/propagators/exists_propagator.cpp
-    src/planners/propagators/decision_heuristic_propagator.cpp
     src/symmetries/smt_symmetry_checker.cpp
     src/arpg/arpg.cpp
     src/abstraction/achievers_analysis.cpp

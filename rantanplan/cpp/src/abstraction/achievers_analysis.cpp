@@ -31,6 +31,13 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     // Get bounds for all state variables (already ExprID-keyed)
     state_variable_bounds_ = arpg.get_state_variable_bounds();
 
+    // Store action layer ordering from ARPG (keep only earliest layer per action)
+    auto supporter_ordering = arpg.get_supporter_ordering();
+    for (const auto& info : supporter_ordering) {
+        action_id_to_first_layer_.try_emplace(info.source_action.id(), info.iteration);
+    }
+    arpg_num_layers_ = arpg.get_num_iterations();
+
     // Initialize persistent solver with bounds constraints
     initialize_persistent_solver();
 
@@ -580,4 +587,10 @@ void AchieversAnalysis::print_analysis() const {
 
     std::cout << "=========================" << std::endl;
 }
+
+int AchieversAnalysis::get_action_first_layer(int action_id) const {
+    auto it = action_id_to_first_layer_.find(action_id);
+    return (it != action_id_to_first_layer_.end()) ? it->second : 0;
+}
+
 } // namespace rantanplan
