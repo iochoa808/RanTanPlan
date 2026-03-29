@@ -4,6 +4,7 @@
 #include "../../encoders/z3_variable_factory.hpp"
 #include "../../encoders/grounded_encoder.hpp"
 #include "../../analysis/interference_analysis.hpp"
+#include "../../problem/visitors/fluent_collector.hpp"
 #include <algorithm>
 #include <functional>
 
@@ -70,6 +71,7 @@ void FrameExistsPropagator::on_pop(unsigned num_scopes) {
                 }
                 clause.num_cant_explain = te.prev_cant_explain;
                 clause.num_can_explain = te.prev_can_explain;
+                clause.owned = te.prev_owned;
                 frame_trail_.pop_back();
             }
         }
@@ -109,6 +111,7 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
         te.prev_eq_state = clause.eq_state;
         te.prev_cant_explain = clause.num_cant_explain;
         te.prev_can_explain = clause.num_can_explain;
+        te.prev_owned = clause.owned;
 
         switch (role.kind) {
         case VarRole::FLUENT_T: {
@@ -140,6 +143,7 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
             bool now_can = entry.can_explain();
             if (now_cant != was_cant) clause.num_cant_explain += now_cant ? 1 : -1;
             if (now_can != was_can) clause.num_can_explain += now_can ? 1 : -1;
+            clause.owned = (clause.num_can_explain > 0);
             break;
         }
         case VarRole::CONDITION: {
@@ -152,11 +156,13 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
             bool now_can = entry.can_explain();
             if (now_cant != was_cant) clause.num_cant_explain += now_cant ? 1 : -1;
             if (now_can != was_can) clause.num_can_explain += now_can ? 1 : -1;
+            clause.owned = (clause.num_can_explain > 0);
             break;
         }
         }
 
         frame_trail_.push_back(te);
+
         check_frame_clause(clause, role.clause_idx);
     }
 }
@@ -183,7 +189,8 @@ void FrameExistsPropagator::on_final() {
 void FrameExistsPropagator::check_frame_clause(FrameClause& clause, size_t clause_idx) {
     int n = static_cast<int>(clause.entries.size());
 
-    if (clause.eq_state == 1) return;
+    if (clause.eq_state == 1) return;  // unchanged → satisfied
+    if (clause.owned) return;          // owned by a true action → satisfied
 
     if (clause.num_cant_explain == n) {
         if (clause.eq_state == 0) {
@@ -382,11 +389,65 @@ void FrameExistsPropagator::register_frame_variables(int t) {
 }
 
 // ============================================================================
-// Exists-step cycle detection (from ExistsPropagator)
+// Footprint-indexed interference neighbors
+// ============================================================================
+
+void FrameExistsPropagator::build_footprint_index() {
+    if (footprint_index_built_) return;
+    footprint_index_built_ = true;
+
+    // For each fluent, collect which actions touch it (read or write).
+    // Two actions that touch the same fluent are potential interferers.
+    // fluent_eid → list of action IDs that touch it
+    std::unordered_map<ExprID, std::vector<int>> fluent_to_actions;
+
+    for (const Action& action : problem_->actions()) {
+        int aid = action.id();
+
+        // Write footprint: from effects
+        for (const auto& effect : action.effects()) {
+            ExprID fid = effect.effect_expression().fluent_id();
+            fluent_to_actions[fid].push_back(aid);
+        }
+
+        // Read footprint: fluents appearing in preconditions
+        if (action.has_precondition()) {
+            FluentCollector collector(*problem_);
+            collector.collect_from_id(action.precondition_id());
+            for (ExprID fid : collector.get_fluents()) {
+                fluent_to_actions[fid].push_back(aid);
+            }
+        }
+    }
+
+    // Build neighbor lists: for each fluent, all pairs of actions touching it
+    // are potential interferers
+    for (const auto& [fid, action_ids] : fluent_to_actions) {
+        for (size_t i = 0; i < action_ids.size(); ++i) {
+            for (size_t j = i + 1; j < action_ids.size(); ++j) {
+                int a = action_ids[i], b = action_ids[j];
+                if (a != b) {
+                    potential_interferers_[a].push_back(b);
+                    potential_interferers_[b].push_back(a);
+                }
+            }
+        }
+    }
+
+    // Deduplicate neighbor lists
+    for (auto& [aid, neighbors] : potential_interferers_) {
+        std::sort(neighbors.begin(), neighbors.end());
+        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
+    }
+}
+
+// ============================================================================
+// Exists-step cycle detection
 // ============================================================================
 
 void FrameExistsPropagator::perform_exists_propagation(
         const Action& action, int timestep, const z3::expr& action_var) {
+    build_footprint_index();
     const std::unordered_set<int>& active_node_ids = active_actions_per_timestep_[timestep];
     std::vector<int> cycle;
     if (find_cycle_in_active_actions(active_node_ids, cycle)) {
@@ -415,16 +476,21 @@ bool FrameExistsPropagator::find_cycle_in_active_actions(
         recursion_stack.insert(current);
         path.push_back(current);
 
-        for (int other_node : active_node_ids) {
-            if (other_node == current) continue;
-            if (interference_analyzer_->has_interference(current, other_node)) {
-                if (recursion_stack.contains(other_node)) {
-                    auto cycle_start = std::find(path.begin(), path.end(), other_node);
-                    cycle.assign(cycle_start, path.end());
-                    return true;
-                }
-                if (!visited.contains(other_node)) {
-                    if (dfs(other_node)) return true;
+        // Use footprint index: only check actions sharing a read/write fluent.
+        // Any truly interfering pair must share a fluent, so this is sound.
+        auto fp_it = potential_interferers_.find(current);
+        if (fp_it != potential_interferers_.end()) {
+            for (int other_node : fp_it->second) {
+                if (!active_node_ids.contains(other_node)) continue;
+                if (interference_analyzer_->has_interference(current, other_node)) {
+                    if (recursion_stack.contains(other_node)) {
+                        auto cycle_start = std::find(path.begin(), path.end(), other_node);
+                        cycle.assign(cycle_start, path.end());
+                        return true;
+                    }
+                    if (!visited.contains(other_node)) {
+                        if (dfs(other_node)) return true;
+                    }
                 }
             }
         }

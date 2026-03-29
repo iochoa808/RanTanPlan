@@ -56,6 +56,13 @@ private:
     bool find_cycle_in_active_actions(const std::unordered_set<int>& active_node_ids,
                                       std::vector<int>& cycle);
 
+    // Footprint-indexed potential interference neighbors: action_id → set of action_ids
+    // that share at least one fluent in their read/write footprints.
+    // Built once at first registration; used to narrow the DFS in cycle detection.
+    std::unordered_map<int, std::vector<int>> potential_interferers_;
+    bool footprint_index_built_ = false;
+    void build_footprint_index();
+
     // ========================================================================
     // Frame axiom state
     // ========================================================================
@@ -94,6 +101,11 @@ private:
         int num_cant_explain = 0;
         int num_can_explain = 0;
 
+        // Ownership flag: true when at least one action with can_explain() is
+        // true. When owned, preservation is unnecessary — the fluent change is
+        // already explained. Avoids redundant propagate() calls.
+        bool owned = false;
+
         FrameClause(int t, bool is_bool)
             : timestep(t), is_boolean(is_bool) {}
     };
@@ -110,9 +122,10 @@ private:
         VarRole::Kind kind;
         size_t entry_idx;
         int8_t prev_state;
-        int8_t prev_eq_state;      // saved eq_state (avoids recomputation on pop)
+        int8_t prev_eq_state;
         int prev_cant_explain;
         int prev_can_explain;
+        bool prev_owned;
     };
 
     std::vector<FrameClause> frame_clauses_;

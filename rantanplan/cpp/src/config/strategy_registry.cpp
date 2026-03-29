@@ -62,6 +62,9 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         // Frame propagator variants: lazy frame axiom enforcement via user propagator
         {"exists-lazy-semantic-chain-fp",  {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::Sequential}},
         {"causal-exists-fp",               {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::CausalExists}},
+
+        // Footprint-indexed exists: same as exists-lazy but DFS uses fluent-overlap index
+        {"exists-lazy-semantic-chain-foot",{E::Chained,  S::Exists,     I::LazySemantic,    P::FootprintExists,   K::Sequential}},
     };
     return registry;
 }

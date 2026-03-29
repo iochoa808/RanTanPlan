@@ -25,6 +25,7 @@
 #include "../planners/propagators/lazy_forall_propagator.hpp"
 #include "../planners/propagators/exists_propagator.hpp"
 #include "../planners/propagators/frame_exists_propagator.hpp"
+#include "../planners/propagators/footprint_exists_propagator.hpp"
 
 #include "../util/logger.hpp"
 
@@ -206,6 +207,8 @@ std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
             return std::make_unique<LazyForallPropagator>(solver, problem, encoder);
         case PropagatorKind::Exists:
             return std::make_unique<ExistsPropagator>(solver, problem, encoder);
+        case PropagatorKind::FootprintExists:
+            return std::make_unique<FootprintExistsPropagator>(solver, problem, encoder);
         case PropagatorKind::FrameExists: {
             auto* grounded = dynamic_cast<GroundedEncoder*>(&encoder);
             if (grounded) grounded->set_lazy_frames(true);
