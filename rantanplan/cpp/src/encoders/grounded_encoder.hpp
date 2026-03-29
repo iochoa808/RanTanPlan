@@ -80,7 +80,10 @@ protected:
 
 public:
     const auto& get_epc_index() const { return epc_index_; }
+    void set_lazy_frames(bool enabled) { lazy_frames_enabled_ = enabled; }
 protected:
+
+    bool lazy_frames_enabled_ = false;
 
     int layers_encoded_ = -1; // Tracks the highest layer for which transitions are encoded
 

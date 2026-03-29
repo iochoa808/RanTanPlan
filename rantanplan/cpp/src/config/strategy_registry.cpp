@@ -58,6 +58,10 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
 
         // Causal exists: core-guided lazy activation over exists-step encoding
         {"causal-exists",                  {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::CausalExists}},
+
+        // Frame propagator variants: lazy frame axiom enforcement via user propagator
+        {"exists-lazy-semantic-chain-fp",  {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::Sequential}},
+        {"causal-exists-fp",               {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::CausalExists}},
     };
     return registry;
 }

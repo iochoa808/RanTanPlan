@@ -135,9 +135,14 @@ void GroundedEncoder::ensure_action_variables(int t) {
  * exist in the EPC index.
  */
 std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
+    // When the frame propagator is active, it handles ALL frame axioms lazily
+    if (lazy_frames_enabled_) {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    }
+
     std::vector<z3::expr> frame_axioms;
     auto& stats = Stats::instance();
-    
+
     // Iterate through all grounded fluents and look up in EPC index
     for (ExprID eid : problem_.grounded_fluents()) {
         auto epc_it = epc_index_.find(eid);

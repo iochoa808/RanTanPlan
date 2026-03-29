@@ -9,6 +9,24 @@
 
 namespace rantanplan {
 
+// ===========================================================================
+// CausalExistsPlanner — Core-guided lazy activation for exists-step planning
+//
+// Architecture overview:
+//   - Each (action, timestep) pair has a blocking literal: blk → ¬act
+//   - Blocking literals are passed as solver assumptions; UNSAT cores
+//     reveal which actions the solver needs.
+//   - Two-phase lazy encoding: timestep creation adds only the eager
+//     skeleton (action variables, frame axioms, symmetries); individual
+//     action precondition/effect constraints are deferred until the
+//     corresponding blocking literal is removed (see ensure_action_encoded).
+//   - Parallelism (exists-step acyclicity) is enforced by the Z3 user
+//     propagator, not by explicit mutex clauses.
+//   - The replenishment invariant guarantees every action always has at
+//     least one blocked entry, ensuring the solver can always signal the
+//     need for an action via an UNSAT core.
+// ===========================================================================
+
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
@@ -145,7 +163,13 @@ void CausalExistsPlanner::initialize_achievers() {
 }
 
 void CausalExistsPlanner::extract_relaxed_plan() {
-    // h^ff-style backward extraction from ARPG
+    // h^ff-style backward extraction from ARPG layers.
+    // Starting from goal conditions not satisfied in the initial state,
+    // greedily selects the earliest-layer achiever for each unsatisfied
+    // condition, adds that achiever's unsatisfied preconditions to the
+    // open set, and iterates backward through layers. The resulting
+    // relaxed plan provides a heuristic estimate of useful actions; its
+    // length is logged alongside ARPG metrics to calibrate search effort.
     relaxed_plan_.clear();
 
     std::unordered_set<ExprID> unsatisfied;
@@ -209,8 +233,12 @@ void CausalExistsPlanner::extract_relaxed_plan() {
 // ---------------------------------------------------------------------------
 
 void CausalExistsPlanner::add_timestep(int t) {
-    // Lazy population: create all action variables + frames + symmetries,
-    // but defer precondition/effect encoding until activation.
+    // Phase 1 (eager skeleton): create action variables and encode frame
+    // axioms + symmetries. Frame axioms reference all action variables in
+    // modifier disjunctions, but blocked actions are forced false by
+    // assumptions and cannot satisfy any disjunction. Precondition/effect
+    // constraints are NOT added here — they are deferred to Phase 2
+    // (ensure_action_encoded) when the blocking literal is removed.
     grounded_encoder().ensure_action_variables(t);
     solver_.add(*encoder_.encode_frames(t));
     solver_.add(*encoder_.encode_symmetries(t));
@@ -276,6 +304,13 @@ z3::expr_vector CausalExistsPlanner::build_assumptions() {
 }
 
 int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
+    // Filter non-goal-relevant blocking literals from the core, then
+    // activate the remaining ones (encode constraints + remove from
+    // assumptions). Activity is bumped by 1.0 per core hit; no cascade
+    // bump is applied here (cascade is only used during initial seeding).
+    // Replenishment is batched: after all activations, if ANY action
+    // exhausted its blocked entries, a single extend_horizon() restores
+    // the invariant for all actions.
     int activated = 0;
     int filtered = 0;
     std::vector<const Action*> bumped_actions;
@@ -327,7 +362,11 @@ int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
 
 void CausalExistsPlanner::cascade_bump(
     const std::vector<const Action*>& seeds, double bump_amount) {
-
+    // BFS-based activity propagation through the achiever graph.
+    // Used ONLY during initial seeding (not after core processing).
+    // For each action in the frontier, distributes bump_amount equally
+    // among achievers of its unsatisfied preconditions, capped at 1.0
+    // per achiever. Propagates transitively until no new actions are found.
     std::unordered_set<const Action*> visited(seeds.begin(), seeds.end());
     std::vector<const Action*> frontier = seeds;
 
@@ -372,8 +411,11 @@ void CausalExistsPlanner::cascade_bump(
 }
 
 int CausalExistsPlanner::predictive_activate(int timestep) {
-    // Cap: activate at most K actions, where K is proportional to
-    // the number of actions activated from cores so far.
+    // Heuristic: at a newly created timestep, pre-activate actions whose
+    // activity score exceeds the threshold (τ=0.5). Budget is capped at
+    // max(1, cumulative_core_activations) to stay conservative relative
+    // to the solver's demonstrated need. Does not affect soundness or
+    // completeness — only reduces the number of solver invocations.
     int budget = std::max(1, cumulative_core_activations_);
 
     // Collect candidates above threshold, sorted by score descending
@@ -424,6 +466,10 @@ const Action* CausalExistsPlanner::deactivate_block_entry(size_t idx) {
 }
 
 void CausalExistsPlanner::ensure_action_encoded(const Action* action, int timestep) {
+    // Phase 2 (on-demand): encode a single action's precondition/effect
+    // constraints. Called by deactivate_block_entry BEFORE removing the
+    // blocking assumption, maintaining the invariant that an action
+    // variable can only be set to true if its constraints are present.
     auto key = std::make_pair(action->id(), timestep);
     if (action_encoded_.count(key)) return;
     action_encoded_.insert(key);
@@ -491,7 +537,9 @@ Plan CausalExistsPlanner::search() {
     }
 
     // 4. ARPG-guided seeding: place goal achievers and their enablers
-    //    at timesteps proportional to their ARPG layer
+    //    at timesteps proportional to their ARPG layer.
+    //    cascade_bump is used HERE and ONLY here — during the main search
+    //    loop, activity is maintained purely by core hits + decay.
     {
         int arpg_layers = achievers_->get_arpg_num_layers();
 
@@ -579,7 +627,10 @@ Plan CausalExistsPlanner::search() {
         }
     }
 
-    // 6. Search loop
+    // 6. Main search loop: assumption-based solve → core-guided activation
+    //    Each round: solve under assumptions, process UNSAT core (filter +
+    //    activate + replenish), or extract plan on SAT. Activity scores
+    //    decay by δ=0.85 after every round.
     int round = 0;
     int extensions = 0;
     double total_time = 0.0;

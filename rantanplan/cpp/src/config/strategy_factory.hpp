@@ -50,7 +50,7 @@ public:
 
     static std::unique_ptr<PropagatorStrategy> create_propagator(
         const StrategySpec& spec, z3::solver& solver,
-        const Problem& problem, const BaseEncoder& encoder);
+        const Problem& problem, BaseEncoder& encoder);
 
     static std::unique_ptr<BasePlanner> create_planner(
         const StrategySpec& spec, const Problem& problem,

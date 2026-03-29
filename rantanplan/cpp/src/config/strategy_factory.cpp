@@ -24,6 +24,7 @@
 #include "../planners/propagators/forall_propagator.hpp"
 #include "../planners/propagators/lazy_forall_propagator.hpp"
 #include "../planners/propagators/exists_propagator.hpp"
+#include "../planners/propagators/frame_exists_propagator.hpp"
 
 #include "../util/logger.hpp"
 
@@ -195,7 +196,7 @@ std::unique_ptr<InterferenceAnalysis> StrategyFactory::create_interference(
 
 std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
     const StrategySpec& spec, z3::solver& solver,
-    const Problem& problem, const BaseEncoder& encoder) {
+    const Problem& problem, BaseEncoder& encoder) {
     switch (spec.propagator) {
         case PropagatorKind::Null:
             return std::make_unique<NullPropagator>(solver, encoder);
@@ -205,6 +206,11 @@ std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
             return std::make_unique<LazyForallPropagator>(solver, problem, encoder);
         case PropagatorKind::Exists:
             return std::make_unique<ExistsPropagator>(solver, problem, encoder);
+        case PropagatorKind::FrameExists: {
+            auto* grounded = dynamic_cast<GroundedEncoder*>(&encoder);
+            if (grounded) grounded->set_lazy_frames(true);
+            return std::make_unique<FrameExistsPropagator>(solver, problem, encoder);
+        }
     }
     throw std::invalid_argument("Unknown propagator kind");
 }
