@@ -36,6 +36,23 @@ QUICK_TEST_DIRS = [
     "pddl/test/worksworld",
 ]
 
+# Strategies tested in --quick mode. Covers each major code path without
+# redundant variants (eager-syntactic, eager-semantic, non-chained lazy, etc.).
+QUICK_STRATEGIES = [
+    "seq",                              # Sequential baseline, Grounded encoder
+    "r2e",                              # R2E encoder, declaration-order parallelism
+    "forall-lazy-semantic-chain",       # Forall, Chained encoder, lazy semantic, LazyForall propagator
+    "forall-lazy-semantic-chain-dt",    # DoubleTail planner
+    "exists-lazy-semantic-chain",       # Exists, Chained encoder, lazy semantic, Exists propagator
+    "exists-lazy-semantic-chain-dt",    # DoubleTail exists
+    "exists-lazy-semantic-chain-fp",    # Frame propagator variant
+    "exists-lazy-semantic-chain-foot",  # Footprint-indexed exists
+    "exists-lazy-semantic-chain-memo",  # Memo frame propagator
+    "causal-exists",                    # CausalExists planner kind
+    "causal-exists-fp",                 # CausalExists + frame propagator
+    "causal-exists-memo",              # CausalExists + memo frame propagator
+]
+
 TIMEOUT = 60  # seconds per test
 
 # ---------------------------------------------------------------------------
@@ -137,13 +154,19 @@ OPTIMAL_MODE_STRATEGIES = [
     "exists", "exists-lazy", "exists-lazy-semantic", "exists-lazy-semantic-chain",
 ]
 
+QUICK_OPTIMAL_MODE_STRATEGIES = [
+    "seq",
+    "exists-lazy-semantic-chain",
+]
 
-def build_test_configs(strategies):
+
+def build_test_configs(strategies, quick=False):
     """Build list of (strategy, mode, label) tuples to test."""
     configs = []
     for s in strategies:
         configs.append((s, None, s))
-    for s in OPTIMAL_MODE_STRATEGIES:
+    optimal_pool = QUICK_OPTIMAL_MODE_STRATEGIES if quick else OPTIMAL_MODE_STRATEGIES
+    for s in optimal_pool:
         if s in strategies:
             configs.append((s, "optimal", f"{s} --mode optimal"))
     return configs
@@ -159,14 +182,18 @@ def main():
                         help="Use UP cross-product grounding instead of C++ grounding")
     args = parser.parse_args()
 
-    strategies = get_strategies()
+    all_strategies = get_strategies()
+    if args.quick:
+        strategies = [s for s in QUICK_STRATEGIES if s in all_strategies]
+    else:
+        strategies = all_strategies
     problems = find_problems(quick=args.quick)
 
     if not problems:
         print("No PDDL problems found.")
         sys.exit(1)
 
-    configs = build_test_configs(strategies)
+    configs = build_test_configs(strategies, quick=args.quick)
     total = len(problems) * len(configs)
     print(f"\n{C.BOLD}RantanPlan Test Suite{C.END}")
     print(f"{len(problems)} domains x {len(configs)} configs = {total} tests\n")
