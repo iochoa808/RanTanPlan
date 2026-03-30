@@ -156,23 +156,20 @@ class CNFConditionCompiler(Engine, CompilerMixin):
                                 cloned.add_precondition(c)
                         else:
                             cloned.add_precondition(cnf_p)
-
-                # Handle conditional effects
-                if hasattr(cloned, "clear_effects") and hasattr(cloned, "add_effect"):
-                    effects = list(getattr(a, "effects", []))
-                    cloned.clear_effects()
-                    for eff in effects:
-                        # Transform conditional effect conditions to CNF
-                        transformed_effects = self._transform_effect_conditions(eff, env)
-                        # Handle case where CNF transformation creates multiple effects
-                        if isinstance(transformed_effects, list):
-                            for te in transformed_effects:
-                                cloned.add_effect(te)
-                        else:
-                            cloned.add_effect(transformed_effects)
             except Exception:
                 # If an action type behaves differently (e.g., durative), leave as-is
                 cloned = a
+
+            # Handle conditional effect conditions (separate try so precondition
+            # success is never reverted by an effect-handling failure)
+            try:
+                for eff in getattr(cloned, "effects", []):
+                    if eff.is_conditional():
+                        cnf_cond = self._to_cnf(eff.condition, env)
+                        eff.set_condition(cnf_cond)
+            except Exception:
+                pass  # leave effects unchanged
+
             new_problem.add_action(cloned)
             new_to_old[cloned] = a
 
@@ -193,30 +190,6 @@ class CNFConditionCompiler(Engine, CompilerMixin):
         # Final flatten for clean CNF shape
         f_cnf = self._flatten(f_dist, em)
         return f_cnf
-
-    def _transform_effect_conditions(self, effect, env):
-        """Transform conditional effect conditions to CNF while preserving the effect structure."""
-        # Check if this is a conditional effect
-        if hasattr(effect, "condition") and effect.condition is not None:
-            # Transform the condition to CNF
-            cnf_condition = self._to_cnf(effect.condition, env)
-
-            # Create a new effect with the CNF condition
-            # This depends on UP's effect structure - we need to preserve the effect type
-            if hasattr(effect, "fluent") and hasattr(effect, "value"):
-                # Simple conditional effect
-                em = env.expression_manager
-                if cnf_condition.is_and():
-                    # Split AND conditions into multiple conditional effects
-                    effects = []
-                    for cond in cnf_condition.args:
-                        effects.append(em.EffectCondition(cond, effect.fluent, effect.value))
-                    return effects
-                else:
-                    return em.EffectCondition(cnf_condition, effect.fluent, effect.value)
-
-        # Return the effect unchanged if it's not conditional
-        return effect
 
     def _flatten(self, f, em):
         # Flatten nested And/Or preserving left-to-right order for determinism

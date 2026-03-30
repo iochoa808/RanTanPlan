@@ -260,7 +260,10 @@ public:
             return false;
         }
         if (pool.is_not(eid) && pool.argument_count(eid) == 1) {
-            return !satisfies_condition(pool.argument(eid, 0), pool);
+            // In relaxed semantics, NOT(phi) is satisfiable when phi is not
+            // necessarily true — i.e. there exists an assignment within the
+            // current intervals that falsifies phi.
+            return !necessarily_satisfies_condition(pool.argument(eid, 0), pool);
         }
 
         // Handle numeric comparisons
@@ -292,6 +295,81 @@ public:
         }
 
         return true; // Default assume satisfied
+    }
+
+    // Check whether a condition is necessarily true for ALL assignments within
+    // the current intervals.  Used by the NOT handler in satisfies_condition:
+    // NOT(phi) is relaxed-satisfiable iff phi is not necessarily true.
+    bool necessarily_satisfies_condition(ExprID eid, const ExprPool& pool) const {
+        if (!eid.valid()) return true;
+
+        // Boolean constants
+        if (pool.is_constant(eid) && pool.payload_is_bool(eid)) {
+            return pool.payload_bool(eid);
+        }
+
+        // Propositions — once true in relaxed state, necessarily true
+        ExprKind kind = pool.kind(eid);
+        if (kind == ExprKind::STATE_VARIABLE || kind == ExprKind::FLUENT_SYMBOL) {
+            std::string name = pool.to_string(eid);
+            if (is_proposition_true(name)) return true;
+            auto iv = get_variable(name);
+            // Necessarily positive only if entire interval is > 0
+            if (iv.has_value()) return iv->lower() > 0.0;
+            return false;
+        }
+
+        // AND: necessarily true iff every conjunct is necessarily true
+        if (pool.is_and(eid)) {
+            for (ExprID arg : pool.arguments(eid)) {
+                if (!necessarily_satisfies_condition(arg, pool)) return false;
+            }
+            return true;
+        }
+        // OR: necessarily true iff at least one disjunct is necessarily true
+        if (pool.is_or(eid)) {
+            for (ExprID arg : pool.arguments(eid)) {
+                if (necessarily_satisfies_condition(arg, pool)) return true;
+            }
+            return false;
+        }
+        // NOT: necessarily true iff inner is not possibly satisfiable
+        if (pool.is_not(eid) && pool.argument_count(eid) == 1) {
+            return !satisfies_condition(pool.argument(eid, 0), pool);
+        }
+
+        // Numeric comparisons
+        if (pool.is_function_application(eid) && pool.argument_count(eid) >= 2) {
+            // Object constants — same logic as satisfies_condition
+            if (pool.is_equals(eid)) {
+                ExprID lhs = pool.argument(eid, 0);
+                ExprID rhs = pool.argument(eid, 1);
+                if (pool.is_constant(lhs) && pool.is_constant(rhs) &&
+                    !pool.payload_is_bool(lhs) && !pool.payload_is_bool(rhs) &&
+                    !pool.payload_is_int(lhs) && !pool.payload_is_int(rhs) &&
+                    !pool.payload_is_double(lhs) && !pool.payload_is_double(rhs)) {
+                    return lhs == rhs;
+                }
+            }
+
+            Interval left = evaluate_expression(pool.argument(eid, 0), pool);
+            Interval right = evaluate_expression(pool.argument(eid, 1), pool);
+
+            // Necessarily true means the relation holds for ALL combinations
+            // of values in the intervals, i.e. worst-case checking.
+            if (pool.is_greater_equal(eid)) return left.lower() >= right.upper();
+            if (pool.is_greater_than(eid))  return left.lower() > right.upper();
+            if (pool.is_less_equal(eid))    return left.upper() <= right.lower();
+            if (pool.is_less_than(eid))     return left.upper() < right.lower();
+            if (pool.is_equals(eid)) {
+                // Equal for ALL values only if both are the same single point
+                return left.lower() == left.upper() &&
+                       right.lower() == right.upper() &&
+                       left.lower() == right.lower();
+            }
+        }
+
+        return false; // Default: not necessarily true
     }
 
     // Simplified string representation
