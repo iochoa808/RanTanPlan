@@ -38,6 +38,19 @@ void Action::set_parameters(const std::vector<Parameter>& parameters) {
     build_parameter_mappings();
 }
 
+std::string Action::label() const {
+    std::string s = name_;
+    if (!parameters_.empty()) {
+        s += "(";
+        for (size_t i = 0; i < parameters_.size(); ++i) {
+            if (i > 0) s += ",";
+            s += parameters_[i].name();
+        }
+        s += ")";
+    }
+    return s;
+}
+
 std::string Action::to_string() const {
     std::ostringstream oss;
     oss << "Action: " << name_;

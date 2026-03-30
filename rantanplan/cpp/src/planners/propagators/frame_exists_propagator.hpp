@@ -92,6 +92,7 @@ private:
 
     struct FrameClause {
         int timestep;
+        ExprID fluent_id;         // which fluent this clause tracks
         int8_t eq_state = -1;     // -1=unset, 0=changed, 1=unchanged
         bool is_boolean;
 
@@ -112,8 +113,8 @@ private:
         // When set and persist_clauses is on, skip re-propagation of preservation.
         bool preservation_ever_fired = false;
 
-        FrameClause(int t, bool is_bool)
-            : timestep(t), is_boolean(is_bool) {}
+        FrameClause(int t, ExprID fid, bool is_bool)
+            : timestep(t), fluent_id(fid), is_boolean(is_bool) {}
     };
 
     struct VarRole {

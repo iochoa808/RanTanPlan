@@ -88,7 +88,8 @@ void StrategyFactory::validate(const StrategySpec& spec,
         throw std::invalid_argument(
             "Causal Lazy R2E planner requires Grounded encoder. Strategy: '" + strategy_name + "'.");
     }
-    if (spec.planner == PlannerKind::CausalExists &&
+    if ((spec.planner == PlannerKind::CausalExists ||
+         spec.planner == PlannerKind::CausalExistsGuided) &&
         spec.encoder != EncoderFamily::Grounded && spec.encoder != EncoderFamily::Chained) {
         throw std::invalid_argument(
             "Causal Exists planner requires Grounded or Chained encoder. Strategy: '" + strategy_name + "'.");
@@ -243,6 +244,11 @@ std::unique_ptr<BasePlanner> StrategyFactory::create_planner(
             return std::make_unique<CausalLazyR2EPlanner>(problem, encoder, ctx);
         case PlannerKind::CausalExists:
             return std::make_unique<CausalExistsPlanner>(problem, encoder, ctx);
+        case PlannerKind::CausalExistsGuided: {
+            auto p = std::make_unique<CausalExistsPlanner>(problem, encoder, ctx);
+            p->set_guided_activation(true);
+            return p;
+        }
     }
     throw std::invalid_argument("Unknown planner kind");
 }

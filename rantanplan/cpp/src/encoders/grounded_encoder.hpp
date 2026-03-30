@@ -44,6 +44,10 @@ public:
     // Returns nullptr if the action has no effects (nothing to encode).
     std::shared_ptr<z3::expr> encode_single_action(const Action& action, int t);
 
+    // Encode ONLY effect constraints (action → effects) without preconditions.
+    // Used with split encoding where preconditions are tracked separately.
+    std::shared_ptr<z3::expr> encode_single_action_effects_only(const Action& action, int t);
+
     // Create action variables for all actions at timestep t without encoding constraints.
     void ensure_action_variables(int t);
 

@@ -38,10 +38,11 @@ namespace rantanplan {
 class CausalExistsPlanner : public BasePlanner {
 public:
     CausalExistsPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx);
+    ~CausalExistsPlanner() override = default;
 
     Plan search() override;
 
-private:
+protected:
     // ---- Timestep + blocking management ----
 
     int current_horizon_ = -1;
@@ -82,6 +83,7 @@ private:
     // ---- Relaxed plan (h^ff-style backward extraction) ----
 
     std::vector<const Action*> relaxed_plan_;
+    std::unordered_set<const Action*> relaxed_plan_set_;
 
     // ---- Activity tracking (adapted VSIDS) ----
 
@@ -120,10 +122,10 @@ private:
     void refresh_goal(int t);
     void extend_horizon();
 
-    // ---- Search loop helpers ----
+    // ---- Search loop helpers (virtual for variant overriding) ----
 
-    z3::expr_vector build_assumptions();
-    int process_core(const z3::expr_vector& core);
+    virtual z3::expr_vector build_assumptions();
+    virtual int process_core(const z3::expr_vector& core);
     void cascade_bump(const std::vector<const Action*>& seeds, double bump_amount);
     int predictive_activate(int timestep);
     void decay_activity();
@@ -131,8 +133,35 @@ private:
     void ensure_action_encoded(const Action* action, int timestep);
     const Action* deactivate_block_entry(size_t idx);
 
+    // ---- Guided activation: replace core's arbitrary action with best achiever ----
+
+    bool use_guided_activation_ = false;
+    int guided_substitutions_ = 0;
+    int guided_fallbacks_ = 0;
+
+    /// Condition-based achiever selection: find the best alternative that
+    /// achieves the SAME conditions as the core's action (correct direction).
+    const Action* select_best_achiever_for(const Action* core_action, int timestep) const;
+
+    // ---- Tracked preconditions: per-condition assert_and_track ----
+
+    /// When an action is activated, its preconditions are encoded as tracked
+    /// assertions (split encoding: effects normally, preconds tracked).
+    /// If Z3 uses the action but a precondition fails, the tracking literal
+    /// appears in the core — telling us which condition needs an enabler.
+    struct TrackedPrecond {
+        const Action* action;
+        int timestep;
+        ExprID condition;
+    };
+    std::unordered_map<unsigned, TrackedPrecond> tracked_precond_id_;
+
+public:
+    void set_guided_activation(bool enabled) { use_guided_activation_ = enabled; }
+
     // ---- Plan extraction ----
 
+protected:
     Plan extract_plan(const z3::model& model);
 };
 

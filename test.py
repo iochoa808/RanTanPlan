@@ -51,6 +51,7 @@ QUICK_STRATEGIES = [
     "causal-exists",                    # CausalExists planner kind
     "causal-exists-fp",                 # CausalExists + frame propagator
     "causal-exists-memo",              # CausalExists + memo frame propagator
+    "causal-exists-guided",            # CausalExists + guided achiever selection + tracked preconditions
 ]
 
 TIMEOUT = 60  # seconds per test
@@ -180,6 +181,8 @@ def main():
                         help="Show planner output")
     parser.add_argument("--up-grounding", action="store_true",
                         help="Use UP cross-product grounding instead of C++ grounding")
+    parser.add_argument("-j", "--jobs", type=int, default=4,
+                        help="Number of parallel jobs (default: 4, use 1 for sequential)")
     args = parser.parse_args()
 
     all_strategies = get_strategies()
@@ -196,30 +199,28 @@ def main():
     configs = build_test_configs(strategies, quick=args.quick)
     total = len(problems) * len(configs)
     print(f"\n{C.BOLD}RantanPlan Test Suite{C.END}")
-    print(f"{len(problems)} domains x {len(configs)} configs = {total} tests\n")
+    print(f"{len(problems)} domains x {len(configs)} configs = {total} tests")
+    print(f"Jobs: {args.jobs}\n")
 
-    passed = failed = 0
-    failures = []
-    test_num = 0
-
+    # Build work items: (index, test_label, args_for_run_test)
+    work_items = []
     for name, domain, problem_file in problems:
         for strategy, mode, label in configs:
-            test_num += 1
             test_label = f"{name} / {label}"
-            print(f"  [{test_num}/{total}] {test_label}... ", end="", flush=True)
+            work_items.append((test_label, name, domain, problem_file, strategy,
+                               args.verbose, args.up_grounding, mode))
 
-            ok, detail = run_test(name, domain, problem_file, strategy,
-                                  verbose=args.verbose, up_grounding=args.up_grounding,
-                                  mode=mode)
-            if ok:
-                passed += 1
-                print(f"{C.GREEN}PASS{C.END} ({detail})")
-            else:
-                failed += 1
-                failures.append((test_label, detail))
-                print(f"{C.RED}FAIL{C.END} ({detail})")
+    if args.jobs == 1 or args.verbose:
+        # Sequential: print as we go (verbose needs sequential for readable output)
+        results = _run_sequential(work_items, total)
+    else:
+        results = _run_parallel(work_items, total, args.jobs)
 
     # Summary
+    passed = sum(1 for ok, _ in results.values() if ok)
+    failed = sum(1 for ok, _ in results.values() if not ok)
+    failures = [(label, detail) for label, (ok, detail) in results.items() if not ok]
+
     print(f"\n{'=' * 60}")
     print(f"{C.BOLD}Test Summary{C.END}")
     print(f"{'=' * 60}")
@@ -233,6 +234,51 @@ def main():
             print(f"  {label}: {detail}")
 
     sys.exit(1 if failed else 0)
+
+
+def _run_sequential(work_items, total):
+    """Run tests sequentially with live output."""
+    results = {}
+    for i, (test_label, name, domain, problem_file, strategy,
+            verbose, up_grounding, mode) in enumerate(work_items, 1):
+        print(f"  [{i}/{total}] {test_label}... ", end="", flush=True)
+        ok, detail = run_test(name, domain, problem_file, strategy,
+                              verbose=verbose, up_grounding=up_grounding, mode=mode)
+        if ok:
+            print(f"{C.GREEN}PASS{C.END} ({detail})")
+        else:
+            print(f"{C.RED}FAIL{C.END} ({detail})")
+        results[test_label] = (ok, detail)
+    return results
+
+
+def _run_test_worker(args):
+    """Worker for parallel execution. Unpacks args and calls run_test."""
+    test_label, name, domain, problem_file, strategy, verbose, up_grounding, mode = args
+    ok, detail = run_test(name, domain, problem_file, strategy,
+                          verbose=verbose, up_grounding=up_grounding, mode=mode)
+    return test_label, ok, detail
+
+
+def _run_parallel(work_items, total, jobs):
+    """Run tests in parallel using ProcessPoolExecutor."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    results = {}
+    completed = 0
+
+    with ProcessPoolExecutor(max_workers=jobs) as executor:
+        futures = {executor.submit(_run_test_worker, item): item[0]
+                   for item in work_items}
+
+        for future in as_completed(futures):
+            completed += 1
+            test_label, ok, detail = future.result()
+            results[test_label] = (ok, detail)
+            status = f"{C.GREEN}PASS{C.END}" if ok else f"{C.RED}FAIL{C.END}"
+            print(f"  [{completed}/{total}] {test_label}... {status} ({detail})")
+
+    return results
 
 
 if __name__ == "__main__":

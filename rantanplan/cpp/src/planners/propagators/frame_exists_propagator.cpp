@@ -346,7 +346,7 @@ void FrameExistsPropagator::register_frame_variables(int t) {
         z3::expr f_t = grounded->convert_expr_id_to_z3(eid, t);
         z3::expr f_t1 = grounded->convert_expr_id_to_z3(eid, t + 1);
 
-        frame_clauses_.emplace_back(t, is_bool);
+        frame_clauses_.emplace_back(t, eid, is_bool);
         auto& clause = frame_clauses_.back();
 
         // Flat vectors for O(1) access during conflict/propagation
@@ -524,6 +524,8 @@ bool FrameExistsPropagator::find_cycle_in_active_actions(
     return false;
 }
 
+// ============================================================================
+// Slack API
 // ============================================================================
 // Cleanup
 // ============================================================================

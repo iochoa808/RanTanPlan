@@ -202,6 +202,7 @@ void CausalExistsPlanner::extract_relaxed_plan() {
             if (best && !used.count(best)) {
                 used.insert(best);
                 relaxed_plan_.push_back(best);
+                relaxed_plan_set_.insert(best);
                 newly_satisfied.push_back(cond);
 
                 auto prec_it = action_precondition_ids_.find(best);
@@ -303,14 +304,93 @@ z3::expr_vector CausalExistsPlanner::build_assumptions() {
     return assumptions;
 }
 
+const Action* CausalExistsPlanner::select_best_achiever_for(
+        const Action* core_action, int timestep) const {
+    if (!achievers_) return nullptr;
+
+    // The core included block_a_t because action a achieves some condition
+    // needed at timestep t. Find what conditions a achieves, then look for
+    // alternative achievers of those SAME conditions. This guarantees the
+    // substitute produces the right value (direction of change).
+
+    // Get conditions that the core's action achieves
+    const auto& achieved = achievers_->get_achieved_conditions(*core_action);
+
+    // Collect candidate actions from all unsatisfied conditions
+    std::unordered_set<const Action*> candidates;
+    for (ExprID cond : achieved) {
+        if (init_satisfied_conditions_.count(cond)) continue;
+
+        auto cach_it = condition_achievers_.find(cond);
+        if (cach_it == condition_achievers_.end()) continue;
+
+        for (const Action* alt : cach_it->second) {
+            candidates.insert(alt);
+        }
+    }
+
+    if (candidates.empty()) return nullptr;
+
+    // Score candidates
+    const Action* best = nullptr;
+    double best_score = -1e9;
+
+    for (const Action* action : candidates) {
+        if (!goal_relevant_actions_.count(action)) continue;
+        auto bc = blocked_count_.find(action);
+        if (bc == blocked_count_.end() || bc->second <= 0) continue;
+
+        double score = 0;
+
+        // Prefer actions in the relaxed plan
+        if (relaxed_plan_set_.count(action)) score += 20;
+
+        // Prefer actions with high activity
+        auto act_it = activity_.find(action);
+        if (act_it != activity_.end()) score += act_it->second * 5;
+
+        // Penalize actions whose preconditions can't be satisfied before
+        // the target timestep.  An init-satisfied precondition is free.
+        // A precondition with an activated achiever before timestep is OK (-5).
+        // A precondition with NO achiever before timestep is a heavy penalty (-30)
+        // (avoids circular chains like fly(city2→city1) when plane is at city0).
+        auto prec_it = action_precondition_ids_.find(action);
+        if (prec_it != action_precondition_ids_.end()) {
+            for (ExprID p : prec_it->second) {
+                if (init_satisfied_conditions_.count(p)) continue;
+
+                // Check if any activated action achieves p before timestep
+                bool has_enabler = false;
+                auto ach_it = condition_achievers_.find(p);
+                if (ach_it != condition_achievers_.end()) {
+                    for (const Action* enabler : ach_it->second) {
+                        for (int t = 0; t < timestep; ++t) {
+                            if (action_encoded_.count({enabler->id(), t})) {
+                                has_enabler = true;
+                                break;
+                            }
+                        }
+                        if (has_enabler) break;
+                    }
+                }
+
+                score -= has_enabler ? 5 : 30;
+            }
+        }
+
+        // Prefer actions with fewer side effects
+        score -= static_cast<double>(action->effects().size()) * 2;
+
+        if (score > best_score) {
+            best_score = score;
+            best = action;
+        }
+    }
+
+    return best;
+}
+
 int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
-    // Filter non-goal-relevant blocking literals from the core, then
-    // activate the remaining ones (encode constraints + remove from
-    // assumptions). Activity is bumped by 1.0 per core hit; no cascade
-    // bump is applied here (cascade is only used during initial seeding).
-    // Replenishment is batched: after all activations, if ANY action
-    // exhausted its blocked entries, a single extend_horizon() restores
-    // the invariant for all actions.
     int activated = 0;
     int filtered = 0;
     std::vector<const Action*> bumped_actions;
@@ -318,22 +398,48 @@ int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
     for (unsigned i = 0; i < core.size(); ++i) {
         unsigned eid = core[i].id();
         auto it = block_id_to_index_.find(eid);
-        if (it != block_id_to_index_.end()) {
-            size_t idx = it->second;
-            BlockEntry& entry = block_entries_[idx];
-            const Action* action = entry.action;
+        if (it == block_id_to_index_.end()) continue;
 
-            // Filter: skip non-goal-relevant actions
-            if (!goal_relevant_actions_.count(action)) {
-                filtered++;
-                continue;
+        size_t idx = it->second;
+        BlockEntry& entry = block_entries_[idx];
+        const Action* action = entry.action;
+        int timestep = entry.timestep;
+
+        if (!goal_relevant_actions_.count(action)) {
+            filtered++;
+            continue;
+        }
+
+        const Action* to_activate = action;
+
+        // Guided activation: use condition-level achiever analysis to pick a
+        // potentially better ground action that achieves the SAME conditions.
+        if (use_guided_activation_) {
+            const Action* best = select_best_achiever_for(action, timestep);
+            if (best && best != action) {
+                // Check if the best action is blocked at this timestep
+                for (size_t bi = 0; bi < block_entries_.size(); ++bi) {
+                    auto& be = block_entries_[bi];
+                    if (be.active && be.action == best && be.timestep == timestep) {
+                        deactivate_block_entry(bi);
+                        activity_[best] += 1.0;
+                        bumped_actions.push_back(best);
+                        activated++;
+                        guided_substitutions_++;
+                        to_activate = nullptr;
+                        break;
+                    }
+                }
             }
+        }
 
-            // Activate: encode constraints, deactivate blocking
+        if (to_activate) {
+            // Standard activation (core's choice or guided fallback)
             deactivate_block_entry(idx);
             activity_[action] += 1.0;
             bumped_actions.push_back(action);
             activated++;
+            if (use_guided_activation_) guided_fallbacks_++;
         }
     }
 
@@ -342,10 +448,74 @@ int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
             " non-achiever blocking lits from core");
     }
 
+    // Process tracked precondition failures: "activated action A at t needs
+    // condition C" → activate the best enabler for C before t.
+    // Deduplicate by condition (earliest timestep per condition).
+    std::unordered_map<int, TrackedPrecond> precond_earliest;
+    for (unsigned i = 0; i < core.size(); ++i) {
+        unsigned eid = core[i].id();
+        auto tp_it = tracked_precond_id_.find(eid);
+        if (tp_it == tracked_precond_id_.end()) continue;
+        auto& tp = tp_it->second;
+        auto it = precond_earliest.find(tp.condition.id);
+        if (it == precond_earliest.end() || tp.timestep < it->second.timestep) {
+            precond_earliest[tp.condition.id] = tp;
+        }
+    }
+
+    for (auto& [cond_id, tp] : precond_earliest) {
+        auto ach_it = condition_achievers_.find(tp.condition);
+        if (ach_it == condition_achievers_.end()) continue;
+
+        // Find the best enabler that is still blocked before tp.timestep
+        const Action* best_enabler = nullptr;
+        size_t best_entry_idx = 0;
+
+        double best_score = -1e9;
+        for (const Action* enabler : ach_it->second) {
+            if (!goal_relevant_actions_.count(enabler)) continue;
+
+            // Find a blocked entry for this enabler at t < tp.timestep
+            for (size_t bi = 0; bi < block_entries_.size(); ++bi) {
+                auto& be = block_entries_[bi];
+                if (!be.active || be.action != enabler) continue;
+                if (be.timestep >= tp.timestep) continue;
+
+                double score = 0;
+                for (const Action* rp : relaxed_plan_) {
+                    if (rp == enabler) { score += 20; break; }
+                }
+                auto ai = activity_.find(enabler);
+                if (ai != activity_.end()) score += ai->second * 5;
+                score -= static_cast<double>(enabler->effects().size()) * 2;
+
+                if (score > best_score) {
+                    best_score = score;
+                    best_enabler = enabler;
+                    best_entry_idx = bi;
+                }
+                break;  // Take first available timestep for this enabler
+            }
+        }
+
+        if (best_enabler) {
+            deactivate_block_entry(best_entry_idx);
+            activity_[best_enabler] += 1.0;
+            bumped_actions.push_back(best_enabler);
+            activated++;
+
+            if (Config::instance().is_verbose()) {
+                Logger::instance().info("  Precond: " +
+                    tp.action->label() + "@t" + std::to_string(tp.timestep) +
+                    " needs c" + std::to_string(tp.condition.id) +
+                    " → " + best_enabler->label() + "@t" +
+                    std::to_string(block_entries_[best_entry_idx].timestep));
+            }
+        }
+    }
+
     cumulative_core_activations_ += activated;
 
-    // Check replenishment invariant: if any activated action has no
-    // remaining blocked timestep, we need to extend the horizon
     bool need_extension = false;
     for (const Action* action : bumped_actions) {
         if (blocked_count_[action] <= 0) {
@@ -466,17 +636,43 @@ const Action* CausalExistsPlanner::deactivate_block_entry(size_t idx) {
 }
 
 void CausalExistsPlanner::ensure_action_encoded(const Action* action, int timestep) {
-    // Phase 2 (on-demand): encode a single action's precondition/effect
-    // constraints. Called by deactivate_block_entry BEFORE removing the
-    // blocking assumption, maintaining the invariant that an action
-    // variable can only be set to true if its constraints are present.
+    // Phase 2 (on-demand): encode a single action's constraints.
+    // Split encoding: effects via normal assertion, preconditions via
+    // assert_and_track (per CNF condition).  This makes tracked precondition
+    // lits appear in UNSAT cores when Z3 uses the action but a condition fails.
     auto key = std::make_pair(action->id(), timestep);
     if (action_encoded_.count(key)) return;
     action_encoded_.insert(key);
 
-    auto constraints = grounded_encoder().encode_single_action(*action, timestep);
-    if (constraints) {
-        solver_.add(*constraints);
+    // Effects only (normal assertion)
+    auto effects = grounded_encoder().encode_single_action_effects_only(*action, timestep);
+    if (effects) {
+        solver_.add(*effects);
+    }
+
+    // Preconditions: tracked per-condition
+    auto prec_it = action_precondition_ids_.find(action);
+    if (prec_it != action_precondition_ids_.end()) {
+        auto& vf = encoder_.get_variable_factory();
+        const z3::expr& action_var = vf.get_action_variable(*action, timestep);
+
+        for (ExprID cond : prec_it->second) {
+            std::string track_name = "pre_a" + std::to_string(action->id()) +
+                                     "_t" + std::to_string(timestep) +
+                                     "_c" + std::to_string(cond.id);
+            z3::expr track_lit = ctx_.bool_const(track_name.c_str());
+            z3::expr cond_z3 = encoder_.convert_expr_id_to_z3(cond, timestep);
+            solver_.add(z3::implies(action_var, cond_z3), track_lit);
+            tracked_precond_id_[track_lit.id()] = {action, timestep, cond};
+        }
+    }
+    // Safety net: actions not in the achiever cache get precondition-only encoding
+    // (effects already encoded above via encode_single_action_effects_only)
+    else if (action->has_precondition()) {
+        auto& vf = encoder_.get_variable_factory();
+        const z3::expr& action_var = vf.get_action_variable(*action, timestep);
+        z3::expr prec_z3 = encoder_.convert_expr_id_to_z3(action->precondition_id(), timestep);
+        solver_.add(z3::implies(action_var, prec_z3));
     }
 }
 
@@ -651,9 +847,9 @@ Plan CausalExistsPlanner::search() {
         double round_time = std::chrono::duration<double>(round_end - round_start).count();
         total_time = std::chrono::duration<double>(round_end - start_time).count();
 
-        // Count active blocking entries
-        size_t active_blocked = 0;
-        for (const auto& e : block_entries_) if (e.active) active_blocked++;
+        // Count active (unblocked) vs total entries
+        size_t activated_entries = 0;
+        for (const auto& e : block_entries_) if (!e.active) activated_entries++;
 
         double mem = MemoryTracker::instance().get_current_memory_mb();
 
@@ -661,8 +857,7 @@ Plan CausalExistsPlanner::search() {
             {"solve", std::to_string(solve_time) + "s"},
             {"round", std::to_string(round_time) + "s"},
             {"horizon", std::to_string(current_horizon_)},
-            {"blocked", std::to_string(active_blocked)},
-            {"total_entries", std::to_string(block_entries_.size())},
+            {"active", std::to_string(activated_entries) + "/" + std::to_string(block_entries_.size())},
             {"mem", std::to_string(static_cast<int>(mem)) + "MB"}
         });
 
@@ -685,6 +880,10 @@ Plan CausalExistsPlanner::search() {
             stats.set("planner.rounds", static_cast<double>(round));
             stats.set("planner.solution_horizon", static_cast<double>(current_horizon_));
             stats.set("planner.total_activations", static_cast<double>(cumulative_core_activations_));
+            if (use_guided_activation_) {
+                stats.set("guided.substitutions", static_cast<double>(guided_substitutions_));
+                stats.set("guided.fallbacks", static_cast<double>(guided_fallbacks_));
+            }
 
             // Count final active (unblocked) entries for activation tightness metric
             size_t final_active = 0;

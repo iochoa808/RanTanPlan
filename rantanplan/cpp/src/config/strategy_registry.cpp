@@ -69,6 +69,11 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         // Memo frame propagator: v5 preservation memoization (skip redundant re-propagation)
         {"exists-lazy-semantic-chain-memo",{E::Chained,  S::Exists,     I::LazySemantic,    P::MemoFrameExists,   K::Sequential}},
         {"causal-exists-memo",             {E::Chained,  S::Exists,     I::LazySemantic,    P::MemoFrameExists,   K::CausalExists}},
+
+        // Guided causal-exists: condition-based substitution + tracked preconditions
+        {"causal-exists-guided",           {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::CausalExistsGuided}},
+        {"causal-exists-guided-fp",        {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::CausalExistsGuided}},
+        {"causal-exists-guided-memo",      {E::Chained,  S::Exists,     I::LazySemantic,    P::MemoFrameExists,   K::CausalExistsGuided}},
     };
     return registry;
 }

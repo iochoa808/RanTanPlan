@@ -59,6 +59,9 @@ public:
     // String representation
     std::string to_string() const;
 
+    /// Short grounded label: "name(param1,param2,...)"
+    std::string label() const;
+
     // Operators
     bool operator==(const Action& other) const;
     bool operator!=(const Action& other) const { return !(*this == other); }

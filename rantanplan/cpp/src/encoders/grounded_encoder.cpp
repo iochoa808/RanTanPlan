@@ -113,6 +113,19 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_single_action(const Action& ac
     return std::make_shared<z3::expr>(z3::mk_and(constraints));
 }
 
+std::shared_ptr<z3::expr> GroundedEncoder::encode_single_action_effects_only(const Action& action, int t) {
+    if (action.effects().empty()) return nullptr;
+
+    z3::expr action_var = variable_factory_.get_action_variable(action, t);
+
+    z3::expr_vector effect_exprs(ctx_);
+    for (const Effect& effect : action.effects()) {
+        effect_exprs.push_back(convert_effect_to_z3(effect.effect_expression(), t));
+    }
+
+    return std::make_shared<z3::expr>(z3::implies(action_var, z3::mk_and(effect_exprs)));
+}
+
 void GroundedEncoder::ensure_action_variables(int t) {
     for (const Action& action : problem_.actions()) {
         variable_factory_.get_action_variable(action, t);
