@@ -34,8 +34,10 @@ public:
 
     void register_timestep_variables(int timestep) override;
     void cleanup() override;
-    std::string get_name() const override { return "FrameExistsPropagator"; }
+    std::string get_name() const override { return use_memo_ ? "MemoFramePropagator" : "FrameExistsPropagator"; }
     bool manages_parallelism_constraints() const override { return true; }
+
+    void set_use_memo(bool enabled);
 
 private:
     // ========================================================================
@@ -106,6 +108,10 @@ private:
         // already explained. Avoids redundant propagate() calls.
         bool owned = false;
 
+        // Memo flag (v5): persistent across backtracks (NOT in trail).
+        // When set and persist_clauses is on, skip re-propagation of preservation.
+        bool preservation_ever_fired = false;
+
         FrameClause(int t, bool is_bool)
             : timestep(t), is_boolean(is_bool) {}
     };
@@ -151,6 +157,12 @@ private:
     int frame_propagation_count_ = 0;
     int frame_on_fixed_count_ = 0;
     int frame_final_violation_count_ = 0;
+
+    // v5 memo: skip redundant re-propagation of preservation
+    bool use_memo_ = false;
+    bool persist_clauses_ = false;
+    int memo_hits_ = 0;
+    int first_time_preservations_ = 0;
 
     void register_frame_variables(int t);
     void check_frame_clause(FrameClause& clause, size_t clause_idx);

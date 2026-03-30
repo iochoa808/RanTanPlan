@@ -65,6 +65,10 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
 
         // Footprint-indexed exists: same as exists-lazy but DFS uses fluent-overlap index
         {"exists-lazy-semantic-chain-foot",{E::Chained,  S::Exists,     I::LazySemantic,    P::FootprintExists,   K::Sequential}},
+
+        // Memo frame propagator: v5 preservation memoization (skip redundant re-propagation)
+        {"exists-lazy-semantic-chain-memo",{E::Chained,  S::Exists,     I::LazySemantic,    P::MemoFrameExists,   K::Sequential}},
+        {"causal-exists-memo",             {E::Chained,  S::Exists,     I::LazySemantic,    P::MemoFrameExists,   K::CausalExists}},
     };
     return registry;
 }

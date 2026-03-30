@@ -518,7 +518,7 @@ Plan CausalExistsPlanner::search() {
     // 2. Initialize achiever analysis
     initialize_achievers();
 
-    // 3. Pre-extend horizon using RPG lower bound + ARPG layer ordering
+    // 3. Pre-extend horizon
     {
         int start_ts = config.planner.start_timestep;
         int num_timesteps = std::max(1, start_ts);
@@ -529,11 +529,10 @@ Plan CausalExistsPlanner::search() {
         }
         refresh_goal(current_horizon_ + 1);
 
-        if (start_ts > 1) {
-            Logger::instance().info("Pre-extended horizon to " +
-                std::to_string(current_horizon_) +
-                " (RPG lower bound: " + std::to_string(start_ts) + ")");
-        }
+        Logger::instance().info("Pre-extended horizon to " +
+            std::to_string(current_horizon_) +
+            " (RPG lower bound: " + std::to_string(start_ts) +
+            ", relaxed plan: " + std::to_string(relaxed_plan_.size()) + " actions)");
     }
 
     // 4. ARPG-guided seeding: place goal achievers and their enablers

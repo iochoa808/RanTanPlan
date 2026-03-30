@@ -18,8 +18,13 @@ FrameExistsPropagator::FrameExistsPropagator(z3::solver& solver, const Problem& 
       parallelism_strategy_(encoder.get_parallelism_strategy()),
       interference_analyzer_(parallelism_strategy_->get_interference_analyzer()),
       solver_(&solver),
-      encoder_nc_(&encoder) {
-    solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
+      encoder_nc_(&encoder),
+      persist_clauses_(Config::instance().global.persist_clauses) {
+    solver.set("smt.up.persist_clauses", persist_clauses_);
+}
+
+void FrameExistsPropagator::set_use_memo(bool enabled) {
+    use_memo_ = enabled;
 }
 
 // ============================================================================
@@ -83,8 +88,10 @@ void FrameExistsPropagator::on_pop(unsigned num_scopes) {
 // ============================================================================
 
 void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value) {
+    const bool val_true = value.is_true();
+
     // Exists cycle detection
-    if (value.is_true()) {
+    if (val_true) {
         auto action_info = variable_factory_->get_action_from_variable(ast);
         if (action_info) {
             const Action& action = action_info->first;
@@ -100,6 +107,7 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
     if (it == frame_var_to_roles_.end()) return;
 
     frame_on_fixed_count_++;
+    const int8_t val_int = val_true ? 1 : 0;
 
     for (const VarRole& role : it->second) {
         auto& clause = frame_clauses_[role.clause_idx];
@@ -116,21 +124,21 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
         switch (role.kind) {
         case VarRole::FLUENT_T: {
             te.prev_state = clause.ft_val;
-            clause.ft_val = value.is_true() ? 1 : 0;
+            clause.ft_val = val_int;
             if (clause.is_boolean && clause.ft1_val >= 0)
                 clause.eq_state = (clause.ft_val == clause.ft1_val) ? 1 : 0;
             break;
         }
         case VarRole::FLUENT_T1: {
             te.prev_state = clause.ft1_val;
-            clause.ft1_val = value.is_true() ? 1 : 0;
+            clause.ft1_val = val_int;
             if (clause.is_boolean && clause.ft_val >= 0)
                 clause.eq_state = (clause.ft_val == clause.ft1_val) ? 1 : 0;
             break;
         }
         case VarRole::EQ_BOOL: {
             te.prev_state = clause.eq_state;
-            clause.eq_state = value.is_true() ? 1 : 0;
+            clause.eq_state = val_int;
             break;
         }
         case VarRole::ACTION: {
@@ -138,7 +146,7 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
             te.prev_state = entry.action_state;
             bool was_cant = entry.cant_explain();
             bool was_can = entry.can_explain();
-            entry.action_state = value.is_true() ? 1 : 0;
+            entry.action_state = val_int;
             bool now_cant = entry.cant_explain();
             bool now_can = entry.can_explain();
             if (now_cant != was_cant) clause.num_cant_explain += now_cant ? 1 : -1;
@@ -151,7 +159,7 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
             te.prev_state = entry.cond_state;
             bool was_cant = entry.cant_explain();
             bool was_can = entry.can_explain();
-            entry.cond_state = value.is_true() ? 1 : 0;
+            entry.cond_state = val_int;
             bool now_cant = entry.cant_explain();
             bool now_can = entry.can_explain();
             if (now_cant != was_cant) clause.num_cant_explain += now_cant ? 1 : -1;
@@ -196,7 +204,15 @@ void FrameExistsPropagator::check_frame_clause(FrameClause& clause, size_t claus
         if (clause.eq_state == 0) {
             report_frame_conflict(clause, clause_idx);
         } else {
+            if (use_memo_ && persist_clauses_ && clause.preservation_ever_fired) {
+                memo_hits_++;
+                return;
+            }
             propagate_fluent_preservation(clause, clause_idx);
+            if (use_memo_) {
+                clause.preservation_ever_fired = true;
+                first_time_preservations_++;
+            }
         }
         return;
     }
@@ -521,6 +537,10 @@ void FrameExistsPropagator::cleanup() {
     stats.set("frame_prop.on_fixed_calls", static_cast<double>(frame_on_fixed_count_));
     stats.set("frame_prop.on_final_violations", static_cast<double>(frame_final_violation_count_));
     stats.set("frame_prop.vars_registered", static_cast<double>(all_registered_ids_.size()));
+    if (use_memo_) {
+        stats.set("frame_prop.memo_hits", static_cast<double>(memo_hits_));
+        stats.set("frame_prop.first_time_preservations", static_cast<double>(first_time_preservations_));
+    }
 }
 
 } // namespace rantanplan

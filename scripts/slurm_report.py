@@ -123,7 +123,7 @@ RE_PLANNER_TIMEOUT = re.compile(r"Planner timed out\.")
 RE_STATUS = re.compile(r"Status: PlanGenerationResultStatus\.(\w+)")
 RE_SLURM_CANCEL = re.compile(r"CANCELLED.*DUE TO TIME LIMIT")
 RE_ERROR = re.compile(r"Error during planning:|Aborted \(core dumped\)")
-RE_OOM = re.compile(r"slurmstepd.*oom|Killed|Out of memory", re.IGNORECASE)
+RE_OOM = re.compile(r"slurmstepd.*oom|Killed|Out of memory|std::bad_alloc", re.IGNORECASE)
 RE_METADATA = re.compile(r"^(\w+)=(.+)$")
 
 
