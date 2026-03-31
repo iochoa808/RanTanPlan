@@ -199,7 +199,6 @@ void AchieversAnalysis::analyze_semantic_achievers() {
     for (ExprID condition_eid : all_conditions) {
         auto condition_fluents = collect_fluents_in_expression(condition_eid);
 
-        int tested = 0, achieved = 0;
         for (const auto& action : problem_->actions()) {
             auto action_fluents = get_action_modified_fluents(action);
 
@@ -215,16 +214,12 @@ void AchieversAnalysis::analyze_semantic_achievers() {
                 continue;
             }
 
-            tested++;
             // Use SMT to check if this action can achieve the condition
             if (check_action_achieves_condition_with_pushpop(action, condition_eid)) {
                 condition_to_achievers_[condition_eid].insert(action);
                 action_to_achieved_conditions_[action].insert(condition_eid);
-                achieved++;
             }
         }
-
-        // (Debug logging removed)
     }
 
     // Record final statistics
