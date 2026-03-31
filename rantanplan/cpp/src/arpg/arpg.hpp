@@ -260,10 +260,25 @@ public:
             return false;
         }
         if (pool.is_not(eid) && pool.argument_count(eid) == 1) {
-            // In relaxed semantics, NOT(phi) is satisfiable when phi is not
-            // necessarily true — i.e. there exists an assignment within the
-            // current intervals that falsifies phi.
-            return !necessarily_satisfies_condition(pool.argument(eid, 0), pool);
+            ExprID inner = pool.argument(eid, 0);
+            ExprKind inner_kind = pool.kind(inner);
+
+            // For boolean propositions: always treat NOT(p) as satisfiable.
+            // The delete-relaxation never removes propositions, so a strict
+            // check would say NOT(p) is false once p is true — but the real
+            // (non-relaxed) domain CAN delete p.  Treating NOT(p) as always
+            // satisfiable is a sound over-approximation that avoids blocking
+            // actions whose preconditions require negated booleans (e.g.
+            // "not docked" before sailing in petrobras-like domains).
+            if (inner_kind == ExprKind::STATE_VARIABLE ||
+                inner_kind == ExprKind::FLUENT_SYMBOL) {
+                return true;
+            }
+
+            // For non-boolean expressions (numeric comparisons, etc.),
+            // keep the strict check: NOT(phi) is satisfiable when phi
+            // is not necessarily true over the current intervals.
+            return !necessarily_satisfies_condition(inner, pool);
         }
 
         // Handle numeric comparisons

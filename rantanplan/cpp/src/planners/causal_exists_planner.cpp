@@ -156,6 +156,18 @@ void CausalExistsPlanner::initialize_achievers() {
         Logger::instance().info("  Goal-relevant actions: " +
             std::to_string(goal_relevant_actions_.size()) + "/" +
             std::to_string(problem_.actions().size()));
+
+        if (Config::instance().is_verbose()) {
+            // Log goal-relevant action names (deduplicated by schema name)
+            std::unordered_map<std::string, int> relevant_names;
+            for (const Action* a : goal_relevant_actions_) {
+                relevant_names[a->name()]++;
+            }
+            for (const auto& [name, count] : relevant_names) {
+                Logger::instance().info("    relevant: " + name + " (" +
+                    std::to_string(count) + " ground instances)");
+            }
+        }
     }
 
     // Extract relaxed plan (h^ff-style)
@@ -447,6 +459,7 @@ int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
         Logger::instance().info("  Filtered: " + std::to_string(filtered) +
             " non-achiever blocking lits from core");
     }
+
 
     // Process tracked precondition failures: "activated action A at t needs
     // condition C" → activate the best enabler for C before t.

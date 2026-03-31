@@ -530,14 +530,15 @@ def get_domain_styles(domains: List[str]) -> Dict[str, Tuple[str, object]]:
     return styles
 
 
-def plot_cactus(data: ExperimentData, output_path: Path) -> None:
-    """Generate survival/cactus plot."""
+def _plot_cactus(
+    data: ExperimentData, output_path: Path, log_scale: bool
+) -> None:
+    """Generate survival/cactus plot with the given y-axis scale."""
     colors = get_strategy_colors(data.strategies)
 
     fig, ax = plt.subplots(figsize=(12, 7))
 
     instance_keys = data.instance_keys()
-    num_instances = len(instance_keys)
 
     for strategy in data.strategies:
         # Collect solving times; unsolved instances get the timeout value
@@ -558,8 +559,11 @@ def plot_cactus(data: ExperimentData, output_path: Path) -> None:
     )
     ax.set_xlabel("Number of instances solved")
     ax.set_ylabel("Time (s)")
-    ax.set_yscale("log")
-    ax.set_title("Survival Plot")
+    if log_scale:
+        ax.set_yscale("log")
+        ax.set_title("Survival Plot (log scale)")
+    else:
+        ax.set_title("Survival Plot (linear scale)")
     ax.legend(fontsize=9, loc="best")
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
@@ -567,6 +571,16 @@ def plot_cactus(data: ExperimentData, output_path: Path) -> None:
     fig.savefig(str(output_path))
     plt.close(fig)
     print(f"Wrote {output_path}", file=sys.stderr)
+
+
+def plot_cactus(data: ExperimentData, output_path: Path) -> None:
+    """Generate survival/cactus plot (log scale)."""
+    _plot_cactus(data, output_path, log_scale=True)
+
+
+def plot_cactus_linear(data: ExperimentData, output_path: Path) -> None:
+    """Generate survival/cactus plot (linear scale)."""
+    _plot_cactus(data, output_path, log_scale=False)
 
 
 def plot_scatter_pair(
@@ -1432,6 +1446,7 @@ def generate_all_outputs(
 
     # Plots
     plot_cactus(data, output_dir / "cactus.pdf")
+    plot_cactus_linear(data, output_dir / "cactus_linear.pdf")
     plot_all_scatters(data, output_dir)
 
     # Stats analysis
