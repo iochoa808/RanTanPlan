@@ -44,7 +44,13 @@ private:
     // Counter for detected cycles
     int cycle_count_;
 
-    
+    // Footprint-indexed potential interference neighbors: action_id → set of action_ids
+    // that share at least one fluent in their read/write footprints.
+    // Built once at first use; used to narrow the DFS in cycle detection.
+    std::unordered_map<int, std::vector<int>> potential_interferers_;
+    bool footprint_index_built_ = false;
+    void build_footprint_index();
+
 public:
     /**
      * @brief Constructor that registers with a solver (required for callbacks)

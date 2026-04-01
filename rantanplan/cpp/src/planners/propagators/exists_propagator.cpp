@@ -1,11 +1,10 @@
 #include "exists_propagator.hpp"
 #include "../../config/config.hpp"
-#include "../../util/memory_tracker.hpp"
 #include "../../util/stats.hpp"
 #include "../../encoders/z3_variable_factory.hpp"
+#include "../../encoders/grounded_encoder.hpp"
 #include "../../analysis/interference_analysis.hpp"
-#include <iostream>
-#include <set>
+#include "../../problem/visitors/fluent_collector.hpp"
 #include <algorithm>
 #include <functional>
 
@@ -111,34 +110,58 @@ void ExistsPropagator::cleanup() {
     stats.set("propagator.exists_total_cycles", cycle_count_);
 }
 
+void ExistsPropagator::build_footprint_index() {
+    if (footprint_index_built_) return;
+    footprint_index_built_ = true;
+
+    // fluent_eid → list of action IDs that read or write it
+    std::unordered_map<ExprID, std::vector<int>> fluent_to_actions;
+
+    for (const Action& action : problem_->actions()) {
+        int aid = action.id();
+
+        for (const auto& effect : action.effects()) {
+            fluent_to_actions[effect.effect_expression().fluent_id()].push_back(aid);
+        }
+
+        if (action.has_precondition()) {
+            FluentCollector collector(*problem_);
+            collector.collect_from_id(action.precondition_id());
+            for (ExprID fid : collector.get_fluents()) {
+                fluent_to_actions[fid].push_back(aid);
+            }
+        }
+    }
+
+    for (const auto& [fid, action_ids] : fluent_to_actions) {
+        for (size_t i = 0; i < action_ids.size(); ++i) {
+            for (size_t j = i + 1; j < action_ids.size(); ++j) {
+                int a = action_ids[i], b = action_ids[j];
+                if (a != b) {
+                    potential_interferers_[a].push_back(b);
+                    potential_interferers_[b].push_back(a);
+                }
+            }
+        }
+    }
+
+    // Deduplicate neighbor lists
+    for (auto& [aid, neighbors] : potential_interferers_) {
+        std::sort(neighbors.begin(), neighbors.end());
+        neighbors.erase(std::unique(neighbors.begin(), neighbors.end()), neighbors.end());
+    }
+}
+
 void ExistsPropagator::perform_exists_propagation(const Action& action, int timestep, const z3::expr& action_var) {
-    /*
-     * EXAMPLE: Cycle detection with EXISTS semantics (3-action cycle)
-     * 
-     * Say we have actions at timestep 1 that form a cycle:
-     *   - action_A (interferes with action_B)
-     *   - action_B (interferes with action_C)  
-     *   - action_C (interferes with action_A)
-     * 
-     * The interference pattern creates a cycle: A → B → C → A
-     * 
-     * When all three actions become active, we detect the cycle and report 
-     * conflict with ALL actions in the cycle: {action_A, action_B, action_C}
-     */
-    
-    // Get currently active action node IDs at this timestep (including the current action)
+    build_footprint_index();
     const std::unordered_set<int>& active_node_ids = active_actions_per_timestep_[timestep];
-    
-    // Check if there's a cycle among the active actions
+
     std::vector<int> cycle;
     if (find_cycle_in_active_actions(active_node_ids, cycle)) {
-        // Increment cycle counter
         cycle_count_++;
-        
-        // Report conflict with all actions in the cycle
+
         z3::expr_vector conflict_actions(action_var.ctx());
         for (int cycle_node_id : cycle) {
-            // Convert int back to Action to get the variable
             const Action* cycle_action = &problem_->action(cycle_node_id);
             z3::expr cycle_var = variable_factory_->get_action_variable(*cycle_action, timestep);
             conflict_actions.push_back(cycle_var);
@@ -147,55 +170,47 @@ void ExistsPropagator::perform_exists_propagation(const Action& action, int time
     }
 }
 
-bool ExistsPropagator::find_cycle_in_active_actions(const std::unordered_set<int>& active_node_ids, 
+bool ExistsPropagator::find_cycle_in_active_actions(const std::unordered_set<int>& active_node_ids,
                                                    std::vector<int>& cycle) {
     if (active_node_ids.size() < 2) return false;
-    
+
     std::unordered_set<int> visited;
     std::unordered_set<int> recursion_stack;
     std::vector<int> path;
-    
-    // Lambda for DFS with inline graph building
+
     std::function<bool(int)> dfs = [&](int current) -> bool {
         visited.insert(current);
         recursion_stack.insert(current);
         path.push_back(current);
-        
-        // Check interference with other active nodes
-        for (int other_node : active_node_ids) {
-            if (other_node == current) continue;
-            
-            if (interference_analyzer_->has_interference(current, other_node)) {
-                if (recursion_stack.contains(other_node)) {
-                    // Found back edge - cycle detected
-                    auto cycle_start = std::find(path.begin(), path.end(), other_node);
-                    cycle.assign(cycle_start, path.end());
-                    return true;
-                }
-                
-                if (!visited.contains(other_node)) {
-                    if (dfs(other_node)) {
+
+        // Use footprint index: only check actions sharing a read/write fluent
+        auto fp_it = potential_interferers_.find(current);
+        if (fp_it != potential_interferers_.end()) {
+            for (int other_node : fp_it->second) {
+                if (!active_node_ids.contains(other_node)) continue;
+                if (interference_analyzer_->has_interference(current, other_node)) {
+                    if (recursion_stack.contains(other_node)) {
+                        auto cycle_start = std::find(path.begin(), path.end(), other_node);
+                        cycle.assign(cycle_start, path.end());
                         return true;
+                    }
+                    if (!visited.contains(other_node)) {
+                        if (dfs(other_node)) return true;
                     }
                 }
             }
         }
-        
-        // Backtrack
+
         recursion_stack.erase(current);
         path.pop_back();
         return false;
     };
-    
-    // Try to find cycle starting from each unvisited node
+
     for (int start_node : active_node_ids) {
         if (!visited.count(start_node)) {
-            if (dfs(start_node)) {
-                return true;
-            }
+            if (dfs(start_node)) return true;
         }
     }
-    
     return false;
 }
 
