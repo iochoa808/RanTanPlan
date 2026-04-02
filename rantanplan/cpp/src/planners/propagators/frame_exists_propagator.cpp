@@ -48,21 +48,23 @@ void FrameExistsPropagator::on_pop(unsigned num_scopes) {
             }
         }
 
+        // Frame trail: restore only primary state, collect dirty clauses
         if (!frame_decision_levels_.empty()) {
             size_t frame_level_start = frame_decision_levels_.back();
             frame_decision_levels_.pop_back();
+
+            std::vector<uint32_t> dirty_clauses;
+
             while (frame_trail_.size() > frame_level_start) {
                 const auto& te = frame_trail_.back();
                 auto& clause = frame_clauses_[te.clause_idx];
 
-                switch (te.kind) {
+                switch (static_cast<VarRole::Kind>(te.kind)) {
                 case VarRole::FLUENT_T:
                     clause.ft_val = te.prev_state;
-                    clause.eq_state = te.prev_eq_state;
                     break;
                 case VarRole::FLUENT_T1:
                     clause.ft1_val = te.prev_state;
-                    clause.eq_state = te.prev_eq_state;
                     break;
                 case VarRole::EQ_BOOL:
                     clause.eq_state = te.prev_state;
@@ -74,10 +76,17 @@ void FrameExistsPropagator::on_pop(unsigned num_scopes) {
                     clause.entries[te.entry_idx].cond_state = te.prev_state;
                     break;
                 }
-                clause.num_cant_explain = te.prev_cant_explain;
-                clause.num_can_explain = te.prev_can_explain;
-                clause.owned = te.prev_owned;
+                dirty_clauses.push_back(te.clause_idx);
                 frame_trail_.pop_back();
+            }
+
+            // Recompute derived state for dirty clauses
+            std::sort(dirty_clauses.begin(), dirty_clauses.end());
+            dirty_clauses.erase(
+                std::unique(dirty_clauses.begin(), dirty_clauses.end()),
+                dirty_clauses.end());
+            for (uint32_t ci : dirty_clauses) {
+                recompute_derived(frame_clauses_[ci]);
             }
         }
     }
@@ -112,14 +121,11 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
     for (const VarRole& role : it->second) {
         auto& clause = frame_clauses_[role.clause_idx];
 
+        // Compact trail: save only the primary field
         FrameTrailEntry te;
-        te.clause_idx = role.clause_idx;
-        te.kind = role.kind;
-        te.entry_idx = role.entry_idx;
-        te.prev_eq_state = clause.eq_state;
-        te.prev_cant_explain = clause.num_cant_explain;
-        te.prev_can_explain = clause.num_can_explain;
-        te.prev_owned = clause.owned;
+        te.clause_idx = static_cast<uint32_t>(role.clause_idx);
+        te.kind = static_cast<uint8_t>(role.kind);
+        te.entry_idx = static_cast<uint32_t>(role.entry_idx);
 
         switch (role.kind) {
         case VarRole::FLUENT_T: {
@@ -402,6 +408,26 @@ void FrameExistsPropagator::register_frame_variables(int t) {
             clause.entries.push_back(entry);
         }
     }
+}
+
+// ============================================================================
+// Recompute derived counters from primary state
+// ============================================================================
+
+void FrameExistsPropagator::recompute_derived(FrameClause& clause) {
+    if (clause.is_boolean) {
+        if (clause.ft_val >= 0 && clause.ft1_val >= 0)
+            clause.eq_state = (clause.ft_val == clause.ft1_val) ? 1 : 0;
+        else
+            clause.eq_state = -1;
+    }
+    clause.num_cant_explain = 0;
+    clause.num_can_explain = 0;
+    for (const auto& entry : clause.entries) {
+        if (entry.cant_explain()) clause.num_cant_explain++;
+        if (entry.can_explain()) clause.num_can_explain++;
+    }
+    clause.owned = (clause.num_can_explain > 0);
 }
 
 // ============================================================================

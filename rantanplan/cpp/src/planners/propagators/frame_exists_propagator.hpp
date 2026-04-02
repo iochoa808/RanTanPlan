@@ -124,15 +124,14 @@ private:
         size_t entry_idx;
     };
 
+    // Compact trail entry: only saves the primary state field.
+    // Derived state (eq_state for booleans, counters, owned) is
+    // recomputed from primary fields on pop via recompute_derived().
     struct FrameTrailEntry {
-        size_t clause_idx;
-        VarRole::Kind kind;
-        size_t entry_idx;
-        int8_t prev_state;
-        int8_t prev_eq_state;
-        int prev_cant_explain;
-        int prev_can_explain;
-        bool prev_owned;
+        uint32_t clause_idx;
+        uint32_t entry_idx;
+        uint8_t kind;       // VarRole::Kind
+        int8_t prev_state;  // the ONLY primary field saved
     };
 
     std::vector<FrameClause> frame_clauses_;
@@ -165,6 +164,7 @@ private:
     int memo_hits_ = 0;
     int first_time_preservations_ = 0;
 
+    void recompute_derived(FrameClause& clause);
     void register_frame_variables(int t);
     void check_frame_clause(FrameClause& clause, size_t clause_idx);
     void report_frame_conflict(const FrameClause& clause, size_t clause_idx);
