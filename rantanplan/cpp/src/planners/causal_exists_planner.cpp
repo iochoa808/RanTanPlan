@@ -6,7 +6,6 @@
 #include "../util/memory_tracker.hpp"
 #include <algorithm>
 #include <chrono>
-#include <queue>
 #include <limits>
 
 namespace rantanplan {
@@ -186,8 +185,6 @@ void CausalExistsPlanner::initialize_achievers() {
     // Extract relaxed plan (h^ff-style)
     extract_relaxed_plan();
 
-    // Compute causal depths
-    compute_causal_depths();
 }
 
 void CausalExistsPlanner::extract_relaxed_plan() {
@@ -252,187 +249,7 @@ void CausalExistsPlanner::extract_relaxed_plan() {
     if (Config::instance().is_verbose()) {
         for (const Action* a : relaxed_plan_) {
             Logger::instance().info("    RP action: " + a->name() +
-                " (ARPG layer=" + std::to_string(achievers_->get_action_first_layer(a->id())) + ")");
-        }
-    }
-}
-
-void CausalExistsPlanner::compute_causal_depths() {
-    // BFS from init-satisfied conditions outward through the achiever graph.
-    //
-    // depth(C) = 0                             if C in init_satisfied
-    // depth(C) = 1 + min over achievers A of C:
-    //                max over preconds P of A:
-    //                    depth(P)              if all preconds have finite depth
-    // depth(C) = inf                           if unreachable
-    //
-    // The min over achievers picks the best way to achieve C.
-    // The max over preconditions identifies the bottleneck (critical path).
-
-    const int INF = std::numeric_limits<int>::max();
-
-    // Initialize: init-satisfied conditions have depth 0, all others INF
-    for (ExprID cond : init_satisfied_conditions_) {
-        condition_causal_depth_[cond] = 0;
-    }
-
-    // For each action, track how many preconditions still have infinite depth.
-    // When this reaches 0, the action is "ready" and we can compute its depth.
-    struct ActionInfo {
-        const Action* action;
-        int unsatisfied_preconds;   // preconds with depth == INF
-        int max_prec_depth;         // max depth across preconds with finite depth
-    };
-
-    // Build action info, keyed by action pointer
-    std::unordered_map<const Action*, ActionInfo> action_info;
-    // Reverse map: condition -> actions that have it as a precondition
-    std::unordered_map<ExprID, std::vector<const Action*>> condition_to_consumers;
-
-    for (const auto& [action_ptr, prec_ids] : action_precondition_ids_) {
-        ActionInfo info;
-        info.action = action_ptr;
-        info.unsatisfied_preconds = 0;
-        info.max_prec_depth = 0;
-
-        for (ExprID p : prec_ids) {
-            condition_to_consumers[p].push_back(action_ptr);
-            auto depth_it = condition_causal_depth_.find(p);
-            if (depth_it != condition_causal_depth_.end()) {
-                // Already satisfied (depth 0)
-                info.max_prec_depth = std::max(info.max_prec_depth, depth_it->second);
-            } else {
-                info.unsatisfied_preconds++;
-            }
-        }
-
-        action_info[action_ptr] = info;
-    }
-
-    // Actions with no preconditions are immediately ready (depth 1 for their effects)
-    // They aren't in action_precondition_ids_ so we handle them explicitly.
-    for (const Action& a : problem_.actions()) {
-        const Action* ptr = action_id_to_ptr_[a.id()];
-        if (action_info.find(ptr) == action_info.end()) {
-            // No preconditions -- action is always applicable at depth 0
-            ActionInfo info;
-            info.action = ptr;
-            info.unsatisfied_preconds = 0;
-            info.max_prec_depth = 0;
-            action_info[ptr] = info;
-        }
-    }
-
-    // BFS queue: conditions whose depth was just finalized
-    std::queue<ExprID> queue;
-    for (ExprID cond : init_satisfied_conditions_) {
-        queue.push(cond);
-    }
-
-    // Also seed: process all actions with 0 unsatisfied preconds
-    // (their effects can be computed immediately)
-    std::queue<const Action*> ready_actions;
-    for (auto& [ptr, info] : action_info) {
-        if (info.unsatisfied_preconds == 0) {
-            ready_actions.push(ptr);
-        }
-    }
-
-    while (!ready_actions.empty() || !queue.empty()) {
-        // Process ready actions: compute depths for their achieved conditions
-        while (!ready_actions.empty()) {
-            const Action* action = ready_actions.front();
-            ready_actions.pop();
-
-            auto& info = action_info[action];
-            int action_depth = 1 + info.max_prec_depth;
-
-            // For each condition this action achieves, update depth if improved
-            const auto& achieved = achievers_->get_achieved_conditions(*action);
-            for (ExprID cond : achieved) {
-                auto [it, inserted] = condition_causal_depth_.emplace(cond, action_depth);
-                if (!inserted) {
-                    if (action_depth < it->second) {
-                        it->second = action_depth;
-                        // Re-enqueue: this condition got a better depth
-                        queue.push(cond);
-                    }
-                    // No improvement
-                } else {
-                    // First time seeing this condition with finite depth
-                    queue.push(cond);
-                }
-            }
-        }
-
-        // Process queued conditions: notify consumer actions
-        while (!queue.empty()) {
-            ExprID cond = queue.front();
-            queue.pop();
-
-            int cond_depth = condition_causal_depth_[cond];
-
-            auto consumers_it = condition_to_consumers.find(cond);
-            if (consumers_it == condition_to_consumers.end()) continue;
-
-            for (const Action* consumer : consumers_it->second) {
-                auto& info = action_info[consumer];
-                // This condition just got a (possibly updated) depth.
-                // Decrement unsatisfied count on first finite depth.
-                // Always update max_prec_depth.
-                // Note: we may visit the same condition multiple times with
-                // improving depths, so we track the max carefully.
-                if (cond_depth < std::numeric_limits<int>::max()) {
-                    // Check if this is the first time this condition becomes finite
-                    // for this consumer. We use a simple approach: recompute from scratch.
-                    int new_unsatisfied = 0;
-                    int new_max = 0;
-                    auto prec_it = action_precondition_ids_.find(consumer);
-                    if (prec_it != action_precondition_ids_.end()) {
-                        for (ExprID p : prec_it->second) {
-                            auto d_it = condition_causal_depth_.find(p);
-                            if (d_it == condition_causal_depth_.end()) {
-                                new_unsatisfied++;
-                            } else {
-                                new_max = std::max(new_max, d_it->second);
-                            }
-                        }
-                    }
-                    info.unsatisfied_preconds = new_unsatisfied;
-                    info.max_prec_depth = new_max;
-
-                    if (info.unsatisfied_preconds == 0) {
-                        ready_actions.push(consumer);
-                    }
-                }
-            }
-        }
-    }
-
-    // Compute max goal depth
-    max_goal_depth_ = 0;
-    int unreachable_goals = 0;
-    for (ExprID g : goal_condition_ids_) {
-        auto it = condition_causal_depth_.find(g);
-        if (it != condition_causal_depth_.end() && it->second < INF) {
-            max_goal_depth_ = std::max(max_goal_depth_, it->second);
-        } else {
-            unreachable_goals++;
-        }
-    }
-
-    // Log results
-    Logger::instance().info("Causal depth analysis: max_goal_depth=" +
-        std::to_string(max_goal_depth_) +
-        ", conditions with depth: " + std::to_string(condition_causal_depth_.size()) +
-        ", unreachable goals: " + std::to_string(unreachable_goals));
-
-    if (Config::instance().is_verbose()) {
-        for (ExprID g : goal_condition_ids_) {
-            auto it = condition_causal_depth_.find(g);
-            int d = (it != condition_causal_depth_.end()) ? it->second : -1;
-            Logger::instance().info("    Goal c" + std::to_string(g.id) +
-                ": causal_depth=" + std::to_string(d));
+                " (RPG layer=" + std::to_string(achievers_->get_action_first_layer(a->id())) + ")");
         }
     }
 }
@@ -655,7 +472,6 @@ int CausalExistsPlanner::process_core(const z3::expr_vector& core) {
         Logger::instance().info("  Filtered: " + std::to_string(filtered) +
             " non-achiever blocking lits from core");
     }
-
 
     // Process tracked precondition failures: "activated action A at t needs
     // condition C" → activate the best enabler for C before t.
@@ -935,28 +751,33 @@ Plan CausalExistsPlanner::search() {
         refresh_goal(current_horizon_ + 1);
 
         stats.set("planner.rpg_lower_bound", static_cast<double>(start_ts));
-        stats.set("planner.causal_depth", static_cast<double>(max_goal_depth_));
         stats.set("planner.initial_horizon", static_cast<double>(current_horizon_));
 
         Logger::instance().info("Pre-extended horizon to " +
             std::to_string(current_horizon_) +
             " (RPG lower bound: " + std::to_string(start_ts) +
-            ", causal depth: " + std::to_string(max_goal_depth_) +
             ", relaxed plan: " + std::to_string(relaxed_plan_.size()) + " actions)");
     }
 
-    // 4. ARPG-guided seeding: place goal achievers and their enablers
-    //    at timesteps proportional to their ARPG layer.
+    // 4. RPG-guided seeding: place goal achievers and their enablers
+    //    at timesteps proportional to their RPG layer.
     //    cascade_bump is used HERE and ONLY here — during the main search
     //    loop, activity is maintained purely by core hits + decay.
     {
-        int arpg_layers = achievers_->get_arpg_num_layers();
+        // Use the max RPG layer among goal achievers as the denominator,
+        // not the total fixpoint layer count (which can be much larger
+        // due to numeric widening past goal reachability).
+        int max_goal_layer = 0;
+        for (const Action* action : goal_achiever_actions_) {
+            max_goal_layer = std::max(max_goal_layer,
+                achievers_->get_action_first_layer(action->id()));
+        }
 
         auto target_timestep = [&](const Action* a) -> int {
-            if (current_horizon_ == 0 || arpg_layers <= 1) return 0;
+            if (current_horizon_ == 0 || max_goal_layer <= 0) return 0;
             int layer = achievers_->get_action_first_layer(a->id());
             return std::min(current_horizon_,
-                            layer * current_horizon_ / (arpg_layers - 1));
+                            layer * current_horizon_ / max_goal_layer);
         };
 
         // Seed goal achievers at ARPG-proportional timesteps
@@ -1001,7 +822,7 @@ Plan CausalExistsPlanner::search() {
                 if (config.is_verbose()) {
                     Logger::instance().info("  Seed enabler: " +
                         action->name() + " at t=" + std::to_string(t) +
-                        " (ARPG layer=" +
+                        " (RPG layer=" +
                         std::to_string(achievers_->get_action_first_layer(action->id())) +
                         ", activity=" + std::to_string(score) + ")");
                 }
@@ -1012,7 +833,7 @@ Plan CausalExistsPlanner::search() {
             " goal achievers + " + std::to_string(enabler_count) +
             " cascade enablers across " + std::to_string(current_horizon_ + 1) +
             " timesteps (RPG lb: " + std::to_string(config.planner.start_timestep) +
-            ", ARPG layers: " + std::to_string(arpg_layers) + "), " +
+            ", max goal layer: " + std::to_string(max_goal_layer) + "), " +
             std::to_string(problem_.actions().size()) + " actions" +
             ", h^ff RP: " + std::to_string(relaxed_plan_.size()) + " actions");
     }

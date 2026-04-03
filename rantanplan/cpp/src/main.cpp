@@ -30,6 +30,7 @@
 #include "passes/interference_pass.hpp"
 #include "passes/static_fluent_pass.hpp"
 #include "passes/goal_relevance_pass.hpp"
+#include "analysis/numeric_relaxed_planning_graph.hpp"
 #include "analysis/numeric_constraint_analyzer.hpp"
 
 #include "z3++.h"

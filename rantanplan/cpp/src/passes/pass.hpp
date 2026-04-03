@@ -13,6 +13,7 @@ namespace rantanplan {
 // Forward declarations
 class InterferenceAnalysis;
 class AchieversAnalysis;
+class NumericRelaxedPlanningGraph;
 
 /**
  * @brief Accumulated state threaded through a preprocessing pipeline.
@@ -32,6 +33,7 @@ struct PipelineResult {
     StrategySpec resolved_spec{};               ///< Finalized strategy spec (from StrategyResolutionPass)
     std::unique_ptr<InterferenceAnalysis> interference; ///< Pre-built interference analyzer (from InterferencePass)
     std::unique_ptr<AchieversAnalysis> achievers; ///< Pre-built achiever analysis (from GoalRelevancePass)
+    std::unique_ptr<NumericRelaxedPlanningGraph> fixpoint_rpg; ///< Fixpoint RPG for reuse across passes
 };
 
 /**

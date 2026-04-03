@@ -1,5 +1,6 @@
 #include "pipeline.hpp"
 #include "../analysis/interference_analysis.hpp"
+#include "../analysis/numeric_relaxed_planning_graph.hpp"
 #include "../abstraction/achievers_analysis.hpp"
 #include "../util/scoped_timer.hpp"
 

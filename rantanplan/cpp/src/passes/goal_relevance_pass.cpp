@@ -35,27 +35,30 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
         iteration++;
 
         // Step 1: Build NumericRPG on current problem
-        NumericRelaxedPlanningGraph rpg(result.problem);
-        rpg.set_stop_when_all_reachable(false);  // Fixpoint for widest bounds
-        rpg.build();
+        auto rpg = std::make_unique<NumericRelaxedPlanningGraph>(result.problem);
+        rpg->set_stop_when_all_reachable(false);  // Fixpoint for widest bounds
+        rpg->build();
 
         AchieversAnalysis::RPGData rpg_data;
-        rpg_data.state_variable_bounds = rpg.get_state_variable_bounds();
-        rpg_data.action_first_layers = rpg.get_action_first_layers();
-        rpg_data.layer_count = static_cast<int>(rpg.get_layer_count());
+        rpg_data.state_variable_bounds = rpg->get_state_variable_bounds();
+        rpg_data.action_first_layers = rpg->get_action_first_layers();
+        rpg_data.layer_count = static_cast<int>(rpg->get_layer_count());
 
         // Update lower bound (RPG on the reduced problem may give a higher bound)
-        if (rpg.are_goals_achievable()) {
+        if (rpg->are_goals_achievable()) {
             result.lower_bound = std::max(result.lower_bound,
-                                          rpg.get_minimum_steps_lower_bound());
+                                          rpg->get_minimum_steps_lower_bound());
         }
 
         // Forward pruning: remove RPG-unreachable actions before achiever analysis
         // (reduces the number of SMT queries in the achiever check)
-        auto rpg_removable = rpg.get_removable_action_indices();
+        auto rpg_removable = rpg->get_removable_action_indices();
         if (!rpg_removable.empty()) {
             result.problem = result.problem.without_actions(rpg_removable);
         }
+
+        // Store for downstream reuse (LandmarkPass, planner)
+        result.fixpoint_rpg = std::move(rpg);
 
         // Step 2: Run AchieversAnalysis with pre-computed RPG data
         auto achievers = std::make_unique<AchieversAnalysis>(
@@ -113,17 +116,19 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
     //     so we need one final achiever computation on the final problem.
     if (iteration == max_iterations) {
         // Rebuild achievers on the final (reduced) problem
-        NumericRelaxedPlanningGraph rpg(result.problem);
-        rpg.set_stop_when_all_reachable(false);
-        rpg.build();
+        auto rpg = std::make_unique<NumericRelaxedPlanningGraph>(result.problem);
+        rpg->set_stop_when_all_reachable(false);
+        rpg->build();
 
         AchieversAnalysis::RPGData rpg_data;
-        rpg_data.state_variable_bounds = rpg.get_state_variable_bounds();
-        rpg_data.action_first_layers = rpg.get_action_first_layers();
-        rpg_data.layer_count = static_cast<int>(rpg.get_layer_count());
+        rpg_data.state_variable_bounds = rpg->get_state_variable_bounds();
+        rpg_data.action_first_layers = rpg->get_action_first_layers();
+        rpg_data.layer_count = static_cast<int>(rpg->get_layer_count());
 
         result.lower_bound = std::max(result.lower_bound,
-                                      rpg.get_minimum_steps_lower_bound());
+                                      rpg->get_minimum_steps_lower_bound());
+
+        result.fixpoint_rpg = std::move(rpg);
 
         final_achievers = std::make_unique<AchieversAnalysis>(
             result.problem, std::move(rpg_data));
