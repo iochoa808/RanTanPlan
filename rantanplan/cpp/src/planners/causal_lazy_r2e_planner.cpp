@@ -1,6 +1,6 @@
 #include "causal_lazy_r2e_planner.hpp"
 #include "../config/config.hpp"
-#include "../arpg/arpg.hpp"
+#include "../analysis/numeric_relaxed_planning_graph.hpp"
 #include "../util/logger.hpp"
 #include "../util/stats.hpp"
 #include "../util/memory_tracker.hpp"
@@ -31,11 +31,11 @@ void CausalLazyR2EPlanner::build_action_metadata() {
 }
 
 void CausalLazyR2EPlanner::compute_action_ordering() {
-    ARPG arpg(problem_);
-    if (arpg.construct_graph()) {
-        auto ordered = arpg.get_action_ordering();
+    NumericRelaxedPlanningGraph rpg(problem_);
+    if (rpg.build()) {
+        auto ordered = rpg.get_action_ordering();
         if (!ordered.empty()) {
-            Logger::instance().info("Causal Lazy R2E: using ARPG ordering (" +
+            Logger::instance().info("Causal Lazy R2E: using RPG ordering (" +
                 std::to_string(ordered.size()) + " actions)");
             action_ordering_ = std::move(ordered);
         }

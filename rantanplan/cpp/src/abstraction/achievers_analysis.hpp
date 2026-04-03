@@ -10,7 +10,6 @@
 #include "../encoders/grounded_encoding_visitor.hpp"
 #include "../encoders/z3_variable_factory.hpp"
 #include "../problem/visitors/fluent_collector.hpp"
-#include "../arpg/arpg.hpp"
 #include "../util/stats.hpp"
 #include <z3++.h>
 #include <memory>
@@ -99,8 +98,11 @@ private:
     // Problem reference for SMT encoding
     const Problem* problem_;
     
-    // State variable bounds from ARPG for SMT constraint generation
-    std::unordered_map<ExprID, Interval> state_variable_bounds_;
+    // State variable bounds for SMT constraint generation.
+    // Stored as (lower, upper) pairs to avoid Interval class name conflicts
+    // between grounding/interval.hpp and arpg/arpg.hpp.
+    struct Bounds { double lower; double upper; };
+    std::unordered_map<ExprID, Bounds> state_variable_bounds_;
 
     // ARPG action layer ordering: action_id → first ARPG layer where applicable
     std::unordered_map<int, int> action_id_to_first_layer_;

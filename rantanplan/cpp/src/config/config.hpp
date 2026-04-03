@@ -20,25 +20,25 @@ public:
     struct Global {
         VerbosityLevel verbosity = VerbosityLevel::INFO;
         bool debug_mode = false;
-        int timeout = 0;  // 0 = no timeout (run indefinitely)
+        int timeout = 0;              // 0 = no timeout (run indefinitely)
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
-        bool enable_rpg = true;              // Run NumericRPG for reachability check + lower bound
-        bool enable_action_removal = true;   // Prune unreachable actions using RPG results
         bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
-        double epsilon = 1e-6;  // Numerical tolerance for floating-point comparisons
-        // IMPORTANT: Early termination is UNSOUND for action removal with Numeric RPG!
-        // The relaxation uses interval bounds [lower, upper] which may contain values unreachable
-        // by actual execution. For example: if x=200 and we add 100, bounds become [200, 300],
-        // but intermediate values like 201 may be unreachable. This means actions applicable
-        // in later RPG layers (due to over-approximated bounds) might not be truly reachable,
-        // but we still need to discover them to avoid incorrect pruning. Therefore, we must
-        // build to fixpoint rather than stopping early when goals become achievable.
-        bool rpg_early_termination = false;  // Stop RPG construction when goals are reachable (DEFAULT: false - required for sound action removal)
-        bool reachability_grounding = true;  // C++ reachability grounding is the default; --up-grounding disables this
-        bool numeric_grounding = true;  // Numeric interval bounds in reachability grounder (disable with --no-numeric-grounding)
-        bool rpg_interval_checker = true;  // Use interval-based formula checker instead of Z3 for RPG applicability/goals (--smt-rpg-checker to revert to Z3)
+        double epsilon = 1e-6;        // Numerical tolerance for floating-point comparisons
+        bool reachability_grounding = true;  // --up-grounding disables this
+        bool numeric_grounding = true;       // --no-numeric-grounding disables this
     } global;
+
+    /// Numeric Relaxed Planning Graph settings.
+    struct RPG {
+        bool enabled = true;            ///< Run NumericRPG preprocessing (lower bound + action removal)
+        bool action_removal = true;     ///< Prune unreachable actions using RPG results
+        bool use_interval_checker = true; ///< Interval-based formula evaluator (--smt-rpg-checker reverts to Z3)
+        /// Stop when goals become achievable (before fixpoint). Default false:
+        /// early termination is unsound for action removal because later RPG layers
+        /// may discover actions reachable only through over-approximated bounds.
+        bool early_goal_termination = false;
+    } rpg;
     
     struct Planner {
         std::string strategy = "seq";  // Strategy name (replaces parallelism_strategy, encoder, propagator, interference)

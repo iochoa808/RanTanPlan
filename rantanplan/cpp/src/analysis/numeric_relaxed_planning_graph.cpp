@@ -111,19 +111,15 @@ bool NumericRelaxedPlanningGraph::LayerState::operator==(const LayerState& other
 // CONSTRUCTION
 // ============================================================================
 
-NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem, z3::context& ctx)
+NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem)
     : problem_(problem),
-      ctx_(ctx),
-      variable_factory_(ctx),
-      grounded_visitor_(ctx, &problem, &variable_factory_),
+      ctx_(),
+      variable_factory_(ctx_),
+      grounded_visitor_(ctx_, &problem, &variable_factory_),
       max_layers_(Config::instance().planner.max_steps),  // Read from config
-      batch_action_applicability_(false),  // Default: individual queries per action
-      enable_all_actions_reachable_termination_(true),  // For now we're only using the
-      // graph to compute goal reachability and action reachability. If at some point we
-      // want variable bounds, this would stop us maybe before the layer we want.
+      stop_when_all_reachable_(true),
       build_time_ms_(0.0),
       total_smt_queries_(0),
-      total_optimization_queries_(0),
       total_applicability_checks_(0),
       total_interval_checks_(0) {
 
@@ -380,13 +376,13 @@ bool NumericRelaxedPlanningGraph::build() {
         }
 
         // Early termination if goals are achievable (if enabled)
-        if (config.global.rpg_early_termination && are_goals_achievable()) {
+        if (config.rpg.early_goal_termination && are_goals_achievable()) {
             Logger::instance().verbose("Goals achievable - early termination at layer " + std::to_string(layer + 1));
             break;
         }
 
         // Early termination if all actions reachable and goals achieved (if enabled)
-        if (enable_all_actions_reachable_termination_ &&
+        if (stop_when_all_reachable_ &&
             are_all_actions_reachable() &&
             are_goals_achievable()) {
             Logger::instance().verbose("All " + std::to_string(action_layers_.back().size()) + 
@@ -417,7 +413,6 @@ bool NumericRelaxedPlanningGraph::build() {
     // Record to Stats
     Stats::instance().set("rpg.numeric.total_layers", layer_states_.size());
     Stats::instance().set("rpg.numeric.smt_queries", total_smt_queries_);
-    Stats::instance().set("rpg.numeric.optimization_queries", total_optimization_queries_);
     Stats::instance().set("rpg.numeric.applicability_checks", total_applicability_checks_);
     Stats::instance().set("rpg.numeric.interval_checks", total_interval_checks_);
     Stats::instance().set("rpg.numeric.total_actions", total_actions);
@@ -877,12 +872,7 @@ void NumericRelaxedPlanningGraph::precompute_freezes() {
 // ============================================================================
 
 std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actions(int layer) const {
-    // Choose between batch or individual based on configuration
-    if (batch_action_applicability_) {
-        return compute_applicable_actions_batch(layer);
-    } else {
-        return compute_applicable_actions_individual(layer);
-    }
+    return compute_applicable_actions_individual(layer);
 }
 
 std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actions_individual(int layer) const {
@@ -890,7 +880,7 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
     std::vector<const Action*> applicable_actions;
 
     // For each action, check if its precondition is satisfiable given the layer state
-    bool use_interval = Config::instance().global.rpg_interval_checker;
+    bool use_interval = Config::instance().rpg.use_interval_checker;
     for (const Action& action : problem_.actions()) {
         bool applicable = use_interval
             ? is_action_applicable_interval(action, layer)
@@ -1347,7 +1337,7 @@ bool NumericRelaxedPlanningGraph::are_goals_achievable() const {
 
     int final_layer = static_cast<int>(layer_states_.size()) - 1;
 
-    if (Config::instance().global.rpg_interval_checker) {
+    if (Config::instance().rpg.use_interval_checker) {
         return are_goals_achievable_at_layer_interval(final_layer);
     }
 
@@ -1379,7 +1369,7 @@ int NumericRelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
     int left = 0;
     int right = static_cast<int>(layer_states_.size()) - 1;
     int min_layer = right;
-    bool use_interval = Config::instance().global.rpg_interval_checker;
+    bool use_interval = Config::instance().rpg.use_interval_checker;
 
     while (left <= right) {
         int mid = (left + right) / 2;
@@ -1426,6 +1416,52 @@ const std::vector<const Action*>& NumericRelaxedPlanningGraph::get_actions_in_la
 }
 
 // ============================================================================
+// ACHIEVER ANALYSIS SUPPORT
+// ============================================================================
+
+std::unordered_map<int, int> NumericRelaxedPlanningGraph::get_action_first_layers() const {
+    std::unordered_map<int, int> first_layers;
+    for (int layer = 0; layer < static_cast<int>(action_layers_.size()); ++layer) {
+        for (const Action* action : action_layers_[layer]) {
+            first_layers.try_emplace(action->id(), layer);
+        }
+    }
+    return first_layers;
+}
+
+std::vector<const Action*> NumericRelaxedPlanningGraph::get_action_ordering() const {
+    auto first_layers = get_action_first_layers();
+    std::vector<const Action*> ordering;
+    ordering.reserve(first_layers.size());
+    for (const Action& a : problem_.actions()) {
+        if (first_layers.count(a.id())) {
+            ordering.push_back(&a);
+        }
+    }
+    std::stable_sort(ordering.begin(), ordering.end(),
+        [&](const Action* a, const Action* b) {
+            return first_layers.at(a->id()) < first_layers.at(b->id());
+        });
+    return ordering;
+}
+
+std::unordered_map<ExprID, Interval> NumericRelaxedPlanningGraph::get_state_variable_bounds() const {
+    std::unordered_map<ExprID, Interval> bounds;
+    if (layer_states_.empty()) return bounds;
+
+    int final_layer = static_cast<int>(layer_states_.size()) - 1;
+    const auto& final_state = layer_states_[final_layer];
+
+    // Numeric fluent bounds
+    for (const auto& [fluent_id, nb] : final_state.numeric_bounds) {
+        ExprID eid = problem_.grounded_fluent(fluent_id);
+        bounds.emplace(eid, Interval(nb.lower, nb.upper));
+    }
+
+    return bounds;
+}
+
+// ============================================================================
 // ACTION REMOVAL
 // ============================================================================
 
@@ -1458,7 +1494,6 @@ void NumericRelaxedPlanningGraph::print_statistics() const {
     std::cout << "Build time: " << build_time_ms_ << " ms" << std::endl;
     std::cout << "Total layers: " << layer_states_.size() << std::endl;
     std::cout << "Total SMT queries: " << total_smt_queries_ << std::endl;
-    std::cout << "Total optimization queries: " << total_optimization_queries_ << std::endl;
     std::cout << "Total applicability checks: " << total_applicability_checks_ << std::endl;
     std::cout << "Total interval checks: " << total_interval_checks_ << std::endl;
 

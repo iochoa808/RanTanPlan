@@ -9,15 +9,14 @@
 namespace rantanplan {
 
 void NumericRPGPass::apply(PipelineResult& result) const {
-    z3::context ctx;
-    NumericRelaxedPlanningGraph numeric_rpg(result.problem, ctx);
+    NumericRelaxedPlanningGraph numeric_rpg(result.problem);
 
     // When the problem has SDAC, we need the RPG to reach fixpoint so that
     // interval bounds on cost expressions are as tight as possible.
     bool need_sdac_bounds = result.problem.has_metric() &&
                             result.problem.has_state_dependent_costs();
     if (need_sdac_bounds) {
-        numeric_rpg.set_early_termination(false);
+        numeric_rpg.set_stop_when_all_reachable(false);
     }
 
     bool goals_reachable = numeric_rpg.build();
@@ -30,7 +29,7 @@ void NumericRPGPass::apply(PipelineResult& result) const {
 
     result.lower_bound = std::max(result.lower_bound, numeric_rpg.get_minimum_steps_lower_bound());
 
-    if (!Config::instance().global.enable_action_removal) {
+    if (!Config::instance().rpg.action_removal) {
         return;
     }
 

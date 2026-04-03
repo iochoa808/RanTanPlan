@@ -20,7 +20,6 @@
 #include "util/memory_tracker.hpp"
 #include "util/stats.hpp"
 #include "util/logger.hpp"
-#include "arpg/arpg.hpp"
 #include "passes/pipeline.hpp"
 #include "passes/numeric_rpg_pass.hpp"
 #include "passes/symmetry_pass.hpp"
@@ -284,7 +283,7 @@ int main(int argc, char* argv[]) {
     // expressions → tighter bounds, fewer variables).
     passes.push_back(&static_fluent_pass);
 
-    if (config.global.enable_rpg) {
+    if (config.rpg.enabled) {
         passes.push_back(&numeric_rpg_pass);
     }
 

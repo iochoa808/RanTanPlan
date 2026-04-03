@@ -144,7 +144,6 @@ add_executable(rantanplan
     src/planners/propagators/exists_propagator.cpp
     src/planners/propagators/frame_exists_propagator.cpp
     src/symmetries/smt_symmetry_checker.cpp
-    src/arpg/arpg.cpp
     src/abstraction/achievers_analysis.cpp
     src/analysis/relaxed_planning_graph.cpp
     src/analysis/numeric_relaxed_planning_graph.cpp

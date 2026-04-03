@@ -17,410 +17,33 @@
 
 /**
  * @file numeric_relaxed_planning_graph.hpp
- * @brief Numeric Relaxed Planning Graph with hybrid interval/SMT bounds
- *
- * Implements a relaxed planning graph that handles:
- * - Boolean fluents with ADL delete-relaxation (3-valued logic)
- * - Numeric fluents with interval arithmetic for bound propagation
- * - SMT-based joint satisfiability for action applicability and goals
- * - Directional widening for guaranteed termination
- *
- * ==========================================================================
- * IMPLEMENTATION PLAN: Hybrid Interval/SMT with Directional Widening
- * ==========================================================================
- *
- * Overview
- * --------
- * Replace the current "2 Z3 optimize calls per fluent per layer" bound
- * propagation with fast interval arithmetic, while keeping Z3 only for
- * action applicability and goal reachability checks where joint
- * satisfiability across multiple fluents genuinely matters. Add
- * directional widening (adapted from the grounding layer) to guarantee
- * termination for both linear and non-linear effects.
- *
- * Current cost model
- * ------------------
- * For a problem with F numeric fluents, A actions, and L layers:
- *   - Bound propagation: 2*F Z3 optimize calls per layer = 2*F*L total
- *   - Action applicability: A Z3 sat calls per layer = A*L total
- *   - Goal checks: ~L Z3 sat calls
- *   Total: (2F + A + 1) * L Z3 calls
- *
- * For a problem with 20 fluents, 50 actions, 50 layers: 4,550 Z3 calls.
- * The bound propagation accounts for 2,000 of those (44%).
- *
- * Target cost model (hybrid)
- * --------------------------
- *   - Bound propagation: F interval-arithmetic operations per layer
- *     (microseconds, no Z3)
- *   - Action applicability: A Z3 sat calls per layer (unchanged)
- *   - Goal checks: ~L Z3 sat calls (unchanged)
- *   Total: (A + 1) * L Z3 calls + negligible interval arithmetic
- *
- * Same example: 2,550 Z3 calls (44% reduction). The savings are
- * proportionally larger when F is large relative to A, which is common
- * in numeric-heavy domains.
- *
- * Why hybrid: motivating example
- * ------------------------------
- * Consider a logistics domain with numeric fuel tracking:
- *
- *   Fluents: fuel(truck1), fuel(truck2), load(truck1), load(truck2),
- *            distance(A,B), capacity(truck1), capacity(truck2)
- *   Actions:
- *     drive(truck1, A, B):
- *       pre: at(truck1, A), fuel(truck1) >= distance(A,B)
- *       eff: decrease(fuel(truck1), distance(A,B)),
- *            not at(truck1, A), at(truck1, B)
- *     load_pkg(truck1, pkg1, A):
- *       pre: at(truck1, A), at(pkg1, A), load(truck1) < capacity(truck1)
- *       eff: increase(load(truck1), 1), not at(pkg1, A), in(pkg1, truck1)
- *     refuel(truck1, A):
- *       pre: at(truck1, A), has_station(A)
- *       eff: assign(fuel(truck1), 100)
- *
- * Bound propagation: For fuel(truck1) at each layer, the question is
- * "what is the min/max fuel can be?" Given fuel ∈ [20, 100] and
- * distance(A,B) = 30:
- *   - drive decreases: fuel' = fuel - 30 → [20-30, 100-30] = [-10, 70]
- *   - refuel assigns: fuel' = 100
- *   - persistence: fuel' ∈ [20, 100]
- *   - Convex union: [-10, 100]
- *
- * Interval arithmetic gives [-10, 100]. Z3 optimize would give the same
- * result here — the min/max are determined by the individual branch
- * extremes, which interval arithmetic captures exactly. Z3 adds nothing.
- *
- * Where Z3 adds nothing: any time the bound of each branch can be
- * computed independently. This is the common case for bound propagation
- * because each effect typically modifies one fluent at a time.
- *
- * Action applicability and goal checking use Z3 to check satisfiability
- * of preconditions/goals against the layer's interval bounds. The layer
- * state is represented as independent box constraints (each boolean
- * fluent gets an independent reachability constraint, each numeric
- * fluent gets independent lower/upper bounds). There is no encoded
- * correlation between fluents.
- *
- * For most PDDL preconditions (e.g., fuel(truck1) >= distance(A,B)
- * where distance is a constant fluent, or fuel(truck1) >= 50), a
- * simple 3-valued recursive evaluator over the formula tree — checking
- * boolean reachability at leaves and interval satisfiability at numeric
- * comparisons — would give the same result as Z3. The boolean and
- * numeric parts don't interact in the layer constraints.
- *
- * Where Z3 genuinely helps: joint satisfiability of MULTIPLE numeric
- * constraints over MULTIPLE non-constant fluents. Example:
- *
- *   pre: (x >= y) AND (y >= x + 1)
- *
- * With x ∈ [0, 10], y ∈ [0, 10]: each comparison passes individually
- * (10 >= 0, 10 >= 1), but jointly x >= y AND y >= x+1 implies y > y,
- * a contradiction. Interval arithmetic per-atom says "satisfiable";
- * Z3 correctly determines UNSAT. The same applies to goal conjunctions.
- *
- * In practice, most standard planning domains have numeric preconditions
- * comparing a single fluent against a constant or a constant fluent
- * (never modified), so this precision advantage is rare. Z3's main
- * value here is engineering convenience: it handles arbitrary formula
- * structure (nested AND/OR/NOT with mixed boolean-numeric atoms)
- * without needing a custom evaluator.
- *
- * Summary: interval arithmetic for propagation (per-fluent, independent
- * branches, exact or near-exact). Z3 for satisfiability as a convenient
- * generic formula evaluator, with a genuine precision advantage only
- * when multiple non-constant numeric fluents interact within a single
- * precondition or goal conjunction.
- *
- * Directional widening
- * --------------------
- * Problem: numeric fluents with unbounded effects (constant additive or
- * non-linear) cause intervals to grow every layer without converging.
- * E.g., increment(counter, 1) causes upper bound to grow by 1 per
- * layer, requiring 100 layers for goal value >= 100.
- *
- * Solution: adapted from NumericBoundsIndex (grounding/numeric_bounds_
- * index.{hpp,cpp}). Per fluent, per side (lower/upper), track how many
- * consecutive layers the bound has moved. After a threshold, snap that
- * side to +-infinity.
- *
- * For each numeric fluent f, maintain:
- *   lower_expansion_count[f] -- incremented when bounds[f].lower shrinks
- *   upper_expansion_count[f] -- incremented when bounds[f].upper grows
- *
- * After computing bounds at layer k+1 via interval arithmetic:
- *   1. If bounds[k+1].lower < bounds[k].lower: lower_count[f]++
- *   2. If bounds[k+1].upper > bounds[k].upper: upper_count[f]++
- *   3. If lower_count[f] >= WIDENING_THRESHOLD and not frozen:
- *      set bounds[k+1].lower = -infinity
- *   4. If upper_count[f] >= WIDENING_THRESHOLD and not frozen:
- *      set bounds[k+1].upper = +infinity
- *   5. Once a side is at infinity, it never changes (contributes to
- *      fixpoint).
- *
- * WIDENING_THRESHOLD is an internal constant (not CLI-exposed), default
- * 3, matching the grounding layer.
- *
- * Ceiling/floor freezing
- * ----------------------
- * Lifted effect analysis (same logic as NumericBoundsIndex::
- * precompute_freezes()) determines which fluent schemas can never have
- * their upper/lower bound moved by any effect:
- *   - INCREASE with value range [a,b]: if b > 0, can't freeze upper;
- *     if a < 0, can't freeze lower.
- *   - DECREASE with value range [a,b]: if b > 0, can't freeze lower;
- *     if a < 0, can't freeze upper.
- *   - ASSIGN with unbounded value: can't freeze either side.
- * Frozen sides are never widened, preserving finite bounds where
- * structurally guaranteed.
- *
- * Termination guarantee
- * ---------------------
- * After at most (WIDENING_THRESHOLD * |numeric_fluents|) layers of
- * non-convergence, every non-frozen side reaches infinity. At that
- * point the only changing things are boolean reachability (finite set)
- * and frozen numeric sides (bounded by distinct constant-effect values).
- * Both are finite, so fixpoint is guaranteed.
- *
- * Unsolvability can ONLY be proven at fixpoint: if all layers have been
- * computed, the state is stable, and goals are still unreachable, then
- * the problem is proven unsolvable. Stopping early (by goal achievement
- * or max_layers) cannot prove unsolvability.
- *
- * Stopping criterion
- * ------------------
- * Primary: goal reachability (first layer where are_goals_achievable()
- * returns true). Widening accelerates this by quickly expanding
- * intervals to cover goal thresholds.
- *
- * Secondary: fixpoint. With widening, fixpoint is guaranteed reachable.
- * If fixpoint is reached and goals are still unreachable, the problem
- * is proven unsolvable.
- *
- * At the goal layer, the graph provides:
- *   - Lower bound on plan length (layer number)
- *   - RPG graph structure for landmark extraction
- *   - Numeric bounds at goal layer
- *   - Action reachability per layer
- *
- * Effect on precision
- * -------------------
- * Two sources of precision change vs. current implementation:
- *
- * 1. Interval arithmetic vs Z3 optimize for bounds: interval arithmetic
- *    over-approximates when effects have cross-fluent dependencies. In
- *    practice this is rare for bound propagation (effects typically
- *    modify one fluent). The over-approximation is sound.
- *
- * 2. Widening: after threshold layers, widened sides go to +-infinity.
- *    Goals may appear reachable earlier (weaker lower bound). Sound.
- *
- * Worked example: Counters domain
- * --------------------------------
- * Domain: counter c, initial value 0, goal value(c) >= 100.
- * Actions: increment(c) with effect increase(value(c), 1).
- *          decrement(c) with effect decrease(value(c), 1),
- *                       precondition value(c) >= 1.
- *
- * Freeze analysis:
- *   - increment: INCREASE by 1 ([1,1]). upper > 0 -> can't freeze
- *     upper. lower >= 0 -> CAN freeze lower.
- *   - decrement: DECREASE by 1 ([1,1]). upper > 0 -> can't freeze
- *     lower. lower >= 0 -> CAN freeze upper.
- *   - Combined: can_freeze_upper = false (increment raises it),
- *     can_freeze_lower = false (decrement lowers it).
- *   - Neither side frozen.
- *
- * Wait -- that seems wrong for this domain since decrement has
- * precondition value(c) >= 1 which prevents going below 0. But freeze
- * analysis is purely syntactic (effect structure only, ignores
- * preconditions). This is sound: we may widen a side that wouldn't
- * actually move, but never fail to widen a side that would. The
- * conservatism costs precision, not correctness.
- *
- * Without widening (current behavior):
- *   Layer 0:  value(c) = [0, 0]
- *   Layer 1:  value(c) = [0, 1]     (increment available, decrement not)
- *   Layer 2:  value(c) = [-1, 2]    (decrement now available)
- *   ...
- *   Layer 100: value(c) = [-99, 100] <- goals reachable
- *   200 Z3 optimize calls + 200 applicability calls = 400 Z3 calls
- *
- * With hybrid + widening (threshold = 3):
- *   Layer 0:  [0, 0]      (interval arithmetic: free)
- *   Layer 1:  [0, 1]      upper_count=1 (interval: free)
- *   Layer 2:  [-1, 2]     upper_count=2, lower_count=1
- *   Layer 3:  [-2, 3]     upper_count=3 -> WIDEN upper to +inf
- *                          lower_count=2
- *   Layer 4:  [-3, +inf)  lower_count=3 -> WIDEN lower to -inf
- *                          [-inf, +inf)
- *   Layer 5:  [-inf, +inf). Fixpoint on numeric side.
- *             Goal value(c) >= 100: trivially satisfiable.
- *             -> STOP, goals reachable.
- *   0 Z3 optimize calls + ~10 applicability calls = ~10 Z3 calls
- *
- * Lower bound: 5 layers (weaker than true minimum of 100). For tighter
- * bounds with constant effects, use action counting (LM.md Part 5).
- *
- * Worked example: Zenotravel with fuel
- * -------------------------------------
- * Fluent fuel(plane1), initial 100. max_fuel = 200 (constant).
- *   fly(p1,c1,c2): decrease(fuel, distance(c1,c2) * slow_burn)
- *                   -- state-dependent, non-linear
- *   refuel(p1,c1): assign(fuel, max_fuel)
- *                   -- constant value 200
- *
- * Freeze analysis:
- *   - fly: DECREASE with state-dependent (unbounded) value ->
- *     can't freeze either side.
- *   - refuel: ASSIGN with constant 200 -> bounded, OK.
- *   - Combined: neither side frozen (conservative).
- *
- * With hybrid + widening (threshold = 3):
- *   Layer 0: [100, 100]
- *   Layer 1: [100-d, 200]  (fly decreases by some amount, refuel
- *            assigns 200). Interval arithmetic:
- *            - persistence: [100, 100]
- *            - fly: [100, 100] - eval(distance*burn) = [100-d, 100]
- *              where d = interval eval of distance*burn from current
- *              state bounds
- *            - refuel: [200, 200] (assign constant)
- *            - convex union: [100-d, 200]
- *            upper_count=1 (200 > 100), lower_count=1
- *   Layer 2: [lower', 200]. Upper stays at 200 because the only way
- *            to raise fuel is refuel which caps at 200. upper_count
- *            stays at 1. lower_count=2.
- *   Layer 3: lower shrinks again, lower_count=3 -> WIDEN lower.
- *            fuel = [-inf, 200]. upper_count still 1.
- *   Layer 4: [-inf, 200]. Numeric fixpoint. Only boolean changes
- *            drive further layers.
- *
- * Upper bound preserved at 200 without freezing: the expansion counter
- * for upper never hits threshold because refuel caps fuel and no
- * effect raises it further. Directional widening only widens the
- * moving side.
- *
- * Why hybrid helps here: at each layer, fuel bounds are computed by
- * evaluating "persistence ∪ fly_effect ∪ refuel_effect" via interval
- * arithmetic. The fly effect involves distance * slow_burn, which is
- * a non-linear expression evaluated over intervals -- interval
- * multiplication handles this directly. No Z3 optimize call needed.
- * Z3 is only called for action applicability: "is fly applicable
- * given fuel ∈ [-inf, 200] and distance ∈ [d1, d2]?" -- a joint
- * satisfiability check that Z3 handles well.
- *
- * Integration steps
- * -----------------
- * All changes within this class. No new files needed.
- *
- * Step 1: Add interval evaluation infrastructure.
- *
- *   Add a method to evaluate an ExprID to an Interval using current
- *   layer bounds. Reuse the Interval class from grounding/interval.hpp.
- *   The evaluator walks the expression tree:
- *     - Constants -> point interval [c, c]
- *     - State variables -> lookup in current layer's numeric_bounds,
- *       converting NumericBounds to Interval
- *     - Arithmetic (+, -, *) -> interval arithmetic
- *     - Unknown/unsupported -> Interval::unbounded() (safe fallback)
- *
- *   This mirrors RelaxedState::evaluate_expression() from arpg.hpp
- *   but operates on NumericBounds and ground fluent IDs instead of
- *   string-keyed variables.
- *
- * Step 2: Replace compute_single_variable_bounds() with interval
- *         propagation.
- *
- *   For each numeric fluent f with effects from applicable actions:
- *     branches = { persistence: current_bounds[f] }
- *     for each (action, effect) in epc_index_[f]:
- *       if action is applicable at this layer:
- *         switch effect.kind():
- *           ASSIGN:   branches.add(evaluate_interval(effect.value))
- *           INCREASE: branches.add(current + evaluate_interval(value))
- *           DECREASE: branches.add(current - evaluate_interval(value))
- *     new_bounds = convex_union(all branches)
- *
- *   This replaces 2 Z3 optimize calls with O(effects) interval ops.
- *
- * Step 3: Add widening state and freeze analysis.
- *
- *   Member variables:
- *     std::unordered_map<int, int> lower_expansion_count_;
- *     std::unordered_map<int, int> upper_expansion_count_;
- *     std::unordered_set<int> freeze_upper_;
- *     std::unordered_set<int> freeze_lower_;
- *     static constexpr int WIDENING_THRESHOLD = 3;
- *
- *   At construction: run precompute_freezes() using the same logic
- *   as NumericBoundsIndex::precompute_freezes(). ~60 lines, can
- *   duplicate or extract to shared utility.
- *
- *   The freeze analysis is per schema (lifted). Map to ground IDs:
- *   for each ground fluent ID, find its schema via the ExprPool and
- *   check if that schema is frozen.
- *
- * Step 4: Apply widening after interval propagation.
- *
- *   After computing new_bounds for fluent f at layer k+1:
- *     prev = layer_states_[k].numeric_bounds[f];
- *     if (new_bounds.lower < prev.lower) lower_expansion_count_[f]++;
- *     if (new_bounds.upper > prev.upper) upper_expansion_count_[f]++;
- *     if (!freeze_lower_[f] && lower_count[f] >= WIDENING_THRESHOLD)
- *       new_bounds.lower = -infinity;
- *     if (!freeze_upper_[f] && upper_count[f] >= WIDENING_THRESHOLD)
- *       new_bounds.upper = +infinity;
- *
- * Step 5: Handle infinity in add_numeric_constraints().
- *
- *   When emitting Z3 constraints for a layer (used by applicability
- *   and goal checks), skip the constraint for an infinite bound:
- *     if (!std::isinf(bounds.lower))
- *       solver.add(fluent >= real_val(bounds.lower));
- *     if (!std::isinf(bounds.upper))
- *       solver.add(fluent <= real_val(bounds.upper));
- *
- * Step 6: Fix NumericBounds::operator== for infinity.
- *
- *   std::abs(inf - inf) is NaN. Add exact-equality fast path:
- *     if (lower == other.lower && upper == other.upper) return true;
- *     // then epsilon check for finite values
- *
- * Step 7: Remove Z3 optimizer dependency from bound propagation.
- *
- *   The z3_optimizer_ member and compute_bound_optimization() method
- *   become unused for bound propagation. Keep them if needed for other
- *   purposes, or remove to simplify. The Z3 context and solver are
- *   still needed for applicability/goal checks.
- *
- * Validation
- * ----------
- * 1. Correctness: interval arithmetic over-approximates (convex union
- *    of independent branch evaluations). Widening further over-
- *    approximates. Both are sound for the RPG's purpose.
- *    - Goals unreachable at fixpoint -> proven unsolvable (sound).
- *    - Goals reachable -> valid (may be earlier layer than without
- *      widening, giving weaker lower bound but never incorrect).
- *
- * 2. Testing: `python test.py` before and after. All tests must pass.
- *    The RPG analysis changes but plan correctness is unaffected
- *    (the RPG only informs preprocessing, not the solver itself).
- *
- * 3. Performance: compare RPG build times, layer counts, and total
- *    Z3 calls on numeric benchmarks (counters, zenotravel, sailing)
- *    before (pure Z3) and after (hybrid + widening). Expect large
- *    reductions in Z3 calls and build time.
- *
- * 4. Precision regression: lower bounds from get_minimum_steps_lower_
- *    bound() should be <= bounds without widening (weaker but sound).
- *    Action removal should be <= as aggressive (fewer removals but
- *    sound). Any violation indicates a bug.
- *
- * ==========================================================================
+ * @brief Numeric Relaxed Planning Graph with hybrid interval/SMT architecture
+ *
+ * Layer-by-layer delete-relaxed planning graph:
+ *
+ * - Boolean fluents: 3-valued reachability (FALSE_ONLY / TRUE_ONLY / BOTH)
+ *   with monotonic transitions under ADL delete-relaxation.
+ *
+ * - Numeric fluents: interval arithmetic for bound propagation. Each effect
+ *   branch is evaluated as an interval; layer result is convex union of all
+ *   branches including persistence. No Z3 calls for bound propagation.
+ *
+ * - Action applicability / goal checks: by default, interval-based 3-valued
+ *   formula evaluation. --smt-rpg-checker reverts to per-action Z3 SAT queries
+ *   for cases where joint multi-variable constraints need exact reasoning.
+ *
+ * - Directional widening: per-fluent, per-side expansion counters. After
+ *   WIDENING_THRESHOLD (3) consecutive expansions, the side snaps to +-inf.
+ *   Frozen sides (from lifted effect analysis) are exempt. Guarantees
+ *   termination for both linear and non-linear effects.
+ *
+ * Termination criteria (independent, both on by default):
+ *   1. Config::RPG::early_goal_termination: stop when goals are achievable.
+ *   2. set_stop_when_all_reachable(true): stop when all actions are reachable
+ *      AND goals are achievable.
+ * Disabling both runs to true fixpoint (needed for sound variable bounds
+ * in AchieversAnalysis and cost lower bounds).
  */
-
-  // TODO: Improve how action applicability is computed. Currently, we either do
-  // it one by one (many SMT calls), but we can do them in batch (one big SMT call)
 
 namespace rantanplan {
 
@@ -460,11 +83,11 @@ public:
     };
 
     /**
-     * @brief Bounds for numeric fluents (always bounded)
+     * @brief Bounds for numeric fluents.
      *
-     * Since initial state is fully defined, numeric variables start with
-     * point bounds [value, value] and monotonically expand through effects.
-     * Bounds are computed via Z3 optimization (minimize/maximize).
+     * Initial state has point bounds [value, value]. Effects monotonically
+     * expand bounds via interval arithmetic. Directional widening snaps
+     * persistently-expanding sides to +-infinity for termination.
      */
     struct NumericBounds {
         double lower;
@@ -520,9 +143,8 @@ public:
     /**
      * @brief Construct a numeric relaxed planning graph
      * @param problem The planning problem (grounded)
-     * @param ctx Shared Z3 context (passed by reference)
      */
-    NumericRelaxedPlanningGraph(const Problem& problem, z3::context& ctx);
+    explicit NumericRelaxedPlanningGraph(const Problem& problem);
     ~NumericRelaxedPlanningGraph() = default;
 
     // Disable copying (Z3 context is not copyable)
@@ -547,79 +169,39 @@ public:
      */
     bool build();
 
-    /**
-     * @brief Reset the graph to initial state (allows rebuilding)
-     */
-    void reset();
-
     // ========================================================================
-    // QUERY METHODS - Goals
+    // QUERY METHODS
     // ========================================================================
 
-    /**
-     * @brief Check if all goal conditions are achievable
-     *
-     * Uses the same SMT-based approach as action applicability checking:
-     * - Adds layer constraints
-     * - Adds all goal expressions from problem_.goals()
-     * - Checks satisfiability via Z3
-     */
     bool are_goals_achievable() const;
-
-    /**
-     * @brief Get minimum number of steps (layer transitions) to achieve goals
-     *
-     * @return minimum steps, or -1 if goals not achievable
-     */
     int get_minimum_steps_lower_bound() const;
-
-    // ========================================================================
-    // QUERY METHODS - Fluents
-    // ========================================================================
-
-    /**
-     * @brief Get Boolean reachability at specific layer
-     */
-    BooleanReachability get_boolean_reachability(ExprID fluent_eid, int layer) const;
-
-    /**
-     * @brief Get reachability status at final layer
-     */
-    BooleanReachability get_boolean_reachability(ExprID fluent_eid) const;
-
-    /**
-     * @brief Get numeric bounds at specific layer
-     */
-    NumericBounds get_numeric_bounds(ExprID fluent_eid, int layer) const;
-
-    /**
-     * @brief Get numeric bounds at final layer
-     */
-    NumericBounds get_numeric_bounds(ExprID fluent_eid) const;
-
-    // ========================================================================
-    // QUERY METHODS - Actions
-    // ========================================================================
-
-    /**
-     * @brief Get all actions that are applicable in a given layer
-     */
     const std::vector<const Action*>& get_actions_in_layer(int layer) const;
-
-    /**
-     * @brief Check if action is applicable at specific layer
-     */
-    bool is_action_applicable(const Action& action, int layer) const;
-
-    /**
-     * @brief Get indices of actions that can be safely removed (never applicable in any layer)
-     */
     std::vector<size_t> get_removable_action_indices() const;
 
     /**
      * @brief Get total number of layers
      */
     size_t get_layer_count() const { return layer_states_.size(); }
+
+    /**
+     * @brief Get first layer at which each action becomes applicable.
+     * @return Map from action ID to first applicable layer index.
+     */
+    std::unordered_map<int, int> get_action_first_layers() const;
+
+    /// Actions ordered by first layer of applicability (stable sort by action ID within layer).
+    std::vector<const Action*> get_action_ordering() const;
+
+    /**
+     * @brief Get state variable bounds at the final layer, keyed by ExprID.
+     *
+     * Returns both numeric interval bounds and boolean reachability
+     * (booleans with TRUE_ONLY or BOTH get interval [1,1]; FALSE_ONLY
+     * are omitted since they contribute no constraint).
+     *
+     * Format matches what AchieversAnalysis expects for SMT bound constraints.
+     */
+    std::unordered_map<ExprID, Interval> get_state_variable_bounds() const;
 
     // ========================================================================
     // INTERVAL EVALUATION (public for cost bound analysis)
@@ -639,23 +221,14 @@ public:
      */
     Interval evaluate_interval(ExprID eid, int layer) const;
 
-    /**
-     * @brief Control early termination behavior.
-     *
-     * When set to false, build() will only stop at true fixpoint —
-     * required for sound cost lower bounds via evaluate_interval().
-     * Default is true (stop when all actions reachable + goals achieved).
-     */
-    void set_early_termination(bool enable) { enable_all_actions_reachable_termination_ = enable; }
+    /// Stop when all actions are reachable AND goals are achievable (default: true).
+    /// Disabling this causes build() to run to true fixpoint.
+    void set_stop_when_all_reachable(bool enable) { stop_when_all_reachable_ = enable; }
 
     // ========================================================================
     // DEBUG AND ANALYSIS
     // ========================================================================
 
-    void print_debug_info() const;
-    void print_boolean_evolution() const;
-    void print_numeric_bounds_evolution() const;
-    void print_reachability_analysis() const;
     void print_statistics() const;
     void print_layer_summary(int layer) const;
     void print_action_applicability(int layer, const std::vector<const Action*>& applicable) const;
@@ -686,9 +259,9 @@ private:
     // MEMBER VARIABLES - Z3 Infrastructure
     // ========================================================================
 
-    z3::context& ctx_;  // SHARED: reference to external Z3 context
-    Z3VariableFactory variable_factory_;  // OWNED: manages Z3 variables per layer
-    mutable GroundedEncodingVisitor grounded_visitor_;  // OWNED: converts Expression → z3::expr (mutable for const methods)
+    mutable z3::context ctx_;              // Owned Z3 context (mutable: Z3 API is not const-correct)
+    Z3VariableFactory variable_factory_;   // Z3 variable management per layer
+    mutable GroundedEncodingVisitor grounded_visitor_;  // ExprID -> z3::expr (mutable for const methods)
 
     // Maps each fluent to the actions/effects that can modify it
     // Enables O(effects_for_fluent) lookup instead of O(all_actions * all_effects)
@@ -717,8 +290,7 @@ private:
     // ========================================================================
 
     int max_layers_;
-    bool batch_action_applicability_;
-    bool enable_all_actions_reachable_termination_;  // Enable early termination when all actions reachable + goals achieved
+    bool stop_when_all_reachable_;  ///< Stop when all actions reachable + goals achieved
 
     // ========================================================================
     // MEMBER VARIABLES - Statistics
@@ -726,7 +298,6 @@ private:
 
     mutable double build_time_ms_;
     mutable size_t total_smt_queries_;
-    mutable size_t total_optimization_queries_;
     mutable size_t total_applicability_checks_;
     mutable size_t total_interval_checks_;
 
@@ -761,12 +332,6 @@ private:
     // ========================================================================
     // PRIVATE METHODS - Main Algorithm
     // ========================================================================
-
-    /**
-     * @brief Build next layer from current layer
-     * @return true if new layer created, false if fixpoint reached
-     */
-    bool build_next_layer();
 
     /**
      * @brief Check if fixpoint has been reached

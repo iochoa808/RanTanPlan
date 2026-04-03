@@ -1,5 +1,7 @@
 #include "r2e_grounded_encoder.hpp"
+#include "../analysis/numeric_relaxed_planning_graph.hpp"
 #include "../util/stats.hpp"
+#include "../util/logger.hpp"
 #include "../config/config.hpp"
 #include <algorithm>
 #include <cassert>
@@ -31,22 +33,21 @@ void R2EGroundedEncoder::build_action_ordering() {
                 global_action_order_.push_back(&action);
             }
             break;
-        case ActionOrdering::ARPG:
-            // Extract ordering from ARPG layers
-            global_action_order_ = extract_arpg_ordering();
+        case ActionOrdering::RPG:
+            // Extract ordering from NumericRPG layers
+            global_action_order_ = extract_rpg_ordering();
             break;
     }
 
     Stats::instance().set("encoder.r2e.total_actions", global_action_order_.size());
 }
 
-std::vector<const Action*> R2EGroundedEncoder::extract_arpg_ordering() {
-    // Create ARPG and construct the graph
-    ARPG arpg(problem_);
-    bool goal_reachable = arpg.construct_graph();
+std::vector<const Action*> R2EGroundedEncoder::extract_rpg_ordering() {
+    NumericRelaxedPlanningGraph rpg(problem_);
+    bool goal_reachable = rpg.build();
 
     if (!goal_reachable) {
-        std::cout << "Warning: ARPG could not reach the goal. Using declaration order as fallback." << std::endl;
+        Logger::instance().info("Warning: RPG could not reach the goal. Using declaration order as fallback.");
         std::vector<const Action*> fallback_order;
         for (const Action& action : problem_.actions()) {
             fallback_order.push_back(&action);
@@ -54,16 +55,10 @@ std::vector<const Action*> R2EGroundedEncoder::extract_arpg_ordering() {
         return fallback_order;
     }
 
-    // Use detailed ARPG supporter ordering to get high-quality action ordering
-    std::vector<const Action*> arpg_ordered_actions = arpg.get_action_ordering();
-    // Get detailed supporter ordering for analysis
-    auto supporter_ordering = arpg.get_supporter_ordering();
-
-    std::cout << "ARPG ordering: " << supporter_ordering.size() << " supporters across "
-              << arpg.get_num_iterations() << " iterations, "
-              << arpg_ordered_actions.size() << " unique actions" << std::endl;
-
-    return arpg_ordered_actions;
+    auto ordered = rpg.get_action_ordering();
+    Logger::instance().info("R2E RPG ordering: " + std::to_string(ordered.size()) +
+        " actions across " + std::to_string(rpg.get_layer_count()) + " layers");
+    return ordered;
 }
 
 

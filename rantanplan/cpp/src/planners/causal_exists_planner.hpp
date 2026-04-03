@@ -80,6 +80,13 @@ protected:
     std::unordered_set<const Action*> goal_achiever_actions_;
     std::unordered_set<const Action*> goal_relevant_actions_;
 
+    // ---- Causal depth analysis ----
+
+    /// Minimum sequential chain depth from initial state to each condition.
+    std::unordered_map<ExprID, int> condition_causal_depth_;
+    /// Maximum causal depth across all goal conditions.
+    int max_goal_depth_ = 0;
+
     // ---- Relaxed plan (h^ff-style backward extraction) ----
 
     std::vector<const Action*> relaxed_plan_;
@@ -114,6 +121,7 @@ protected:
     void build_action_id_map();
     void build_condition_achiever_cache();
     void compute_init_satisfied_conditions();
+    void compute_causal_depths();
     void extract_relaxed_plan();
 
     // ---- Timestep management ----

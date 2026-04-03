@@ -1,5 +1,5 @@
 #include "achievers_analysis.hpp"
-#include "../arpg/arpg.hpp"
+#include "../analysis/numeric_relaxed_planning_graph.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/logger.hpp"
 #include <iostream>
@@ -23,35 +23,40 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     // Initialize persistent solver for push/pop approach
     persistent_solver_ = std::make_unique<z3::solver>(*ctx_);
 
-    // Time ARPG computation
-    auto start_arpg = std::chrono::high_resolution_clock::now();
+    // Build a NumericRelaxedPlanningGraph to compute state variable bounds
+    // and action layer ordering (replaces the ARPG).
+    // Disable early termination so the graph runs to fixpoint, producing the
+    // widest possible numeric bounds for the SMT achiever queries.
+    auto start_rpg = std::chrono::high_resolution_clock::now();
 
-    ARPG arpg(problem);
-    bool goal_reachable = arpg.construct_graph();
-    // Get bounds for all state variables (already ExprID-keyed)
-    state_variable_bounds_ = arpg.get_state_variable_bounds();
+    NumericRelaxedPlanningGraph rpg(problem);
+    rpg.set_stop_when_all_reachable(false);  // Run to fixpoint for widest bounds (sound for achiever analysis)
+    rpg.build();
 
-    // Store action layer ordering from ARPG (keep only earliest layer per action)
-    auto supporter_ordering = arpg.get_supporter_ordering();
-    for (const auto& info : supporter_ordering) {
-        action_id_to_first_layer_.try_emplace(info.source_action.id(), info.iteration);
+    // Extract state variable bounds (final-layer numeric intervals, keyed by ExprID)
+    // Convert from grounding::Interval to our Bounds struct to avoid name conflicts.
+    for (const auto& [eid, iv] : rpg.get_state_variable_bounds()) {
+        state_variable_bounds_[eid] = {iv.lower, iv.upper};
     }
-    arpg_num_layers_ = arpg.get_num_iterations();
+
+    // Extract action layer ordering (first layer at which each action is applicable)
+    action_id_to_first_layer_ = rpg.get_action_first_layers();
+    arpg_num_layers_ = static_cast<int>(rpg.get_layer_count());
 
     // Initialize persistent solver with bounds constraints
     initialize_persistent_solver();
 
-    auto end_arpg = std::chrono::high_resolution_clock::now();
-    double arpg_time = std::chrono::duration<double>(end_arpg - start_arpg).count();
-    double memory_after_arpg = MemoryTracker::instance().get_current_memory_mb();
+    auto end_rpg = std::chrono::high_resolution_clock::now();
+    double rpg_time = std::chrono::duration<double>(end_rpg - start_rpg).count();
+    double memory_after_rpg = MemoryTracker::instance().get_current_memory_mb();
 
     Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
-        {"ARPG", std::to_string(arpg_time) + "s"},
-        {"mem", std::to_string(static_cast<int>(memory_after_arpg)) + "MB"}
+        {"RPG", std::to_string(rpg_time) + "s"},
+        {"mem", std::to_string(static_cast<int>(memory_after_rpg)) + "MB"}
     });
 
-    stats.set("achievers_analysis.arpg_time_seconds", arpg_time);
-    stats.set("achievers_analysis.arpg_goal_reachable", goal_reachable ? 1 : 0);
+    stats.set("achievers_analysis.rpg_time_seconds", rpg_time);
+    stats.set("achievers_analysis.rpg_goal_reachable", rpg.are_goals_achievable() ? 1 : 0);
     stats.set("achievers_analysis.state_variable_bounds_count", state_variable_bounds_.size());
 
     // Time semantic analysis
@@ -333,20 +338,20 @@ void AchieversAnalysis::add_bounds_constraints_to_solver() {
     for (const auto& [fluent_eid, interval] : state_variable_bounds_) {
         // Add bounds for current state (timestep 0)
         z3::expr fluent_current = visitor_->convert_from_pool(fluent_eid, 0);
-        if (!std::isinf(interval.lower())) {
-            persistent_solver_->add(fluent_current >= variable_factory_->make_numeric_val(interval.lower()));
+        if (!std::isinf(interval.lower)) {
+            persistent_solver_->add(fluent_current >= variable_factory_->make_numeric_val(interval.lower));
         }
-        if (!std::isinf(interval.upper())) {
-            persistent_solver_->add(fluent_current <= variable_factory_->make_numeric_val(interval.upper()));
+        if (!std::isinf(interval.upper)) {
+            persistent_solver_->add(fluent_current <= variable_factory_->make_numeric_val(interval.upper));
         }
 
         // Add bounds for next state (timestep 1)
         z3::expr fluent_next = visitor_->convert_from_pool(fluent_eid, 1);
-        if (!std::isinf(interval.lower())) {
-            persistent_solver_->add(fluent_next >= variable_factory_->make_numeric_val(interval.lower()));
+        if (!std::isinf(interval.lower)) {
+            persistent_solver_->add(fluent_next >= variable_factory_->make_numeric_val(interval.lower));
         }
-        if (!std::isinf(interval.upper())) {
-            persistent_solver_->add(fluent_next <= variable_factory_->make_numeric_val(interval.upper()));
+        if (!std::isinf(interval.upper)) {
+            persistent_solver_->add(fluent_next <= variable_factory_->make_numeric_val(interval.upper));
         }
     }
 }

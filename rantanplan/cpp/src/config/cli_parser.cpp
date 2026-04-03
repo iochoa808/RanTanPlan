@@ -94,7 +94,7 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
             config.global.numeric_grounding = false;
         }
         else if (arg == "--smt-rpg-checker") {
-            config.global.rpg_interval_checker = false;
+            config.rpg.use_interval_checker = false;
         }
         // Z3 solver options
         else if (arg == "--no-persist-clauses") {
