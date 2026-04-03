@@ -33,14 +33,21 @@
  *   for cases where joint multi-variable constraints need exact reasoning.
  *
  * - Directional widening: per-fluent, per-side expansion counters. After
- *   WIDENING_THRESHOLD (3) consecutive expansions, the side snaps to +-inf.
+ *   widening_threshold (default 500, configurable via --widening-threshold)
+ *   consecutive expansions, the side snaps to +-inf.
  *   Frozen sides (from lifted effect analysis) are exempt. Guarantees
  *   termination for both linear and non-linear effects.
+ *
+ * - Lower bound refinement: after interval-based layer expansion, the lower
+ *   bound is refined using a Z3 joint goal check (one SAT query per layer).
+ *   The interval checker evaluates each goal independently and can be overly
+ *   optimistic for conjunctive goals with cross-variable dependencies (e.g.,
+ *   c17 >= c16+1 >= ... >= c0+17). The Z3 joint check catches these.
  *
  * Termination criteria (independent, both on by default):
  *   1. Config::RPG::early_goal_termination: stop when goals are achievable.
  *   2. set_stop_when_all_reachable(true): stop when all actions are reachable
- *      AND goals are achievable.
+ *      AND goals are jointly achievable (Z3 check).
  * Disabling both runs to true fixpoint (needed for sound variable bounds
  * in AchieversAnalysis and cost lower bounds).
  */
@@ -283,12 +290,11 @@ private:
     /// Maps ground fluent_id -> fluent schema ID (for freeze lookup).
     std::unordered_map<int, int> fluent_schema_map_;
 
-    static constexpr int WIDENING_THRESHOLD = 8;
-
     // ========================================================================
     // MEMBER VARIABLES - Configuration
     // ========================================================================
 
+    int widening_threshold_;
     int max_layers_;
     bool stop_when_all_reachable_;  ///< Stop when all actions reachable + goals achieved
 
@@ -413,6 +419,18 @@ private:
      */
     bool are_goals_achievable_at_layer_interval(int layer) const;
 
+    /**
+     * @brief Z3 joint goal achievability check at a specific layer.
+     *
+     * Creates a Z3 solver with per-fluent box constraints from the layer's
+     * numeric bounds and boolean reachability, then asserts ALL goal conditions
+     * simultaneously and checks satisfiability. This is more precise than the
+     * interval checker for conjunctive goals with cross-variable dependencies.
+     *
+     * Cost: 1 Z3 SAT query per call (sub-millisecond for typical problems).
+     */
+    bool are_goals_achievable_at_layer_smt(int layer) const;
+
     // ========================================================================
     // PRIVATE METHODS - Boolean Effect Propagation
     // ========================================================================
@@ -468,7 +486,7 @@ private:
     /**
      * @brief Apply directional widening to new bounds for a fluent
      *
-     * Tracks per-side expansion counts. After WIDENING_THRESHOLD consecutive
+     * Tracks per-side expansion counts. After widening_threshold_ consecutive
      * expansions of a side, snaps it to +-infinity. Frozen sides are exempt.
      */
     void apply_widening(int fluent_id, NumericBounds& new_bounds, const NumericBounds& prev_bounds);

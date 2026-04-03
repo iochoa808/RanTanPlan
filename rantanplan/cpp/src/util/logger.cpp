@@ -109,11 +109,12 @@ void Logger::timestep_encoding(
 void Logger::timestep_solving(
     VerbosityLevel min_level,
     int timestep,
-    const std::vector<std::pair<std::string, std::string>>& metrics
+    const std::vector<std::pair<std::string, std::string>>& metrics,
+    const std::string& prefix
 ) {
     if (should_print(min_level)) {
         std::ostringstream component_name;
-        component_name << "Solving T" << timestep;
+        component_name << "Solving " << prefix << timestep;
         std::cout << format_component_line(component_name.str(), metrics) << std::endl;
     }
 }

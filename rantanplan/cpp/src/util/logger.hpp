@@ -58,7 +58,8 @@ public:
     void timestep_solving(
         VerbosityLevel min_level,
         int timestep,
-        const std::vector<std::pair<std::string, std::string>>& metrics
+        const std::vector<std::pair<std::string, std::string>>& metrics,
+        const std::string& prefix = "T"
     );
 
     // Summary box for final results

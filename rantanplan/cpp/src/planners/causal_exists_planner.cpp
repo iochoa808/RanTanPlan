@@ -1073,7 +1073,7 @@ Plan CausalExistsPlanner::search() {
             {"horizon", std::to_string(current_horizon_)},
             {"active", std::to_string(activated_entries) + "/" + std::to_string(block_entries_.size())},
             {"mem", std::to_string(static_cast<int>(mem)) + "MB"}
-        });
+        }, "R");
 
         stats.add("planner.solve_time", solve_time);
         stats.add("planner.total_time", round_time);

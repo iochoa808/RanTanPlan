@@ -30,7 +30,8 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
     int iteration = 0;
     std::unique_ptr<AchieversAnalysis> final_achievers;
 
-    while (iteration < MAX_ITERATIONS) {
+    const int max_iterations = Config::instance().rpg.goal_relevance_max_iterations;
+    while (iteration < max_iterations) {
         iteration++;
 
         // Step 1: Build NumericRPG on current problem
@@ -47,6 +48,13 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
         if (rpg.are_goals_achievable()) {
             result.lower_bound = std::max(result.lower_bound,
                                           rpg.get_minimum_steps_lower_bound());
+        }
+
+        // Forward pruning: remove RPG-unreachable actions before achiever analysis
+        // (reduces the number of SMT queries in the achiever check)
+        auto rpg_removable = rpg.get_removable_action_indices();
+        if (!rpg_removable.empty()) {
+            result.problem = result.problem.without_actions(rpg_removable);
         }
 
         // Step 2: Run AchieversAnalysis with pre-computed RPG data
@@ -103,7 +111,7 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
     //   - If removed_indices was empty: achievers matches the final problem (correct)
     //   - If we hit MAX_ITERATIONS: achievers was built before the last removal,
     //     so we need one final achiever computation on the final problem.
-    if (iteration == MAX_ITERATIONS) {
+    if (iteration == max_iterations) {
         // Rebuild achievers on the final (reduced) problem
         NumericRelaxedPlanningGraph rpg(result.problem);
         rpg.set_stop_when_all_reachable(false);

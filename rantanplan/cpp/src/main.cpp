@@ -222,8 +222,8 @@ int main(int argc, char* argv[]) {
         // Initialize logger with config
         rantanplan::Logger::instance().set_config(&config);
 
-        // Set Z3 verbosity to match our verbosity level (SILENT=0, INFO=1, VERBOSE=5, DEBUG=10)
-        constexpr int z3_verbosity[] = {0, 1, 1, 5};
+        // Set Z3 verbosity to match our verbosity level (SILENT=0, INFO=0, VERBOSE=1, DEBUG=5)
+        constexpr int z3_verbosity[] = {0, 0, 1, 5};
         z3::set_param("verbose", z3_verbosity[static_cast<int>(config.global.verbosity)]);
 
         // TODO: Core analysis:

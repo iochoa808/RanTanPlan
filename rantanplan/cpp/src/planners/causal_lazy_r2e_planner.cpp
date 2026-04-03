@@ -677,7 +677,7 @@ Plan CausalLazyR2EPlanner::search() {
             {"active", std::to_string(active_count)},
             {"blocked", std::to_string(blocked_count)},
             {"mem", std::to_string(static_cast<int>(mem)) + "MB"}
-        });
+        }, "R");
 
         stats.add("planner.solve_time", solve_time);
         stats.add("planner.total_time", round_time);

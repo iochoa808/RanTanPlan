@@ -42,6 +42,11 @@ public:
         /// actions that cannot contribute to any goal condition (even transitively).
         /// Runs after RPG action removal. Default false.
         bool goal_relevance = false;
+        /// Maximum iterations for goal-relevance fixpoint loop.
+        int goal_relevance_max_iterations = 10;
+        /// Directional widening threshold: after this many consecutive expansions
+        /// of the same side (lower/upper) of a numeric fluent's bounds, snap to +-inf.
+        int widening_threshold = 500;
     } rpg;
     
     struct Planner {

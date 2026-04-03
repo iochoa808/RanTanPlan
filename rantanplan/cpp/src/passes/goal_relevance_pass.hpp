@@ -29,7 +29,7 @@ public:
     void apply(PipelineResult& result) const override;
     std::string name() const override { return "goal-relevance"; }
 
-    static constexpr int MAX_ITERATIONS = 3;
+    // Max iterations read from Config::RPG::goal_relevance_max_iterations
 };
 
 } // namespace rantanplan

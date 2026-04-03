@@ -116,12 +116,16 @@ NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem)
       ctx_(),
       variable_factory_(ctx_),
       grounded_visitor_(ctx_, &problem, &variable_factory_),
+      widening_threshold_(Config::instance().rpg.widening_threshold),
       max_layers_(Config::instance().planner.max_steps),  // Read from config
       stop_when_all_reachable_(true),
       build_time_ms_(0.0),
       total_smt_queries_(0),
       total_applicability_checks_(0),
       total_interval_checks_(0) {
+
+    // Silence Z3 output from RPG's internal queries
+    ctx_.set("verbose", 0);
 
     // Build EPC index for efficient effect lookup
     build_epc_index();
@@ -381,13 +385,18 @@ bool NumericRelaxedPlanningGraph::build() {
             break;
         }
 
-        // Early termination if all actions reachable and goals achieved (if enabled)
+        // Early termination if all actions reachable and goals jointly achieved (if enabled).
+        // Uses Z3 joint goal check: the interval checker evaluates goals independently
+        // and can be over-optimistic. The Z3 check catches cross-variable dependencies.
+        // Continuing past the interval-based stopping point gives more exact layers
+        // for a tighter lower bound.
         if (stop_when_all_reachable_ &&
             are_all_actions_reachable() &&
-            are_goals_achievable()) {
-            Logger::instance().verbose("All " + std::to_string(action_layers_.back().size()) + 
+            are_goals_achievable_at_layer_interval(layer + 1) &&
+            are_goals_achievable_at_layer_smt(layer + 1)) {
+            Logger::instance().verbose("All " + std::to_string(action_layers_.back().size()) +
                                       "/" + std::to_string(problem_.actions().size()) +
-                                      " actions reachable and goals achievable - early termination at layer " + 
+                                      " actions reachable and goals jointly achievable - early termination at layer " +
                                       std::to_string(layer + 1));
             break;
         }
@@ -721,7 +730,7 @@ void NumericRelaxedPlanningGraph::apply_widening(
     if (schema_id < 0 || !freeze_lower_.count(schema_id)) {
         auto count_it = lower_expansion_count_.find(fluent_id);
         if (count_it != lower_expansion_count_.end() &&
-            count_it->second >= WIDENING_THRESHOLD &&
+            count_it->second >= widening_threshold_ &&
             !std::isinf(new_bounds.lower)) {
             new_bounds.lower = -std::numeric_limits<double>::infinity();
         }
@@ -731,7 +740,7 @@ void NumericRelaxedPlanningGraph::apply_widening(
     if (schema_id < 0 || !freeze_upper_.count(schema_id)) {
         auto count_it = upper_expansion_count_.find(fluent_id);
         if (count_it != upper_expansion_count_.end() &&
-            count_it->second >= WIDENING_THRESHOLD &&
+            count_it->second >= widening_threshold_ &&
             !std::isinf(new_bounds.upper)) {
             new_bounds.upper = std::numeric_limits<double>::infinity();
         }
@@ -903,6 +912,7 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
     // Create a fresh solver for this query
     z3::solver solver(ctx_);
 
+
     // Add layer state constraints
     add_layer_constraints(solver, layer);
 
@@ -952,6 +962,7 @@ std::vector<const Action*> NumericRelaxedPlanningGraph::compute_applicable_actio
 bool NumericRelaxedPlanningGraph::is_action_applicable_smt(const Action& action, int layer) const {
     // Create a fresh solver for this query
     z3::solver solver(ctx_);
+
 
     // Add layer state constraints
     add_layer_constraints(solver, layer);
@@ -1330,6 +1341,17 @@ bool NumericRelaxedPlanningGraph::are_all_actions_reachable() const {
 // QUERY METHODS - Goals
 // ============================================================================
 
+bool NumericRelaxedPlanningGraph::are_goals_achievable_at_layer_smt(int layer) const {
+    z3::solver solver(ctx_);
+
+    add_layer_constraints(solver, layer);
+    for (const Goal& goal : problem_.goals()) {
+        solver.add(grounded_visitor_.convert_from_pool(goal.goal_id(), layer));
+    }
+    total_smt_queries_++;
+    return solver.check() == z3::sat;
+}
+
 bool NumericRelaxedPlanningGraph::are_goals_achievable() const {
     if (layer_states_.empty()) {
         return false;
@@ -1341,23 +1363,7 @@ bool NumericRelaxedPlanningGraph::are_goals_achievable() const {
         return are_goals_achievable_at_layer_interval(final_layer);
     }
 
-    // Create a fresh solver for goal checking
-    z3::solver solver(ctx_);
-
-    // Add final layer state constraints
-    add_layer_constraints(solver, final_layer);
-
-    // Add all goal expressions
-    for (const Goal& goal : problem_.goals()) {
-        z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), final_layer);
-        solver.add(goal_expr);
-    }
-
-    // Check satisfiability
-    total_smt_queries_++;
-    z3::check_result result = solver.check();
-
-    return result == z3::sat;
+    return are_goals_achievable_at_layer_smt(final_layer);
 }
 
 int NumericRelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
@@ -1365,43 +1371,50 @@ int NumericRelaxedPlanningGraph::get_minimum_steps_lower_bound() const {
         return -1;  // Goals not achievable
     }
 
-    // Binary search for minimum layer where goals are achievable
-    int left = 0;
-    int right = static_cast<int>(layer_states_.size()) - 1;
-    int min_layer = right;
-    bool use_interval = Config::instance().rpg.use_interval_checker;
+    int num_layers = static_cast<int>(layer_states_.size());
 
-    while (left <= right) {
-        int mid = (left + right) / 2;
-
-        bool achievable;
-        if (use_interval) {
-            achievable = are_goals_achievable_at_layer_interval(mid);
-        } else {
-            z3::solver solver(ctx_);
-            add_layer_constraints(solver, mid);
-
-            for (const Goal& goal : problem_.goals()) {
-                z3::expr goal_expr = grounded_visitor_.convert_from_pool(goal.goal_id(), mid);
-                solver.add(goal_expr);
+    // First pass: interval-based binary search for a quick lower bound.
+    int interval_lb = 0;
+    {
+        int left = 0, right = num_layers - 1;
+        interval_lb = right;
+        while (left <= right) {
+            int mid = (left + right) / 2;
+            if (are_goals_achievable_at_layer_interval(mid)) {
+                interval_lb = mid;
+                right = mid - 1;
+            } else {
+                left = mid + 1;
             }
-
-            total_smt_queries_++;
-            z3::check_result result = solver.check();
-            achievable = (result == z3::sat);
-        }
-
-        if (achievable) {
-            // Goals achievable at mid, try earlier
-            min_layer = mid;
-            right = mid - 1;
-        } else {
-            // Goals not achievable at mid, try later
-            left = mid + 1;
         }
     }
 
-    return min_layer;
+    // Second pass: refine with Z3 joint goal check.
+    // The interval checker evaluates each goal condition independently and can
+    // be over-optimistic for conjunctive goals (e.g., c17 >= c16+1 >= ... >= c0+17
+    // is individually satisfiable per condition at layer 2, but jointly requires
+    // layer 6+). The Z3 check evaluates all goals simultaneously against the
+    // per-fluent box constraints at each layer.
+    //
+    // Scan forward from the interval-based lb. At pre-widening layers, the Z3
+    // check may correctly say UNSAT. At/after widening layers, it will say SAT
+    // (since ±inf bounds trivially satisfy anything).
+    int smt_lb = interval_lb;
+    for (int layer = interval_lb; layer < num_layers; ++layer) {
+        if (are_goals_achievable_at_layer_smt(layer)) {
+            smt_lb = layer;
+            break;
+        }
+    }
+
+    if (smt_lb > interval_lb) {
+        Logger::instance().component(VerbosityLevel::INFO, "RPG.Numeric", {
+            {"lb refinement", std::to_string(interval_lb) + " → " + std::to_string(smt_lb) +
+                              " (Z3 joint goal check)"}
+        });
+    }
+
+    return smt_lb;
 }
 
 // ============================================================================
