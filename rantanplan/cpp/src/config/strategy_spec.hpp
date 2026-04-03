@@ -8,7 +8,7 @@ namespace rantanplan {
 enum class EncoderFamily { Grounded, Chained, R2E };
 enum class SemanticsKind { Sequential, Forall, Exists };
 enum class InterferenceKind { None, EagerSyntactic, EagerSemantic, LazySyntactic, LazySemantic };
-enum class PropagatorKind { Null, Forall, LazyForall, Exists, FrameExists, MemoFrameExists };
+enum class PropagatorKind { Null, Forall, LazyForall, Exists, FrameExists };
 enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, LazyR2E, CausalLazyR2E, CausalExists, CausalExistsGuided };
 
 /// Search mode — orthogonal to strategy (encoding/semantics/interference/propagator).
@@ -83,6 +83,12 @@ inline bool uses_branch_and_bound(SearchMode mode, const StrategySpec& spec) {
 /// Returns true if SDAC cost evaluation is unsound with this strategy.
 inline bool sdac_unsafe(const StrategySpec& spec) {
     return spec.semantics == SemanticsKind::Exists;
+}
+
+/// Returns true if the strategy uses a CausalExists planner variant.
+inline bool uses_causal_exists(const StrategySpec& spec) {
+    return spec.planner == PlannerKind::CausalExists ||
+           spec.planner == PlannerKind::CausalExistsGuided;
 }
 
 } // namespace rantanplan

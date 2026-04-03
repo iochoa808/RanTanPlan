@@ -40,6 +40,10 @@ public:
     CausalExistsPlanner(const Problem& problem, BaseEncoder& encoder, z3::context& ctx);
     ~CausalExistsPlanner() override = default;
 
+    /// Provide a pre-built AchieversAnalysis (from the pipeline's GoalRelevancePass).
+    /// Must be called before search(). Takes ownership.
+    void set_achievers(std::unique_ptr<AchieversAnalysis> achievers);
+
     Plan search() override;
 
 protected:

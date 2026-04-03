@@ -9,6 +9,43 @@ namespace rantanplan {
 
 AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     : problem_(&problem) {
+    // Build our own NumericRelaxedPlanningGraph internally.
+    auto start_rpg = std::chrono::high_resolution_clock::now();
+
+    NumericRelaxedPlanningGraph rpg(problem);
+    rpg.set_stop_when_all_reachable(false);  // Run to fixpoint for widest bounds
+    rpg.build();
+
+    RPGData data;
+    data.state_variable_bounds = rpg.get_state_variable_bounds();
+    data.action_first_layers = rpg.get_action_first_layers();
+    data.layer_count = static_cast<int>(rpg.get_layer_count());
+
+    auto end_rpg = std::chrono::high_resolution_clock::now();
+    double rpg_time = std::chrono::duration<double>(end_rpg - start_rpg).count();
+    Stats::instance().set("achievers_analysis.rpg_time_seconds", rpg_time);
+    Stats::instance().set("achievers_analysis.rpg_goal_reachable", rpg.are_goals_achievable() ? 1 : 0);
+
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"RPG", std::to_string(rpg_time) + "s"},
+        {"mem", std::to_string(static_cast<int>(MemoryTracker::instance().get_current_memory_mb())) + "MB"}
+    });
+
+    initialize_from_rpg_data(problem, std::move(data));
+}
+
+AchieversAnalysis::AchieversAnalysis(const Problem& problem, RPGData rpg_data)
+    : problem_(&problem) {
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"RPG", "pre-computed"},
+        {"bounds", std::to_string(rpg_data.state_variable_bounds.size())},
+        {"layers", std::to_string(rpg_data.layer_count)}
+    });
+
+    initialize_from_rpg_data(problem, std::move(rpg_data));
+}
+
+void AchieversAnalysis::initialize_from_rpg_data(const Problem& problem, RPGData rpg_data) {
     auto& stats = Stats::instance();
     auto start_total = std::chrono::high_resolution_clock::now();
 
@@ -19,54 +56,25 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     variable_factory_ = std::make_unique<Z3VariableFactory>(*ctx_);
     variable_factory_->set_problem(problem_);
     visitor_ = std::make_unique<GroundedEncodingVisitor>(*ctx_, problem_, variable_factory_.get());
-
-    // Initialize persistent solver for push/pop approach
     persistent_solver_ = std::make_unique<z3::solver>(*ctx_);
 
-    // Build a NumericRelaxedPlanningGraph to compute state variable bounds
-    // and action layer ordering (replaces the ARPG).
-    // Disable early termination so the graph runs to fixpoint, producing the
-    // widest possible numeric bounds for the SMT achiever queries.
-    auto start_rpg = std::chrono::high_resolution_clock::now();
+    // Store RPG data
+    state_variable_bounds_ = std::move(rpg_data.state_variable_bounds);
+    action_id_to_first_layer_ = std::move(rpg_data.action_first_layers);
+    arpg_num_layers_ = rpg_data.layer_count;
 
-    NumericRelaxedPlanningGraph rpg(problem);
-    rpg.set_stop_when_all_reachable(false);  // Run to fixpoint for widest bounds (sound for achiever analysis)
-    rpg.build();
-
-    // Extract state variable bounds (final-layer numeric intervals, keyed by ExprID)
-    // Convert from grounding::Interval to our Bounds struct to avoid name conflicts.
-    for (const auto& [eid, iv] : rpg.get_state_variable_bounds()) {
-        state_variable_bounds_[eid] = {iv.lower, iv.upper};
-    }
-
-    // Extract action layer ordering (first layer at which each action is applicable)
-    action_id_to_first_layer_ = rpg.get_action_first_layers();
-    arpg_num_layers_ = static_cast<int>(rpg.get_layer_count());
+    stats.set("achievers_analysis.state_variable_bounds_count",
+              static_cast<double>(state_variable_bounds_.size()));
 
     // Initialize persistent solver with bounds constraints
     initialize_persistent_solver();
 
-    auto end_rpg = std::chrono::high_resolution_clock::now();
-    double rpg_time = std::chrono::duration<double>(end_rpg - start_rpg).count();
-    double memory_after_rpg = MemoryTracker::instance().get_current_memory_mb();
-
-    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
-        {"RPG", std::to_string(rpg_time) + "s"},
-        {"mem", std::to_string(static_cast<int>(memory_after_rpg)) + "MB"}
-    });
-
-    stats.set("achievers_analysis.rpg_time_seconds", rpg_time);
-    stats.set("achievers_analysis.rpg_goal_reachable", rpg.are_goals_achievable() ? 1 : 0);
-    stats.set("achievers_analysis.state_variable_bounds_count", state_variable_bounds_.size());
-
-    // Time semantic analysis
+    // Run semantic analysis
     auto start_analysis = std::chrono::high_resolution_clock::now();
-
     analyze(problem);
     auto end_analysis = std::chrono::high_resolution_clock::now();
 
     double analysis_time = std::chrono::duration<double>(end_analysis - start_analysis).count();
-    double memory_after_analysis = MemoryTracker::instance().get_current_memory_mb();
 
     stats.set("achievers_analysis.semantic_analysis_time_seconds", analysis_time);
 
@@ -76,7 +84,7 @@ AchieversAnalysis::AchieversAnalysis(const Problem& problem)
     Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
         {"semantic", std::to_string(analysis_time) + "s"},
         {"total", std::to_string(total_time) + "s"},
-        {"mem", std::to_string(static_cast<int>(memory_after_analysis)) + "MB"}
+        {"mem", std::to_string(static_cast<int>(MemoryTracker::instance().get_current_memory_mb())) + "MB"}
     });
 
     stats.set("achievers_analysis.total_time_seconds", total_time);
@@ -596,6 +604,142 @@ void AchieversAnalysis::print_analysis() const {
 int AchieversAnalysis::get_action_first_layer(int action_id) const {
     auto it = action_id_to_first_layer_.find(action_id);
     return (it != action_id_to_first_layer_.end()) ? it->second : 0;
+}
+
+std::unordered_set<size_t> AchieversAnalysis::compute_goal_relevant_action_indices(
+        const Problem& problem, bool include_cost_fluents) const {
+    // Build action_id → index map
+    std::unordered_map<int, size_t> action_id_to_index;
+    for (size_t i = 0; i < problem.actions().size(); ++i) {
+        action_id_to_index[problem.actions()[i].id()] = i;
+    }
+
+    // Build action_id → Action pointer map for achiever lookups
+    std::unordered_map<int, const Action*> action_id_to_ptr;
+    for (const Action& a : problem.actions()) {
+        action_id_to_ptr[a.id()] = &a;
+    }
+
+    // Phase 1: BFS from goal conditions through achiever chains
+    std::unordered_set<const Action*> relevant_actions;
+    std::vector<ExprID> frontier;
+    std::unordered_set<ExprID> visited_conditions;
+
+    for (ExprID g : goal_conditions_) {
+        frontier.push_back(g);
+        visited_conditions.insert(g);
+    }
+
+    while (!frontier.empty()) {
+        std::vector<ExprID> next_frontier;
+        for (ExprID cond : frontier) {
+            auto ach_it = condition_to_achievers_.find(cond);
+            if (ach_it == condition_to_achievers_.end()) continue;
+
+            for (const Action& achiever : ach_it->second) {
+                auto ptr_it = action_id_to_ptr.find(achiever.id());
+                if (ptr_it == action_id_to_ptr.end()) continue;
+
+                if (relevant_actions.insert(ptr_it->second).second) {
+                    // New relevant action — add its preconditions to frontier
+                    auto prec_it = action_to_preconditions_.find(achiever);
+                    if (prec_it != action_to_preconditions_.end()) {
+                        for (ExprID prec : prec_it->second) {
+                            if (visited_conditions.insert(prec).second) {
+                                next_frontier.push_back(prec);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        frontier = std::move(next_frontier);
+    }
+
+    // Phase 2 (SDAC safety): for each relevant action, collect fluents from
+    // its cost expression. Any action that modifies those fluents is also relevant.
+    if (include_cost_fluents) {
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            std::unordered_set<ExprID> cost_fluents;
+
+            for (const Action* a : relevant_actions) {
+                ExprID cost = a->cost_id();
+                if (!cost.valid()) continue;
+
+                FluentCollector collector(problem);
+                collector.collect_from_id(cost);
+                for (ExprID f : collector.get_fluents()) {
+                    cost_fluents.insert(f);
+                }
+            }
+
+            if (cost_fluents.empty()) break;
+
+            // Find actions that modify any cost fluent
+            for (const Action& action : problem.actions()) {
+                auto ptr_it = action_id_to_ptr.find(action.id());
+                if (ptr_it == action_id_to_ptr.end()) continue;
+                if (relevant_actions.count(ptr_it->second)) continue;
+
+                for (const auto& eff : action.effects()) {
+                    ExprID fluent = eff.effect_expression().fluent_id();
+                    if (fluent.valid() && cost_fluents.count(fluent)) {
+                        relevant_actions.insert(ptr_it->second);
+                        changed = true;
+
+                        // Also add this action's precondition conditions to
+                        // the achiever BFS (its enablers are also relevant).
+                        auto prec_it = action_to_preconditions_.find(action);
+                        if (prec_it != action_to_preconditions_.end()) {
+                            std::vector<ExprID> cost_frontier;
+                            for (ExprID prec : prec_it->second) {
+                                if (visited_conditions.insert(prec).second) {
+                                    cost_frontier.push_back(prec);
+                                }
+                            }
+                            // Mini BFS for enablers of cost-relevant actions
+                            while (!cost_frontier.empty()) {
+                                std::vector<ExprID> next;
+                                for (ExprID c : cost_frontier) {
+                                    auto it = condition_to_achievers_.find(c);
+                                    if (it == condition_to_achievers_.end()) continue;
+                                    for (const Action& en : it->second) {
+                                        auto ep = action_id_to_ptr.find(en.id());
+                                        if (ep == action_id_to_ptr.end()) continue;
+                                        if (relevant_actions.insert(ep->second).second) {
+                                            auto pi = action_to_preconditions_.find(en);
+                                            if (pi != action_to_preconditions_.end()) {
+                                                for (ExprID p : pi->second) {
+                                                    if (visited_conditions.insert(p).second) {
+                                                        next.push_back(p);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                cost_frontier = std::move(next);
+                            }
+                        }
+                        break;  // This action is now relevant, move to next
+                    }
+                }
+            }
+        }
+    }
+
+    // Convert to index set
+    std::unordered_set<size_t> relevant_indices;
+    for (const Action* a : relevant_actions) {
+        auto it = action_id_to_index.find(a->id());
+        if (it != action_id_to_index.end()) {
+            relevant_indices.insert(it->second);
+        }
+    }
+
+    return relevant_indices;
 }
 
 } // namespace rantanplan

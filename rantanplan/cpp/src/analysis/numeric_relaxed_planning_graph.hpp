@@ -283,7 +283,7 @@ private:
     /// Maps ground fluent_id -> fluent schema ID (for freeze lookup).
     std::unordered_map<int, int> fluent_schema_map_;
 
-    static constexpr int WIDENING_THRESHOLD = 3;
+    static constexpr int WIDENING_THRESHOLD = 8;
 
     // ========================================================================
     // MEMBER VARIABLES - Configuration

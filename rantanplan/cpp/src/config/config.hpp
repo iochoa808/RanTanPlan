@@ -38,6 +38,10 @@ public:
         /// early termination is unsound for action removal because later RPG layers
         /// may discover actions reachable only through over-approximated bounds.
         bool early_goal_termination = false;
+        /// Semantic goal-relevance analysis: uses AchieversAnalysis to remove
+        /// actions that cannot contribute to any goal condition (even transitively).
+        /// Runs after RPG action removal. Default false.
+        bool goal_relevance = false;
     } rpg;
     
     struct Planner {

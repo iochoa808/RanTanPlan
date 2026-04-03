@@ -212,13 +212,6 @@ std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
             if (grounded) grounded->set_lazy_frames(true);
             return std::make_unique<FrameExistsPropagator>(solver, problem, encoder);
         }
-        case PropagatorKind::MemoFrameExists: {
-            auto* grounded = dynamic_cast<GroundedEncoder*>(&encoder);
-            if (grounded) grounded->set_lazy_frames(true);
-            auto prop = std::make_unique<FrameExistsPropagator>(solver, problem, encoder);
-            prop->set_use_memo(true);
-            return prop;
-        }
     }
     throw std::invalid_argument("Unknown propagator kind");
 }

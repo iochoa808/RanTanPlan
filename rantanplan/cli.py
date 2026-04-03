@@ -78,6 +78,8 @@ Use --list-strategies to see available strategies and their descriptions.
                        help="Disable CNF normalization of goals and preconditions")
     parser.add_argument("--smt-rpg-checker", action="store_true",
                        help="Use Z3 SMT solver for RPG applicability checks instead of interval arithmetic (default: interval)")
+    parser.add_argument("--goal-relevance", action="store_true",
+                       help="Enable semantic goal-relevance analysis to remove actions that cannot contribute to goals")
 
     # Logging
     parser.add_argument("--log-file", type=str,
@@ -133,6 +135,8 @@ def _build_planner_params(args) -> Dict[str, object]:
         planner_params['no_cnf_normalization'] = True
     if args.smt_rpg_checker:
         planner_params['smt_rpg_checker'] = True
+    if args.goal_relevance:
+        planner_params['goal_relevance'] = True
     if args.horizon_schedule is not None:
         planner_params['horizon_schedule'] = args.horizon_schedule
     if args.log_file:

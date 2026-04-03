@@ -16,6 +16,7 @@
 #include "problem/problem.hpp"
 #include "problem/protobuf_io.hpp"
 #include "planners/sequential.hpp"
+#include "planners/causal_exists_planner.hpp"
 #include "planners/formula_exporter.hpp"
 #include "util/memory_tracker.hpp"
 #include "util/stats.hpp"
@@ -28,6 +29,7 @@
 #include "passes/strategy_resolution_pass.hpp"
 #include "passes/interference_pass.hpp"
 #include "passes/static_fluent_pass.hpp"
+#include "passes/goal_relevance_pass.hpp"
 #include "analysis/numeric_constraint_analyzer.hpp"
 
 #include "z3++.h"
@@ -135,6 +137,14 @@ PlanGenerationResult solve_planning_problem(rantanplan::PipelineResult& pipeline
         spec, problem, *encoder, ctx, interference_ptr);
     planner->set_arithmetic_profile(pipeline_result.arithmetic_profile);
     rantanplan::StrategyFactory::configure_planner(*planner, spec, pipeline_result);
+
+    // Pass pre-built achiever analysis to CausalExists planners (from GoalRelevancePass)
+    if (pipeline_result.achievers && rantanplan::uses_causal_exists(spec)) {
+        auto* causal_planner = dynamic_cast<rantanplan::CausalExistsPlanner*>(planner.get());
+        if (causal_planner) {
+            causal_planner->set_achievers(std::move(pipeline_result.achievers));
+        }
+    }
 
     // Get solver reference and create propagator using factory
     auto propagator = rantanplan::StrategyFactory::create_propagator(spec, planner->get_solver(), problem, *encoder);
@@ -292,6 +302,14 @@ int main(int argc, char* argv[]) {
     if (config.symmetry.enable_symmetries) {
         passes.push_back(&symmetry_completion_pass);
     }
+
+    // Goal-relevance pass: uses semantic achiever analysis to remove actions
+    // that cannot contribute to any goal condition (even transitively).
+    // Runs after RPG (needs reachability-pruned problem) and before interference
+    // (fewer actions = smaller interference graph).
+    // Internally checks uses_causal_exists() — no-op for other strategies.
+    rantanplan::GoalRelevancePass goal_relevance_pass;
+    passes.push_back(&goal_relevance_pass);
 
     // Interference analysis runs last — needs final problem + resolved spec.
     rantanplan::InterferencePass interference_pass;

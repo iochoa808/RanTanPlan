@@ -96,6 +96,9 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         else if (arg == "--smt-rpg-checker") {
             config.rpg.use_interval_checker = false;
         }
+        else if (arg == "--goal-relevance") {
+            config.rpg.goal_relevance = true;
+        }
         // Z3 solver options
         else if (arg == "--no-persist-clauses") {
             config.global.persist_clauses = false;

@@ -49,6 +49,7 @@ class _RantanPlanBase(Engine):
         self._stats_file = options.get('stats_file')
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
         self._smt_rpg_checker = options.get('smt_rpg_checker', False)
+        self._goal_relevance = options.get('goal_relevance', False)
         self._horizon_schedule = options.get('horizon_schedule')
         self._log_file = options.get('log_file')
         self._up_grounding = options.get('up_grounding', False)
@@ -206,6 +207,8 @@ class _RantanPlanBase(Engine):
             command.extend(["--stats-file", self._stats_file])
         if self._smt_rpg_checker:
             command.append("--smt-rpg-checker")
+        if self._goal_relevance:
+            command.append("--goal-relevance")
         if self._horizon_schedule is not None:
             command.extend(["--horizon-schedule", self._horizon_schedule])
         if self._log_file is not None:

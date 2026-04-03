@@ -45,6 +45,10 @@ GroundedEncoder& CausalExistsPlanner::grounded_encoder() {
     return *grounded_encoder_;
 }
 
+void CausalExistsPlanner::set_achievers(std::unique_ptr<AchieversAnalysis> achievers) {
+    achievers_ = std::move(achievers);
+}
+
 // ---------------------------------------------------------------------------
 // Achiever setup (same as CausalLazyR2EPlanner)
 // ---------------------------------------------------------------------------
@@ -89,7 +93,14 @@ void CausalExistsPlanner::initialize_achievers() {
     auto init_start = std::chrono::high_resolution_clock::now();
 
     build_action_id_map();
-    achievers_ = std::make_unique<AchieversAnalysis>(problem_);
+
+    if (!achievers_) {
+        // No pre-built achievers from pipeline — construct our own
+        achievers_ = std::make_unique<AchieversAnalysis>(problem_);
+    } else {
+        Logger::instance().info("Causal Exists: reusing pre-built AchieversAnalysis from pipeline");
+    }
+
     build_condition_achiever_cache();
     compute_init_satisfied_conditions();
 

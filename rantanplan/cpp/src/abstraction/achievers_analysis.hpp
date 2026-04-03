@@ -10,6 +10,7 @@
 #include "../encoders/grounded_encoding_visitor.hpp"
 #include "../encoders/z3_variable_factory.hpp"
 #include "../problem/visitors/fluent_collector.hpp"
+#include "../grounding/interval.hpp"
 #include "../util/stats.hpp"
 #include <z3++.h>
 #include <memory>
@@ -20,30 +21,50 @@ namespace rantanplan {
 
 /**
  * @brief AchieversAnalysis
- * 
+ *
  * Maps each precondition (literal) of actions to the actions that contain it.
  * Uses semantic SMT-based checking to determine which actions can achieve conditions.
  * For each action-condition pair, checks if there exists a state where executing the
  * action transitions the condition from false to true.
- * 
- * TODO: Replace ARPG with step-bounded reachability analysis to get tighter bounds.
- * The current ARPG provides bounds like [-inf, inf] for changeable variables (e.g., current_load)
- * because it computes asymptotic bounds over infinite time. A step-bounded analysis that
- * computes reachable values within a reasonable number of steps would provide much tighter
- * bounds like [0, 50] for current_load, eliminating most infinite bounds and improving
- * SMT constraint accuracy.
- * 
+ *
  * TODO: It is quite expensive for big problems. Consider moving the Boolean checks to syntactic checks
  * Also, can we group checks?
  */
 class AchieversAnalysis {
 public:
-    // Constructor
+    /// Pre-computed RPG data that can be passed to avoid redundant RPG computation.
+    struct RPGData {
+        std::unordered_map<ExprID, Interval> state_variable_bounds;
+        std::unordered_map<int, int> action_first_layers;
+        int layer_count = 1;
+    };
+
+    // Constructor — runs its own internal NumericRPG
     AchieversAnalysis() = delete;
     explicit AchieversAnalysis(const Problem& problem);
-    
+
+    // Constructor — accepts pre-computed RPG data (avoids redundant RPG computation)
+    AchieversAnalysis(const Problem& problem, RPGData rpg_data);
+
     // Build the analysis from a problem
     void analyze(const Problem& problem);
+
+    /**
+     * @brief Compute the set of goal-relevant actions via transitive achiever closure.
+     *
+     * Starting from goal conditions, BFS through achiever chains:
+     * each condition's achievers are relevant, and their preconditions
+     * are added to the frontier. Optionally includes actions whose
+     * effects modify fluents appearing in cost expressions (SDAC safety).
+     *
+     * @param include_cost_fluents If true, also marks as relevant any action
+     *        that modifies a fluent referenced by a cost expression of
+     *        any already-relevant action. Ensures optimal planning soundness
+     *        under state-dependent action costs.
+     * @return Set of action indices (into problem.actions()) that are goal-relevant.
+     */
+    std::unordered_set<size_t> compute_goal_relevant_action_indices(
+        const Problem& problem, bool include_cost_fluents) const;
     
     // Access methods for preconditions
     const std::unordered_set<Action>& get_actions_requiring_precondition(ExprID precondition) const;
@@ -94,22 +115,22 @@ private:
     std::unique_ptr<Z3VariableFactory> variable_factory_;
     std::unique_ptr<GroundedEncodingVisitor> visitor_;
     std::unique_ptr<z3::solver> persistent_solver_;  // Persistent solver with bounds constraints
-    
+
     // Problem reference for SMT encoding
     const Problem* problem_;
-    
-    // State variable bounds for SMT constraint generation.
-    // Stored as (lower, upper) pairs to avoid Interval class name conflicts
-    // between grounding/interval.hpp and arpg/arpg.hpp.
-    struct Bounds { double lower; double upper; };
-    std::unordered_map<ExprID, Bounds> state_variable_bounds_;
 
-    // ARPG action layer ordering: action_id → first ARPG layer where applicable
+    // State variable bounds for SMT constraint generation (keyed by ExprID).
+    std::unordered_map<ExprID, Interval> state_variable_bounds_;
+
+    // RPG action layer ordering: action_id → first layer where applicable
     std::unordered_map<int, int> action_id_to_first_layer_;
     int arpg_num_layers_ = 1;
 
     // Statistics tracking
     mutable size_t z3_query_count_ = 0;
+
+    // Common initialization logic shared by both constructors
+    void initialize_from_rpg_data(const Problem& problem, RPGData rpg_data);
 
     // Helper methods
     void extract_cnf_literals(ExprID eid, std::vector<ExprID>& literals);

@@ -10,8 +10,9 @@
 
 namespace rantanplan {
 
-// Forward declaration — full definition in analysis/interference_analysis.hpp
+// Forward declarations
 class InterferenceAnalysis;
+class AchieversAnalysis;
 
 /**
  * @brief Accumulated state threaded through a preprocessing pipeline.
@@ -30,6 +31,7 @@ struct PipelineResult {
     ArithmeticProfile arithmetic_profile = ArithmeticProfile::LINEAR; ///< Numeric constraint class (set after pipeline)
     StrategySpec resolved_spec{};               ///< Finalized strategy spec (from StrategyResolutionPass)
     std::unique_ptr<InterferenceAnalysis> interference; ///< Pre-built interference analyzer (from InterferencePass)
+    std::unique_ptr<AchieversAnalysis> achievers; ///< Pre-built achiever analysis (from GoalRelevancePass)
 };
 
 /**

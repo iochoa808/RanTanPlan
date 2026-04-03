@@ -23,10 +23,6 @@ FrameExistsPropagator::FrameExistsPropagator(z3::solver& solver, const Problem& 
     solver.set("smt.up.persist_clauses", persist_clauses_);
 }
 
-void FrameExistsPropagator::set_use_memo(bool enabled) {
-    use_memo_ = enabled;
-}
-
 // ============================================================================
 // Push / Pop
 // ============================================================================
@@ -188,11 +184,31 @@ void FrameExistsPropagator::on_fixed(z3::expr const& ast, z3::expr const& value)
 void FrameExistsPropagator::on_final() {
     for (size_t ci = 0; ci < frame_clauses_.size(); ++ci) {
         auto& clause = frame_clauses_[ci];
-        if (clause.eq_state != 0) continue;
-        if (clause.num_can_explain > 0) continue;
-        frame_final_violation_count_++;
-        report_frame_conflict(clause, ci);
-        return;
+
+        // eq_state == 1: fluent unchanged → frame trivially satisfied
+        if (clause.eq_state == 1) continue;
+
+        // owned: at least one modifier action is true → change is explained
+        if (clause.owned) continue;
+
+        // eq_state == 0 (changed) with an explaining action → OK
+        if (clause.eq_state == 0 && clause.num_can_explain > 0) continue;
+
+        // eq_state == 0, no explainer → definite violation
+        if (clause.eq_state == 0) {
+            frame_final_violation_count_++;
+            report_frame_conflict(clause, ci);
+            return;
+        }
+
+        // eq_state == -1 (unset): Z3 didn't decide whether the fluent changed.
+        // No modifier action can explain a change, so the fluent MUST persist.
+        // Propagate preservation to force f^t == f^{t+1}.
+        if (clause.eq_state == -1 && clause.num_can_explain == 0) {
+            frame_final_violation_count_++;
+            propagate_fluent_preservation(clause, ci);
+            return;
+        }
     }
 }
 
@@ -210,15 +226,7 @@ void FrameExistsPropagator::check_frame_clause(FrameClause& clause, size_t claus
         if (clause.eq_state == 0) {
             report_frame_conflict(clause, clause_idx);
         } else {
-            if (use_memo_ && persist_clauses_ && clause.preservation_ever_fired) {
-                memo_hits_++;
-                return;
-            }
             propagate_fluent_preservation(clause, clause_idx);
-            if (use_memo_) {
-                clause.preservation_ever_fired = true;
-                first_time_preservations_++;
-            }
         }
         return;
     }
@@ -342,9 +350,18 @@ void FrameExistsPropagator::register_frame_variables(int t) {
 
     for (ExprID eid : problem_->grounded_fluents()) {
         auto epc_it = epc_index.find(eid);
-        if (epc_it == epc_index.end()) continue;
+        bool has_modifiers = (epc_it != epc_index.end() && !epc_it->second.empty());
+
+        if (!has_modifiers) {
+            // Fluent has no modifier actions → unconditional persistence.
+            // No frame clause needed; just assert f^{t+1} = f^t directly.
+            z3::expr f_t = grounded->convert_expr_id_to_z3(eid, t);
+            z3::expr f_t1 = grounded->convert_expr_id_to_z3(eid, t + 1);
+            solver_->add(f_t1 == f_t);
+            continue;
+        }
+
         const auto& action_effects = epc_it->second;
-        if (action_effects.empty()) continue;
 
         bool is_bool = problem_->is_bool_type(eid);
         size_t clause_idx = frame_clauses_.size();
@@ -565,10 +582,6 @@ void FrameExistsPropagator::cleanup() {
     stats.set("frame_prop.on_fixed_calls", static_cast<double>(frame_on_fixed_count_));
     stats.set("frame_prop.on_final_violations", static_cast<double>(frame_final_violation_count_));
     stats.set("frame_prop.vars_registered", static_cast<double>(all_registered_ids_.size()));
-    if (use_memo_) {
-        stats.set("frame_prop.memo_hits", static_cast<double>(memo_hits_));
-        stats.set("frame_prop.first_time_preservations", static_cast<double>(first_time_preservations_));
-    }
 }
 
 } // namespace rantanplan

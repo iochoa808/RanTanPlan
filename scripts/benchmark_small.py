@@ -38,10 +38,8 @@ BENCH_DIR = Path("pddl/small-test")
 STRATEGIES = [
     "causal-exists",
     "causal-exists-fp",
-    "causal-exists-memo",
     "exists-lazy-semantic-chain",
     "exists-lazy-semantic-chain-fp",
-    "exists-lazy-semantic-chain-memo",
 ]
 
 DEFAULT_TIMEOUT = 120
@@ -73,7 +71,7 @@ def discover_instances():
 # Runner
 # ---------------------------------------------------------------------------
 
-def run_instance(domain_path, problem_path, strategy, timeout):
+def run_instance(domain_path, problem_path, strategy, timeout, extra_params=None):
     """Run a single (instance, strategy) pair. Returns result dict."""
     stats_file = f"/tmp/bench_{strategy}_{os.getpid()}_{time.monotonic_ns()}.json"
 
@@ -85,6 +83,8 @@ def run_instance(domain_path, problem_path, strategy, timeout):
         "verbosity": "silent",
         "stats_file": stats_file,
     }
+    if extra_params:
+        params.update(extra_params)
 
     try:
         with OneshotPlanner(name="RantanPlan", params=params) as p:
@@ -109,12 +109,21 @@ def run_instance(domain_path, problem_path, strategy, timeout):
                             pass
             os.unlink(stats_file)
 
+        # Pass timings (preprocessing)
+        pass_total = sum(v for k, v in stats.items() if k.startswith("pass.") and k.endswith(".time_ms"))
+
         return {
             "solved": solved,
             "plan_len": plan_len,
             "time": round(stats.get("planner.total_time", 0), 2),
+            "solve_time": round(stats.get("planner.solve_time", 0), 2),
+            "preprocess_ms": round(pass_total, 1),
             "horizon": int(stats.get("planner.solution_horizon", 0)),
             "rounds": int(stats.get("planner.rounds", 0)),
+            "gr_removed": int(stats.get("goal_relevance.removed_actions", 0)),
+            "gr_initial": int(stats.get("goal_relevance.initial_actions", 0)),
+            "gr_time_ms": round(stats.get("goal_relevance.time_seconds", 0) * 1000, 1),
+            "final_actions": int(stats.get("pipeline.final_actions", 0)),
         }
 
     except Exception as e:
@@ -170,8 +179,8 @@ def print_row(name, results, strategies):
 
 def _run_instance_worker(args):
     """Worker for parallel execution."""
-    name, domain_path, problem_path, strategy, timeout = args
-    r = run_instance(domain_path, problem_path, strategy, timeout)
+    name, domain_path, problem_path, strategy, timeout, extra_params = args
+    r = run_instance(domain_path, problem_path, strategy, timeout, extra_params)
     return name, strategy, r
 
 
@@ -185,9 +194,14 @@ def main():
                         help="Save results to CSV file")
     parser.add_argument("-j", "--jobs", type=int, default=4,
                         help="Number of parallel jobs (default: 4, use 1 for sequential)")
+    parser.add_argument("--goal-relevance", action="store_true",
+                        help="Enable goal-relevance action removal preprocessing")
     args = parser.parse_args()
 
     strategies = args.strategy if args.strategy else STRATEGIES
+    extra_params = {}
+    if args.goal_relevance:
+        extra_params["goal_relevance"] = True
 
     instances = discover_instances()
     if not instances:
@@ -199,11 +213,14 @@ def main():
     print(f"{len(instances)} instances x {len(strategies)} strategies = {total} runs")
     print(f"Timeout: {args.timeout}s | Jobs: {args.jobs}\n")
 
+    if extra_params:
+        print(f"Extra params: {extra_params}\n")
+
     # Build work items
     work_items = []
     for name, domain_path, problem_path in instances:
         for s in strategies:
-            work_items.append((name, domain_path, problem_path, s, args.timeout))
+            work_items.append((name, domain_path, problem_path, s, args.timeout, extra_params))
 
     # Run (parallel or sequential)
     result_map = {}  # (name, strategy) -> result dict
@@ -258,8 +275,9 @@ def main():
     if args.csv:
         with open(args.csv, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
-                "instance", "strategy", "solved", "time",
-                "plan_len", "horizon", "rounds",
+                "instance", "strategy", "solved", "time", "solve_time",
+                "preprocess_ms", "plan_len", "horizon", "rounds",
+                "gr_removed", "gr_initial", "gr_time_ms", "final_actions",
             ])
             writer.writeheader()
             for r in all_results:
