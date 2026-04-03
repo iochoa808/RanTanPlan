@@ -47,10 +47,8 @@ QUICK_STRATEGIES = [
     "exists-lazy-semantic-chain-dt",    # DoubleTail exists
     "exists-lazy-semantic-chain-fp",    # Frame propagator variant
     "exists-lazy-semantic-chain-foot",  # Footprint-indexed exists
-    "exists-lazy-semantic-chain-memo",  # Memo frame propagator
     "causal-exists",                    # CausalExists planner kind
     "causal-exists-fp",                 # CausalExists + frame propagator
-    "causal-exists-memo",              # CausalExists + memo frame propagator
     "causal-exists-guided",            # CausalExists + guided achiever selection + tracked preconditions
 ]
 
