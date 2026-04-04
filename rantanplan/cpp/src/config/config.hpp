@@ -40,8 +40,8 @@ public:
         bool early_goal_termination = false;
         /// Semantic goal-relevance analysis: uses AchieversAnalysis to remove
         /// actions that cannot contribute to any goal condition (even transitively).
-        /// Runs after RPG action removal. Default false.
-        bool goal_relevance = false;
+        /// Runs after RPG action removal. Default true.
+        bool goal_relevance = true;
         /// Maximum iterations for goal-relevance fixpoint loop.
         int goal_relevance_max_iterations = 10;
         /// Directional widening threshold: after this many consecutive expansions

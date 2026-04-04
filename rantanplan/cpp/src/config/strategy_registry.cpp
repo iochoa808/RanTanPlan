@@ -66,6 +66,9 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         // Guided causal-exists: condition-based substitution + tracked preconditions
         {"causal-exists-guided",           {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::CausalExistsGuided}},
         {"causal-exists-guided-fp",        {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::CausalExistsGuided}},
+
+        // PDLA: Property-Directed Lazy Activation (see docs/pdla-proposal.md)
+        {"pdla",                           {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::PDLA}},
     };
     return registry;
 }

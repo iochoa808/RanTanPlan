@@ -194,14 +194,14 @@ def main():
                         help="Save results to CSV file")
     parser.add_argument("-j", "--jobs", type=int, default=4,
                         help="Number of parallel jobs (default: 4, use 1 for sequential)")
-    parser.add_argument("--goal-relevance", action="store_true",
-                        help="Enable goal-relevance action removal preprocessing")
+    parser.add_argument("--no-goal-relevance", action="store_true",
+                        help="Disable goal-relevance action removal preprocessing (enabled by default)")
     args = parser.parse_args()
 
     strategies = args.strategy if args.strategy else STRATEGIES
     extra_params = {}
-    if args.goal_relevance:
-        extra_params["goal_relevance"] = True
+    if args.no_goal_relevance:
+        extra_params["no_goal_relevance"] = True
 
     instances = discover_instances()
     if not instances:

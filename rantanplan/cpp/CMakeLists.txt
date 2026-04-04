@@ -136,6 +136,7 @@ add_executable(rantanplan
     src/planners/lazy_r2e_planner.cpp
     src/planners/causal_lazy_r2e_planner.cpp
     src/planners/causal_exists_planner.cpp
+    src/planners/pdla_planner.cpp
     src/planners/formula_exporter.cpp
     src/encoders/abstract_suffix_encoder.cpp
     src/planners/propagators/propagator_strategy.cpp

@@ -19,6 +19,7 @@
 #include "../planners/lazy_r2e_planner.hpp"
 #include "../planners/causal_lazy_r2e_planner.hpp"
 #include "../planners/causal_exists_planner.hpp"
+#include "../planners/pdla_planner.hpp"
 
 #include "../planners/propagators/null_propagator.hpp"
 #include "../planners/propagators/forall_propagator.hpp"
@@ -239,6 +240,8 @@ std::unique_ptr<BasePlanner> StrategyFactory::create_planner(
             p->set_guided_activation(true);
             return p;
         }
+        case PlannerKind::PDLA:
+            return std::make_unique<PDLAPlanner>(problem, encoder, ctx);
     }
     throw std::invalid_argument("Unknown planner kind");
 }
