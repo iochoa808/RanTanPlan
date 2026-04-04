@@ -268,6 +268,7 @@ void CausalExistsPlanner::add_timestep(int t) {
     grounded_encoder().ensure_action_variables(t);
     solver_.add(*encoder_.encode_frames(t));
     solver_.add(*encoder_.encode_symmetries(t));
+    solver_.add(*grounded_encoder().encode_cumulative_effects(t));
     propagator_strategy_->register_timestep_variables(t + 1);
 
     // Add blocking constraints: block_a_t -> not act_a_t
@@ -670,7 +671,7 @@ void CausalExistsPlanner::ensure_action_encoded(const Action* action, int timest
     action_encoded_.insert(key);
 
     // Effects only (normal assertion)
-    auto effects = grounded_encoder().encode_single_action_effects_only(*action, timestep);
+    auto effects = grounded_encoder().encode_non_cumulative_effects(*action, timestep);
     if (effects) {
         solver_.add(*effects);
     }
@@ -692,7 +693,7 @@ void CausalExistsPlanner::ensure_action_encoded(const Action* action, int timest
         }
     }
     // Safety net: actions not in the achiever cache get precondition-only encoding
-    // (effects already encoded above via encode_single_action_effects_only)
+    // (effects already encoded above via encode_non_cumulative_effects)
     else if (action->has_precondition()) {
         auto& vf = encoder_.get_variable_factory();
         const z3::expr& action_var = vf.get_action_variable(*action, timestep);
