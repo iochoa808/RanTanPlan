@@ -232,7 +232,7 @@ void PDLAPlanner::encode_action_at(const Action* action, int timestep) {
     if (encoded.count(timestep)) return;
     encoded.insert(timestep);
 
-    auto effects = grounded_encoder().encode_single_action_effects_only(*action, timestep);
+    auto effects = grounded_encoder().encode_non_cumulative_effects(*action, timestep);
     if (effects) solver_.add(*effects);
 
     auto prec_it = action_precondition_ids_.find(action);
@@ -264,6 +264,7 @@ void PDLAPlanner::add_timestep(int t) {
     grounded_encoder().ensure_action_variables(t);
     solver_.add(*encoder_.encode_frames(t));
     solver_.add(*encoder_.encode_symmetries(t));
+    solver_.add(*grounded_encoder().encode_cumulative_effects(t));
     propagator_strategy_->register_timestep_variables(t + 1);
     auto& vf = encoder_.get_variable_factory();
     for (const Action* a : blocked_) {

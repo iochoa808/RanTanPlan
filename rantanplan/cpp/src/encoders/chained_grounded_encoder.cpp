@@ -218,4 +218,32 @@ z3::expr ChainedGroundedEncoder::apply_effect_to_expression(
     return base_expr;
 }
 
+std::shared_ptr<z3::expr> ChainedGroundedEncoder::encode_non_cumulative_effects(
+        const Action& action, int t) {
+    if (action.effects().empty()) return nullptr;
+
+    z3::expr action_var = variable_factory_.get_action_variable(action, t);
+
+    // Filter out effects on multi-modified non-Boolean variables — those are
+    // handled by encode_chained_timestep_effects (chain variables ζ).
+    z3::expr_vector filtered_effects(ctx_);
+    for (const Effect& effect : action.effects()) {
+        ExprID var_eid = effect.effect_expression().fluent_id();
+        auto mod_it = variable_modifiers_.find(var_eid);
+        bool needs_chaining = (mod_it != variable_modifiers_.end() &&
+                               mod_it->second.size() > 1 &&
+                               !problem_.is_bool_type(var_eid));
+        if (!needs_chaining) {
+            filtered_effects.push_back(convert_effect_to_z3(effect.effect_expression(), t));
+        }
+    }
+
+    if (filtered_effects.empty()) return nullptr;
+    return std::make_shared<z3::expr>(z3::implies(action_var, z3::mk_and(filtered_effects)));
+}
+
+std::shared_ptr<z3::expr> ChainedGroundedEncoder::encode_cumulative_effects(int t) {
+    return encode_chained_effects(t);
+}
+
 } // namespace rantanplan

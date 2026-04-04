@@ -22,6 +22,9 @@ public:
     // Override action encoding to implement chained effects
     std::shared_ptr<z3::expr> encode_actions(int t) override;
 
+    std::shared_ptr<z3::expr> encode_non_cumulative_effects(const Action& action, int t) override;
+    std::shared_ptr<z3::expr> encode_cumulative_effects(int t) override;
+
 private:
     // Map from non-Boolean variable (ExprID) to actions that modify it
     std::unordered_map<ExprID, std::vector<const Action*>> variable_modifiers_;
