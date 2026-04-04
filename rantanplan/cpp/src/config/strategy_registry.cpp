@@ -68,7 +68,10 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         {"causal-exists-guided-fp",        {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::CausalExistsGuided}},
 
         // PDLA: Property-Directed Lazy Activation (see docs/pdla-proposal.md)
-        {"pdla",                           {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::PDLA}},
+        // Uses Exists propagator (not FrameExists) for fair comparison with
+        // causal-exists baseline and because float activation keeps formulas
+        // small enough that eager frame axioms are affordable.
+        {"pdla",                           {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::PDLA}},
     };
     return registry;
 }
