@@ -7,6 +7,7 @@
 #include "base_planner.hpp"
 #include <z3++.h>
 #include <memory>
+#include <queue>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -16,11 +17,12 @@ namespace rantanplan {
 /**
  * @brief PDLA planner — Property-Directed Lazy Activation
  *
- * Core-guided lazy activation over exists-step encoding.
- *
- * Change 1 (float activation): one blocking literal per action (not per
- * timestep).  blk_a → ¬act_a_t0 ∧ ¬act_a_t1 ∧ ...  Activating an action
- * makes it available at ALL timesteps; the solver decides placement.
+ * Change 1 (float activation): one blocking literal per action.
+ * Change 2 (incremental activation): scored selection replaces VSIDS/predictive.
+ * Change 3 (obligation-driven search): IC3-style backward chaining.
+ *   Phase A: process full obligation queue (no budget — structurally justified).
+ *   Phase B: solver check; core → new obligations or fallback direct activation.
+ * Phase 4 (split budgets): Phase A unlimited, Phase B fallback capped at K=3.
  *
  * See docs/pdla-proposal.md for the full design document.
  */
@@ -39,21 +41,53 @@ protected:
     int current_horizon_ = -1;
     int goal_timestep_ = -1;
 
-    /// Per-action blocking literal: blk_a → ¬act_a_t for all t
     std::unordered_map<const Action*, z3::expr> block_lit_;
-
-    /// Actions currently blocked (blocking lit included in assumptions)
     std::unordered_set<const Action*> blocked_;
-
-    /// Actions that have been activated (constraints encoded at all timesteps)
     std::unordered_set<const Action*> activated_;
-
-    /// Z3 expr id → action pointer (for parsing cores)
     std::unordered_map<unsigned, const Action*> blk_id_to_action_;
 
-    /// Goal assumption literal (refreshed when horizon extends).
     z3::expr goal_assumption_;
     int next_goal_version_ = 0;
+
+    // ---- Activation budgets ----
+
+    /// Budget for the core-derived direct activation fallback (Phase B).
+    /// Kept low because blocking-literal activations are less informed —
+    /// the solver says "I want action X" but we don't know the causal reason.
+    static constexpr int fallback_budget_ = 3;
+
+    /// Phase A (obligation-driven) has NO budget: obligations are structurally
+    /// derived through backward chaining, each addressing a specific missing
+    /// condition. The scoring function picks the best achiever. Processing
+    /// the full queue in one pass follows the causal chain to completion
+    /// before asking the solver to validate — this avoids the round-trip
+    /// overhead of artificially limiting to K=3 when per-round solve times
+    /// are sub-millisecond (observed: 80 rounds × 0.3ms = 24ms of solver
+    /// work gated behind 80 Phase A/B round-trips).
+
+    // ---- Obligation queue (Change 3) ----
+
+    struct Obligation {
+        ExprID condition;
+        int deadline;
+        int depth;
+        const Action* requester;  ///< action whose precondition created this (nullptr for goals)
+        bool from_core;           ///< true if derived from a solver core (not backward chaining)
+    };
+
+    struct ObligationCompare {
+        bool operator()(const Obligation& a, const Obligation& b) const {
+            if (a.depth != b.depth) return a.depth < b.depth;  // higher depth first
+            return a.deadline > b.deadline;  // earlier deadline first
+        }
+    };
+
+    std::priority_queue<Obligation, std::vector<Obligation>, ObligationCompare> obligation_queue_;
+    std::vector<Obligation> deferred_obligations_;
+
+    /// Depth at which each action was activated (for assigning depth to core obligations)
+    std::unordered_map<const Action*, int> action_activation_depth_;
+
 
     // ---- Achiever data ----
 
@@ -71,19 +105,15 @@ protected:
     std::vector<const Action*> relaxed_plan_;
     std::unordered_set<const Action*> relaxed_plan_set_;
 
-    // ---- Activity tracking (adapted VSIDS) ----
+    // ---- Scoring constants ----
 
-    std::unordered_map<const Action*, double> activity_;
-    static constexpr double activity_decay_ = 0.85;
-    static constexpr double activation_threshold_ = 0.5;
-    int cumulative_core_activations_ = 0;
+    int max_arpg_layer_ = 1;
+    int max_effects_ = 1;
 
     // ---- Lazy population tracking ----
 
-    /// Tracks which timesteps each activated action has been encoded at
     std::unordered_map<const Action*, std::unordered_set<int>> action_encoded_at_;
 
-    // Cached downcast to avoid repeated dynamic_cast in hot path
     class GroundedEncoder* grounded_encoder_ = nullptr;
     GroundedEncoder& grounded_encoder();
 
@@ -101,21 +131,24 @@ protected:
     void refresh_goal(int t);
     void extend_horizon();
 
-    // ---- Search loop helpers ----
+    // ---- Search helpers ----
 
     z3::expr_vector build_assumptions();
-    int process_core(const z3::expr_vector& core);
-    void cascade_bump(const std::vector<const Action*>& seeds, double bump_amount);
-    int predictive_activate(int timestep);
-    void decay_activity();
+    double score_action(const Action* action) const;
     void activate_action(const Action* action);
     void encode_action_at(const Action* action, int timestep);
+    bool has_activated_achiever(ExprID condition) const;
 
-    // ---- Guided activation ----
+    // ---- Obligation-driven search ----
 
-    int guided_substitutions_ = 0;
-    int guided_fallbacks_ = 0;
-    const Action* select_best_achiever_for(const Action* core_action) const;
+    int process_obligations();
+    void push_precondition_obligations(const Action* action, int deadline, int parent_depth);
+    struct CoreResult {
+        int new_obligations;    ///< obligations pushed (tracked preconds or blocking-lit conditions)
+        int horizon_signals;    ///< tracked preconds where ALL achievers already activated (resource exhaustion)
+        int direct_activations; ///< actions activated directly from blocking-lit fallback
+    };
+    CoreResult process_core_for_obligations(const z3::expr_vector& core);
 
     // ---- Tracked preconditions ----
 

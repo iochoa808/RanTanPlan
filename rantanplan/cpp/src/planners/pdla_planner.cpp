@@ -6,18 +6,15 @@
 #include "../util/memory_tracker.hpp"
 #include <algorithm>
 #include <chrono>
-#include <limits>
 
 namespace rantanplan {
 
 // ===========================================================================
 // PDLAPlanner — Property-Directed Lazy Activation
 //
-// Float activation: one blocking literal per action (not per timestep).
-//   blk_a → ¬act_a_t0 ∧ ¬act_a_t1 ∧ ...
-// Activating an action removes its blk_a from assumptions, making it
-// available at ALL timesteps.  Constraints are lazily encoded at each
-// timestep on activation.
+// Change 1: Float activation (per-action blocking).
+// Change 2: Incremental activation (K per round, scored selection).
+// Change 3: Obligation-driven search (backward chaining from goals).
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -41,7 +38,7 @@ void PDLAPlanner::set_achievers(std::unique_ptr<AchieversAnalysis> achievers) {
 }
 
 // ---------------------------------------------------------------------------
-// Achiever setup (unchanged from CausalExistsPlanner)
+// Achiever setup
 // ---------------------------------------------------------------------------
 
 void PDLAPlanner::build_action_id_map() {
@@ -107,6 +104,14 @@ void PDLAPlanner::initialize_achievers() {
         }
     }
 
+    // Scoring normalization constants
+    max_arpg_layer_ = std::max(1, achievers_->get_arpg_num_layers());
+    max_effects_ = 1;
+    for (const Action& a : problem_.actions()) {
+        int ne = static_cast<int>(a.effects().size());
+        if (ne > max_effects_) max_effects_ = ne;
+    }
+
     auto init_end = std::chrono::high_resolution_clock::now();
     double init_time = std::chrono::duration<double>(init_end - init_start).count();
 
@@ -126,7 +131,7 @@ void PDLAPlanner::initialize_achievers() {
         }
     }
 
-    // Transitive achiever closure via BFS
+    // Transitive achiever closure (diagnostics only)
     {
         std::vector<ExprID> frontier;
         std::unordered_set<ExprID> visited;
@@ -134,7 +139,6 @@ void PDLAPlanner::initialize_achievers() {
             frontier.push_back(cond);
             visited.insert(cond);
         }
-
         while (!frontier.empty()) {
             std::vector<ExprID> next_frontier;
             for (ExprID cond : frontier) {
@@ -155,7 +159,6 @@ void PDLAPlanner::initialize_achievers() {
             }
             frontier = std::move(next_frontier);
         }
-
         Logger::instance().info("  Goal-relevant actions: " +
             std::to_string(goal_relevant_actions_.size()) + "/" +
             std::to_string(problem_.actions().size()));
@@ -166,24 +169,19 @@ void PDLAPlanner::initialize_achievers() {
 
 void PDLAPlanner::extract_relaxed_plan() {
     relaxed_plan_.clear();
-
     std::unordered_set<ExprID> unsatisfied;
     for (ExprID g : goal_condition_ids_) {
         if (!init_satisfied_conditions_.count(g)) {
             unsatisfied.insert(g);
         }
     }
-
     std::unordered_set<const Action*> used;
     int max_layer = achievers_->get_arpg_num_layers();
-
     for (int layer = max_layer - 1; layer >= 0 && !unsatisfied.empty(); layer--) {
         std::vector<ExprID> newly_satisfied;
-
         for (ExprID cond : unsatisfied) {
             auto it = condition_achievers_.find(cond);
             if (it == condition_achievers_.end()) continue;
-
             const Action* best = nullptr;
             int best_layer = -1;
             for (const Action* a : it->second) {
@@ -193,13 +191,11 @@ void PDLAPlanner::extract_relaxed_plan() {
                     best_layer = a_layer;
                 }
             }
-
             if (best && !used.count(best)) {
                 used.insert(best);
                 relaxed_plan_.push_back(best);
                 relaxed_plan_set_.insert(best);
                 newly_satisfied.push_back(cond);
-
                 auto prec_it = action_precondition_ids_.find(best);
                 if (prec_it != action_precondition_ids_.end()) {
                     for (ExprID prec : prec_it->second) {
@@ -210,32 +206,21 @@ void PDLAPlanner::extract_relaxed_plan() {
                 }
             }
         }
-
         for (ExprID cond : newly_satisfied) {
             unsatisfied.erase(cond);
-        }
-    }
-
-    if (Config::instance().is_verbose()) {
-        for (const Action* a : relaxed_plan_) {
-            Logger::instance().info("    RP action: " + a->name() +
-                " (RPG layer=" + std::to_string(achievers_->get_action_first_layer(a->id())) + ")");
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Float activation: per-action blocking + lazy encoding
+// Float activation + lazy encoding (unchanged)
 // ---------------------------------------------------------------------------
 
 void PDLAPlanner::activate_action(const Action* action) {
-    if (!blocked_.count(action)) return;  // already activated
-
+    if (!blocked_.count(action)) return;
     blocked_.erase(action);
     activated_.insert(action);
     blk_id_to_action_.erase(block_lit_.at(action).id());
-
-    // Encode constraints at all existing timesteps
     for (int t = 0; t <= current_horizon_; t++) {
         encode_action_at(action, t);
     }
@@ -246,18 +231,13 @@ void PDLAPlanner::encode_action_at(const Action* action, int timestep) {
     if (encoded.count(timestep)) return;
     encoded.insert(timestep);
 
-    // Effects (normal assertion)
     auto effects = grounded_encoder().encode_single_action_effects_only(*action, timestep);
-    if (effects) {
-        solver_.add(*effects);
-    }
+    if (effects) solver_.add(*effects);
 
-    // Preconditions: tracked per-condition
     auto prec_it = action_precondition_ids_.find(action);
     if (prec_it != action_precondition_ids_.end()) {
         auto& vf = encoder_.get_variable_factory();
         const z3::expr& action_var = vf.get_action_variable(*action, timestep);
-
         for (ExprID cond : prec_it->second) {
             std::string track_name = "pre_a" + std::to_string(action->id()) +
                                      "_t" + std::to_string(timestep) +
@@ -267,9 +247,7 @@ void PDLAPlanner::encode_action_at(const Action* action, int timestep) {
             solver_.add(z3::implies(action_var, cond_z3), track_lit);
             tracked_precond_id_[track_lit.id()] = {action, timestep, cond};
         }
-    }
-    // Safety net: actions not in the achiever cache get precondition-only encoding
-    else if (action->has_precondition()) {
+    } else if (action->has_precondition()) {
         auto& vf = encoder_.get_variable_factory();
         const z3::expr& action_var = vf.get_action_variable(*action, timestep);
         z3::expr prec_z3 = encoder_.convert_expr_id_to_z3(action->precondition_id(), timestep);
@@ -282,21 +260,15 @@ void PDLAPlanner::encode_action_at(const Action* action, int timestep) {
 // ---------------------------------------------------------------------------
 
 void PDLAPlanner::add_timestep(int t) {
-    // Eager skeleton: action variables, frames, symmetries
     grounded_encoder().ensure_action_variables(t);
     solver_.add(*encoder_.encode_frames(t));
     solver_.add(*encoder_.encode_symmetries(t));
     propagator_strategy_->register_timestep_variables(t + 1);
-
     auto& vf = encoder_.get_variable_factory();
-
-    // Link blocking literals to new timestep for still-blocked actions
     for (const Action* a : blocked_) {
         const z3::expr& action_var = vf.get_action_variable(*a, t);
         solver_.add(z3::implies(block_lit_.at(a), !action_var));
     }
-
-    // Encode constraints at new timestep for already-activated actions
     for (const Action* a : activated_) {
         encode_action_at(a, t);
     }
@@ -314,144 +286,168 @@ void PDLAPlanner::extend_horizon() {
     current_horizon_++;
     add_timestep(current_horizon_);
     refresh_goal(current_horizon_ + 1);
-
-    int act_count = predictive_activate(current_horizon_);
-
-    if (Config::instance().is_verbose() && act_count > 0) {
-        Logger::instance().info("  Extended horizon: activated " +
-            std::to_string(act_count) + " actions at t=" +
-            std::to_string(current_horizon_));
-    }
 }
 
 // ---------------------------------------------------------------------------
-// Search loop helpers
+// Scoring function
 // ---------------------------------------------------------------------------
+
+double PDLAPlanner::score_action(const Action* action) const {
+    double rp = relaxed_plan_set_.count(action) ? 1.0 : 0.0;
+
+    int layer = achievers_->get_action_first_layer(action->id());
+    double earliness = 1.0 - static_cast<double>(layer) / static_cast<double>(max_arpg_layer_);
+
+    double readiness = 1.0;
+    auto prec_it = action_precondition_ids_.find(action);
+    if (prec_it != action_precondition_ids_.end() && !prec_it->second.empty()) {
+        int total = static_cast<int>(prec_it->second.size());
+        int satisfied = 0;
+        for (ExprID p : prec_it->second) {
+            if (init_satisfied_conditions_.count(p)) { satisfied++; continue; }
+            auto ach_it = condition_achievers_.find(p);
+            if (ach_it != condition_achievers_.end()) {
+                for (const Action* enabler : ach_it->second) {
+                    if (activated_.count(enabler)) { satisfied++; break; }
+                }
+            }
+        }
+        readiness = static_cast<double>(satisfied) / static_cast<double>(total);
+    }
+
+    double parsimony = 1.0 - std::min(1.0,
+        static_cast<double>(action->effects().size()) / static_cast<double>(max_effects_));
+
+    return 5.0 * rp + 2.0 * earliness + 3.0 * readiness + 1.0 * parsimony;
+}
 
 z3::expr_vector PDLAPlanner::build_assumptions() {
     z3::expr_vector assumptions(ctx_);
-
-    // One blocking literal per still-blocked action
     for (const Action* a : blocked_) {
         assumptions.push_back(block_lit_.at(a));
     }
-
     assumptions.push_back(goal_assumption_);
     return assumptions;
 }
 
-const Action* PDLAPlanner::select_best_achiever_for(
-        const Action* core_action) const {
-    if (!achievers_) return nullptr;
-
-    const auto& achieved = achievers_->get_achieved_conditions(*core_action);
-
-    std::unordered_set<const Action*> candidates;
-    for (ExprID cond : achieved) {
-        if (init_satisfied_conditions_.count(cond)) continue;
-
-        auto cach_it = condition_achievers_.find(cond);
-        if (cach_it == condition_achievers_.end()) continue;
-
-        for (const Action* alt : cach_it->second) {
-            candidates.insert(alt);
-        }
+bool PDLAPlanner::has_activated_achiever(ExprID condition) const {
+    auto it = condition_achievers_.find(condition);
+    if (it == condition_achievers_.end()) return false;
+    for (const Action* a : it->second) {
+        if (activated_.count(a)) return true;
     }
-
-    if (candidates.empty()) return nullptr;
-
-    const Action* best = nullptr;
-    double best_score = -1e9;
-
-    for (const Action* action : candidates) {
-        if (!goal_relevant_actions_.count(action)) continue;
-        if (!blocked_.count(action)) continue;  // must still be blocked
-
-        double score = 0;
-
-        if (relaxed_plan_set_.count(action)) score += 20;
-
-        auto act_it = activity_.find(action);
-        if (act_it != activity_.end()) score += act_it->second * 5;
-
-        auto prec_it = action_precondition_ids_.find(action);
-        if (prec_it != action_precondition_ids_.end()) {
-            for (ExprID p : prec_it->second) {
-                if (init_satisfied_conditions_.count(p)) continue;
-
-                bool has_enabler = false;
-                auto ach_it = condition_achievers_.find(p);
-                if (ach_it != condition_achievers_.end()) {
-                    for (const Action* enabler : ach_it->second) {
-                        if (activated_.count(enabler)) {
-                            has_enabler = true;
-                            break;
-                        }
-                    }
-                }
-
-                score -= has_enabler ? 5 : 30;
-            }
-        }
-
-        score -= static_cast<double>(action->effects().size()) * 2;
-
-        if (score > best_score) {
-            best_score = score;
-            best = action;
-        }
-    }
-
-    return best;
+    return false;
 }
 
-int PDLAPlanner::process_core(const z3::expr_vector& core) {
-    int activated = 0;
-    int filtered = 0;
-    std::vector<const Action*> bumped_actions;
+// ---------------------------------------------------------------------------
+// Phase A: obligation-driven activation
+// ---------------------------------------------------------------------------
 
-    for (unsigned i = 0; i < core.size(); ++i) {
-        unsigned eid = core[i].id();
-        auto it = blk_id_to_action_.find(eid);
-        if (it == blk_id_to_action_.end()) continue;
+void PDLAPlanner::push_precondition_obligations(
+        const Action* action, int deadline, int parent_depth) {
+    auto prec_it = action_precondition_ids_.find(action);
+    if (prec_it == action_precondition_ids_.end()) return;
 
-        const Action* action = it->second;
+    for (ExprID p : prec_it->second) {
+        if (init_satisfied_conditions_.count(p)) continue;
+        if (has_activated_achiever(p)) continue;
+        obligation_queue_.push({p, std::max(0, deadline - 1), parent_depth + 1, action, false});
+    }
+}
 
-        if (!goal_relevant_actions_.count(action)) {
-            filtered++;
+int PDLAPlanner::process_obligations() {
+    // Split budget by obligation source — exploration vs. exploitation.
+    //
+    // Backward-chain obligations (from_core=false): NO budget.  These deepen
+    // the causal chain for actions we've committed to.  "If we activated A,
+    // we must satisfy A's preconditions."  Following the chain to completion
+    // is exploitation — investing in a chosen path.
+    //
+    // Core-derived obligations (from_core=true): exactly 1 per round.  These
+    // are alternatives — "the solver says the current achiever doesn't work,
+    // try a different ground instance."  Processing one at a time maximizes
+    // information gain: the solver's response to a single new activation
+    // tells us precisely whether that was the right choice, or whether we
+    // need a different alternative, or whether the real issue is horizon
+    // length.  This follows IC3's discipline of one proof obligation per
+    // solver call, and CEGAR's principle of one refinement per
+    // counterexample.
+    static constexpr int core_budget = 1;
+
+    int activations = 0;
+    int core_activations = 0;
+
+    while (!obligation_queue_.empty()) {
+        Obligation ob = obligation_queue_.top();
+
+        if (ob.from_core && core_activations >= core_budget) break;
+
+        obligation_queue_.pop();
+
+        if (init_satisfied_conditions_.count(ob.condition)) continue;
+
+        auto ach_it = condition_achievers_.find(ob.condition);
+        if (ach_it == condition_achievers_.end()) {
+            deferred_obligations_.push_back(ob);
             continue;
         }
 
-        const Action* to_activate = action;
+        // Backward-chain obligations skip conditions already achievable.
+        // Core-derived obligations don't: the solver proved it doesn't work.
+        if (!ob.from_core && has_activated_achiever(ob.condition)) continue;
 
-        // Guided activation: substitute with a better achiever if available
-        {
-            const Action* best = select_best_achiever_for(action);
-            if (best && best != action && blocked_.count(best)) {
-                activate_action(best);
-                activity_[best] += 1.0;
-                bumped_actions.push_back(best);
-                activated++;
-                guided_substitutions_++;
-                to_activate = nullptr;
+        const Action* best = nullptr;
+        double best_score = -1e9;
+        for (const Action* a : ach_it->second) {
+            if (!blocked_.count(a)) continue;
+            double s = score_action(a);
+            if (s > best_score || (s == best_score && (!best || a->id() < best->id()))) {
+                best_score = s;
+                best = a;
             }
         }
 
-        if (to_activate && blocked_.count(to_activate)) {
-            activate_action(to_activate);
-            activity_[action] += 1.0;
-            bumped_actions.push_back(action);
-            activated++;
-            guided_fallbacks_++;
+        if (!best) {
+            deferred_obligations_.push_back(ob);
+            continue;
         }
+
+        activate_action(best);
+        action_activation_depth_[best] = ob.depth;
+        activations++;
+        if (ob.from_core) core_activations++;
+
+        if (Config::instance().is_verbose()) {
+            Logger::instance().info("  Obligation: c" + std::to_string(ob.condition.id) +
+                " d=" + std::to_string(ob.depth) +
+                (ob.from_core ? " [alt]" : "") +
+                " → " + best->label() +
+                " (score=" + std::to_string(best_score) + ")");
+        }
+
+        // Sub-obligations from this activation are backward-chain (not core)
+        push_precondition_obligations(best, ob.deadline, ob.depth);
     }
 
-    if (Config::instance().is_verbose() && filtered > 0) {
-        Logger::instance().info("  Filtered: " + std::to_string(filtered) +
-            " non-achiever blocking lits from core");
-    }
+    return activations;
+}
 
-    // Process tracked precondition failures
+// ---------------------------------------------------------------------------
+// Phase B: core → obligations
+// ---------------------------------------------------------------------------
+
+PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
+        const z3::expr_vector& core) {
+    CoreResult result{0, 0, 0};
+
+    // ---- Source 1: tracked precondition failures ----
+    //
+    // Three-way classification:
+    //   (a) No activated achiever → obligation (need a new action)
+    //   (b) Activated achiever + blocked alternatives → from_core obligation
+    //       (try a different ground instance)
+    //   (c) Activated achiever + NO blocked alternatives → horizon signal
+
     std::unordered_map<int, TrackedPrecond> precond_earliest;
     for (unsigned i = 0; i < core.size(); ++i) {
         unsigned eid = core[i].id();
@@ -465,123 +461,106 @@ int PDLAPlanner::process_core(const z3::expr_vector& core) {
     }
 
     for (auto& [cond_id, tp] : precond_earliest) {
+        if (init_satisfied_conditions_.count(tp.condition)) continue;
+
+        int depth = 1;
+        auto ad_it = action_activation_depth_.find(tp.action);
+        if (ad_it != action_activation_depth_.end()) {
+            depth = ad_it->second + 1;
+        }
+
+        bool has_activated = has_activated_achiever(tp.condition);
+        bool has_blocked_alt = false;
         auto ach_it = condition_achievers_.find(tp.condition);
-        if (ach_it == condition_achievers_.end()) continue;
-
-        const Action* best_enabler = nullptr;
-        double best_score = -1e9;
-
-        for (const Action* enabler : ach_it->second) {
-            if (!goal_relevant_actions_.count(enabler)) continue;
-            if (!blocked_.count(enabler)) continue;
-
-            double score = 0;
-            if (relaxed_plan_set_.count(enabler)) score += 20;
-            auto ai = activity_.find(enabler);
-            if (ai != activity_.end()) score += ai->second * 5;
-            score -= static_cast<double>(enabler->effects().size()) * 2;
-
-            if (score > best_score) {
-                best_score = score;
-                best_enabler = enabler;
+        if (ach_it != condition_achievers_.end()) {
+            for (const Action* a : ach_it->second) {
+                if (blocked_.count(a)) { has_blocked_alt = true; break; }
             }
         }
 
-        if (best_enabler) {
-            activate_action(best_enabler);
-            activity_[best_enabler] += 1.0;
-            bumped_actions.push_back(best_enabler);
-            activated++;
+        if (!has_activated) {
+            // (a) No achiever activated — genuinely need a new action
+            obligation_queue_.push({tp.condition, tp.timestep, depth, tp.action, false});
+            result.new_obligations++;
+            if (Config::instance().is_verbose()) {
+                Logger::instance().info("  Core→need: " + tp.action->label() +
+                    "@t" + std::to_string(tp.timestep) +
+                    " c" + std::to_string(tp.condition.id) +
+                    " (d=" + std::to_string(depth) + ")");
+            }
+        } else if (has_blocked_alt) {
+            // (b) Achiever exists but solver can't use it — try alternative
+            obligation_queue_.push({tp.condition, tp.timestep, depth, tp.action, true});
+            result.new_obligations++;
+            if (Config::instance().is_verbose()) {
+                Logger::instance().info("  Core→alt: " + tp.action->label() +
+                    "@t" + std::to_string(tp.timestep) +
+                    " c" + std::to_string(tp.condition.id) +
+                    " (d=" + std::to_string(depth) + ")");
+            }
+        } else {
+            // (c) All achievers already activated — resource/horizon exhaustion
+            result.horizon_signals++;
+            if (Config::instance().is_verbose()) {
+                Logger::instance().info("  Core→horizon: " + tp.action->label() +
+                    "@t" + std::to_string(tp.timestep) +
+                    " c" + std::to_string(tp.condition.id));
+            }
+        }
+    }
+
+    // ---- Source 2: blocking literals ----
+
+    std::vector<const Action*> core_blocked_actions;
+    for (unsigned i = 0; i < core.size(); ++i) {
+        unsigned eid = core[i].id();
+        auto it = blk_id_to_action_.find(eid);
+        if (it == blk_id_to_action_.end()) continue;
+        core_blocked_actions.push_back(it->second);
+    }
+
+    // Try structured path: convert to condition obligations
+    for (const Action* action : core_blocked_actions) {
+        const auto& achieved = achievers_->get_achieved_conditions(*action);
+        for (ExprID cond : achieved) {
+            if (init_satisfied_conditions_.count(cond)) continue;
+            if (has_activated_achiever(cond)) continue;
+            obligation_queue_.push({cond, current_horizon_, 0, nullptr, true});
+            result.new_obligations++;
+        }
+    }
+
+    // Fallback: direct activation when no structured obligations produced.
+    // Fixed budget — same discipline as core-derived obligations.
+    if (result.new_obligations == 0 && !core_blocked_actions.empty()) {
+        int budget = fallback_budget_;
+
+        std::vector<std::pair<double, const Action*>> scored;
+        for (const Action* a : core_blocked_actions) {
+            if (!blocked_.count(a)) continue;
+            scored.push_back({score_action(a), a});
+        }
+        std::sort(scored.begin(), scored.end(),
+                  [](const auto& a, const auto& b) {
+                      if (a.first != b.first) return a.first > b.first;
+                      return a.second->id() < b.second->id();
+                  });
+
+        for (const auto& [score, action] : scored) {
+            if (result.direct_activations >= budget) break;
+            activate_action(action);
+            action_activation_depth_[action] = 0;
+            result.direct_activations++;
 
             if (Config::instance().is_verbose()) {
-                Logger::instance().info("  Precond: " +
-                    tp.action->label() + "@t" + std::to_string(tp.timestep) +
-                    " needs c" + std::to_string(tp.condition.id) +
-                    " → " + best_enabler->label());
+                Logger::instance().info("  Core→direct: " + action->label() +
+                    " (score=" + std::to_string(score) + ")");
             }
+            push_precondition_obligations(action, current_horizon_, 0);
         }
     }
 
-    cumulative_core_activations_ += activated;
-    return activated;
-}
-
-void PDLAPlanner::cascade_bump(
-    const std::vector<const Action*>& seeds, double bump_amount) {
-    std::unordered_set<const Action*> visited(seeds.begin(), seeds.end());
-    std::vector<const Action*> frontier = seeds;
-
-    while (!frontier.empty()) {
-        std::unordered_map<const Action*, double> next_bumps;
-
-        for (const Action* action : frontier) {
-            auto prec_it = action_precondition_ids_.find(action);
-            if (prec_it == action_precondition_ids_.end()) continue;
-
-            for (ExprID prec_cond : prec_it->second) {
-                if (init_satisfied_conditions_.count(prec_cond)) continue;
-
-                auto ach_it = condition_achievers_.find(prec_cond);
-                if (ach_it == condition_achievers_.end()) continue;
-
-                double per_achiever = bump_amount /
-                    static_cast<double>(ach_it->second.size());
-                for (const Action* achiever : ach_it->second) {
-                    if (!visited.count(achiever)) {
-                        next_bumps[achiever] += per_achiever;
-                    }
-                }
-            }
-        }
-
-        const double max_cascade_bump = 1.0;
-        frontier.clear();
-        for (auto& [achiever, bump] : next_bumps) {
-            visited.insert(achiever);
-            double capped = std::min(bump, max_cascade_bump);
-            activity_[achiever] += capped;
-            frontier.push_back(achiever);
-        }
-    }
-}
-
-int PDLAPlanner::predictive_activate(int /*timestep*/) {
-    // With float activation, predictive activation operates on blocked
-    // actions globally (not per-timestep). Budget and threshold unchanged.
-    int budget = std::max(1, cumulative_core_activations_);
-
-    std::vector<std::pair<double, const Action*>> candidates;
-    for (const Action* a : blocked_) {
-        double score = activity_[a];
-        if (score <= activation_threshold_) continue;
-        candidates.push_back({score, a});
-    }
-
-    std::sort(candidates.begin(), candidates.end(),
-              [](const auto& a, const auto& b) { return a.first > b.first; });
-
-    int act_count = 0;
-    for (const auto& [score, action] : candidates) {
-        if (act_count >= budget) break;
-
-        activate_action(action);
-        act_count++;
-
-        if (Config::instance().is_verbose()) {
-            Logger::instance().info("    Predictive activate: " +
-                action->name() +
-                " (activity=" + std::to_string(score) +
-                ", budget=" + std::to_string(budget) + ")");
-        }
-    }
-
-    return act_count;
-}
-
-void PDLAPlanner::decay_activity() {
-    for (auto& [action, score] : activity_) {
-        score *= activity_decay_;
-    }
+    return result;
 }
 
 Plan PDLAPlanner::extract_plan(const z3::model& model) {
@@ -622,90 +601,32 @@ Plan PDLAPlanner::search() {
     {
         int start_ts = config.planner.start_timestep;
         int num_timesteps = std::max(1, start_ts);
-
         for (int t = 0; t < num_timesteps; t++) {
             current_horizon_++;
             add_timestep(current_horizon_);
         }
         refresh_goal(current_horizon_ + 1);
-
         stats.set("planner.rpg_lower_bound", static_cast<double>(start_ts));
-        stats.set("planner.initial_horizon", static_cast<double>(current_horizon_));
-
         Logger::instance().info("Pre-extended horizon to " +
             std::to_string(current_horizon_) +
             " (RPG lower bound: " + std::to_string(start_ts) +
             ", relaxed plan: " + std::to_string(relaxed_plan_.size()) + " actions)");
     }
 
-    // 4. RPG-guided seeding
-    {
-        int max_goal_layer = 0;
-        for (const Action* action : goal_achiever_actions_) {
-            max_goal_layer = std::max(max_goal_layer,
-                achievers_->get_action_first_layer(action->id()));
+    // 4. Push goal conditions as initial obligations
+    for (ExprID g : goal_condition_ids_) {
+        if (!init_satisfied_conditions_.count(g)) {
+            obligation_queue_.push({g, current_horizon_, 0, nullptr, false});
         }
-
-        // Seed goal achievers (float activation — available at all timesteps)
-        int seeded = 0;
-        for (const Action* action : goal_achiever_actions_) {
-            if (blocked_.count(action)) {
-                activate_action(action);
-                activity_[action] = 1.0;
-                seeded++;
-                if (config.is_verbose()) {
-                    Logger::instance().info("  Seed goal achiever: " +
-                        action->name() +
-                        " (ARPG layer=" +
-                        std::to_string(achievers_->get_action_first_layer(action->id())) + ")");
-                }
-            }
-        }
-
-        // Cascade bump from goal achievers
-        std::vector<const Action*> seeds(goal_achiever_actions_.begin(),
-                                         goal_achiever_actions_.end());
-        cascade_bump(seeds, 1.0);
-
-        // Activate cascade-bumped enablers
-        std::vector<std::pair<double, const Action*>> enabler_candidates;
-        for (auto& [action, score] : activity_) {
-            if (score <= activation_threshold_) continue;
-            if (goal_achiever_actions_.count(action)) continue;
-            if (!blocked_.count(action)) continue;
-            enabler_candidates.push_back({score, action});
-        }
-        std::sort(enabler_candidates.begin(), enabler_candidates.end(),
-                  [](const auto& a, const auto& b) { return a.first > b.first; });
-
-        int enabler_budget = std::max(1, 2 * seeded);
-        int enabler_count = 0;
-        for (const auto& [score, action] : enabler_candidates) {
-            if (enabler_count >= enabler_budget) break;
-            activate_action(action);
-            enabler_count++;
-            if (config.is_verbose()) {
-                Logger::instance().info("  Seed enabler: " +
-                    action->name() +
-                    " (RPG layer=" +
-                    std::to_string(achievers_->get_action_first_layer(action->id())) +
-                    ", activity=" + std::to_string(score) + ")");
-            }
-        }
-
-        Logger::instance().info("Initial: " + std::to_string(seeded) +
-            " goal achievers + " + std::to_string(enabler_count) +
-            " cascade enablers, " +
-            std::to_string(current_horizon_ + 1) + " timesteps" +
-            " (RPG lb: " + std::to_string(config.planner.start_timestep) +
-            ", max goal layer: " + std::to_string(max_goal_layer) + "), " +
-            std::to_string(problem_.actions().size()) + " actions" +
-            ", h^ff RP: " + std::to_string(relaxed_plan_.size()) + " actions" +
-            ", blocked: " + std::to_string(blocked_.size()) +
-            ", activated: " + std::to_string(activated_.size()));
     }
 
-    // 5. Main search loop
+    Logger::instance().info("Initial: " +
+        std::to_string(obligation_queue_.size()) + " goal obligations, " +
+        std::to_string(current_horizon_ + 1) + " timesteps, " +
+        std::to_string(problem_.actions().size()) + " actions, " +
+        "h^ff RP: " + std::to_string(relaxed_plan_.size()) + " actions");
+
+    // 5. Main search loop: Phase A (obligations) → Phase B (solver)
     int round = 0;
     int extensions = 0;
     double total_time = 0.0;
@@ -714,8 +635,17 @@ Plan PDLAPlanner::search() {
     while (true) {
         if (!apply_solver_timeout(solver_)) break;
 
-        auto round_start = std::chrono::high_resolution_clock::now();
+        // Phase A: process obligations
+        int phase_a_activations = process_obligations();
 
+        if (Config::instance().is_verbose() && phase_a_activations > 0) {
+            Logger::instance().info("  Phase A: " + std::to_string(phase_a_activations) +
+                " activations, queue=" + std::to_string(obligation_queue_.size()) +
+                " deferred=" + std::to_string(deferred_obligations_.size()));
+        }
+
+        // Phase B: solver feasibility check
+        auto round_start = std::chrono::high_resolution_clock::now();
         z3::expr_vector assumptions = build_assumptions();
 
         auto solve_start = std::chrono::high_resolution_clock::now();
@@ -734,7 +664,7 @@ Plan PDLAPlanner::search() {
             {"round", std::to_string(round_time) + "s"},
             {"horizon", std::to_string(current_horizon_)},
             {"activated", std::to_string(activated_.size()) + "/" + std::to_string(problem_.actions().size())},
-            {"assumptions", std::to_string(assumptions.size())},
+            {"queue", std::to_string(obligation_queue_.size())},
             {"mem", std::to_string(static_cast<int>(mem)) + "MB"}
         }, "R");
 
@@ -744,7 +674,6 @@ Plan PDLAPlanner::search() {
         if (result == z3::sat) {
             z3::model model = solver_.get_model();
             solution_found_ = true;
-
             Plan plan = extract_plan(model);
 
             Logger::instance().info("\n*** PLAN FOUND: " +
@@ -758,20 +687,8 @@ Plan PDLAPlanner::search() {
             stats.set("planner.plan_length", static_cast<double>(plan.length()));
             stats.set("planner.rounds", static_cast<double>(round));
             stats.set("planner.solution_horizon", static_cast<double>(current_horizon_));
-            stats.set("planner.total_activations", static_cast<double>(cumulative_core_activations_));
-            stats.set("guided.substitutions", static_cast<double>(guided_substitutions_));
-            stats.set("guided.fallbacks", static_cast<double>(guided_fallbacks_));
             stats.set("planner.activated_actions", static_cast<double>(activated_.size()));
             stats.set("planner.total_actions", static_cast<double>(problem_.actions().size()));
-
-            // Count encoded (action, timestep) pairs
-            size_t total_encoded = 0;
-            for (const auto& [a, ts_set] : action_encoded_at_) {
-                total_encoded += ts_set.size();
-            }
-            stats.set("planner.lazy_encoded_pairs", static_cast<double>(total_encoded));
-            size_t total_possible = problem_.actions().size() * static_cast<size_t>(current_horizon_ + 1);
-            stats.set("planner.lazy_total_possible", static_cast<double>(total_possible));
 
             plan.write_ipc(config.planner.output_plan, 1,
                            -1.0, true,
@@ -788,47 +705,66 @@ Plan PDLAPlanner::search() {
                 int core_blocking = 0, core_tracked = 0, core_other = 0;
                 for (unsigned ci = 0; ci < core.size(); ++ci) {
                     unsigned eid = core[ci].id();
-                    if (blk_id_to_action_.find(eid) != blk_id_to_action_.end()) {
+                    if (blk_id_to_action_.find(eid) != blk_id_to_action_.end())
                         core_blocking++;
-                    } else if (tracked_precond_id_.find(eid) != tracked_precond_id_.end()) {
+                    else if (tracked_precond_id_.find(eid) != tracked_precond_id_.end())
                         core_tracked++;
-                    } else {
+                    else
                         core_other++;
-                    }
                 }
-                Logger::instance().info("  Core size: " + std::to_string(core.size()) +
-                    " (blocking=" + std::to_string(core_blocking) +
-                    ", tracked=" + std::to_string(core_tracked) +
-                    ", other=" + std::to_string(core_other) + ")");
+                Logger::instance().info("  Core: " + std::to_string(core.size()) +
+                    " (blk=" + std::to_string(core_blocking) +
+                    " trk=" + std::to_string(core_tracked) +
+                    " oth=" + std::to_string(core_other) + ")");
             }
 
             stats.add("planner.total_core_size", static_cast<double>(core.size()));
             stats.add("planner.core_count");
 
-            int act = process_core(core);
+            CoreResult cr = process_core_for_obligations(core);
 
             if (config.is_verbose()) {
-                Logger::instance().info("  Activated: " + std::to_string(act));
+                Logger::instance().info("  Core result: obs=" + std::to_string(cr.new_obligations) +
+                    " horizon_signals=" + std::to_string(cr.horizon_signals) +
+                    " direct=" + std::to_string(cr.direct_activations));
             }
 
-            if (act == 0) {
+            // Decide whether to extend the horizon.
+            // Extend when: (1) no activation progress was made, AND either
+            //   (a) core produced only horizon signals (resource exhaustion), or
+            //   (b) queue is empty and nothing was produced at all.
+            bool made_progress = (phase_a_activations > 0 ||
+                                  cr.new_obligations > 0 ||
+                                  cr.direct_activations > 0);
+
+            bool horizon_exhausted = (!made_progress && cr.horizon_signals > 0);
+            bool completely_stuck = (!made_progress && cr.horizon_signals == 0 &&
+                                     obligation_queue_.empty());
+
+            if (horizon_exhausted || completely_stuck) {
                 if (current_horizon_ >= config.planner.max_steps) {
                     Logger::instance().info("Horizon limit reached (" +
                         std::to_string(current_horizon_) + ")");
                     break;
                 }
                 extensions++;
-                Logger::instance().info("Extending horizon (extension #" +
-                    std::to_string(extensions) + ", horizon: " +
-                    std::to_string(current_horizon_) + ")");
+                Logger::instance().info("Extending horizon (" +
+                    std::string(horizon_exhausted ? "resource exhaustion" : "stuck") +
+                    ", #" + std::to_string(extensions) +
+                    ", horizon=" + std::to_string(current_horizon_) + ")");
                 extend_horizon();
+
+                for (auto& ob : deferred_obligations_) {
+                    ob.deadline = current_horizon_;
+                    obligation_queue_.push(ob);
+                }
+                deferred_obligations_.clear();
             }
 
         } else {
             if (handle_unknown_result(solver_, "round " + std::to_string(round))) break;
         }
 
-        decay_activity();
         round++;
     }
 
