@@ -50,20 +50,19 @@ protected:
     int next_goal_version_ = 0;
 
     // ---- Activation budgets ----
-
-    /// Budget for the core-derived direct activation fallback (Phase B).
-    /// Kept low because blocking-literal activations are less informed —
-    /// the solver says "I want action X" but we don't know the causal reason.
-    static constexpr int fallback_budget_ = 3;
-
-    /// Phase A (obligation-driven) has NO budget: obligations are structurally
-    /// derived through backward chaining, each addressing a specific missing
-    /// condition. The scoring function picks the best achiever. Processing
-    /// the full queue in one pass follows the causal chain to completion
-    /// before asking the solver to validate — this avoids the round-trip
-    /// overhead of artificially limiting to K=3 when per-round solve times
-    /// are sub-millisecond (observed: 80 rounds × 0.3ms = 24ms of solver
-    /// work gated behind 80 Phase A/B round-trips).
+    //
+    // Phase A backward chain (from_core=false): unlimited.  These are
+    // committed causal-chain obligations — exploitation.
+    //
+    // Phase A core alternatives (from_core=true): K=1.  One refinement
+    // per counterexample — exploration, IC3/CEGAR discipline.
+    //
+    // Phase B direct fallback (blocking literals, no structured info):
+    // ALL.  When the three-way classification and obligation conversion
+    // produce nothing, we have no basis for selectivity.  Activating all
+    // blocking literals from the core lets PDLA self-regulate: sparse
+    // domains stay lean (fallback rarely fires), dense domains converge
+    // to CE-like bulk activation (fallback handles most rounds).
 
     // ---- Obligation queue (Change 3) ----
 

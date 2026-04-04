@@ -554,33 +554,36 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
         }
     }
 
-    // Fallback: direct activation when no structured obligations produced.
-    // Fixed budget — same discipline as core-derived obligations.
+    // Fallback: activate ALL blocking literals from the core.
+    //
+    // This fires only when structured processing (three-way classification
+    // of tracked preconditions + blocking-lit-to-obligation conversion)
+    // produced zero new obligations.  At this point we have no domain
+    // knowledge to distinguish which blocking literals matter — the
+    // achiever graph has nothing more to say.  The solver's blocking
+    // literals are our only signal, so we trust them fully.
+    //
+    // This makes PDLA self-regulating:
+    //   - Sparse domains: structured processing handles most cores,
+    //     fallback rarely fires, activation stays lean.
+    //   - Dense domains: structured processing quickly exhausts
+    //     alternatives, fallback fires and bulk-activates, converging
+    //     to CE-like behavior.
+    //   - Mixed: alternates — bulk activation injects actions, producing
+    //     richer cores with tracked preconds, which structured processing
+    //     handles selectively, until obligations dry up and the next
+    //     bulk round fires.
     if (result.new_obligations == 0 && !core_blocked_actions.empty()) {
-        int budget = fallback_budget_;
-
-        std::vector<std::pair<double, const Action*>> scored;
         for (const Action* a : core_blocked_actions) {
             if (!blocked_.count(a)) continue;
-            scored.push_back({score_action(a), a});
-        }
-        std::sort(scored.begin(), scored.end(),
-                  [](const auto& a, const auto& b) {
-                      if (a.first != b.first) return a.first > b.first;
-                      return a.second->id() < b.second->id();
-                  });
-
-        for (const auto& [score, action] : scored) {
-            if (result.direct_activations >= budget) break;
-            activate_action(action);
-            action_activation_depth_[action] = 0;
+            activate_action(a);
+            action_activation_depth_[a] = 0;
             result.direct_activations++;
 
             if (Config::instance().is_verbose()) {
-                Logger::instance().info("  Core→direct: " + action->label() +
-                    " (score=" + std::to_string(score) + ")");
+                Logger::instance().info("  Core→direct: " + a->label());
             }
-            push_precondition_obligations(action, current_horizon_, 0);
+            push_precondition_obligations(a, current_horizon_, 0);
         }
     }
 

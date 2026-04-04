@@ -124,6 +124,10 @@ def run_instance(domain_path, problem_path, strategy, timeout, extra_params=None
             "gr_initial": int(stats.get("goal_relevance.initial_actions", 0)),
             "gr_time_ms": round(stats.get("goal_relevance.time_seconds", 0) * 1000, 1),
             "final_actions": int(stats.get("pipeline.final_actions", 0)),
+            "activated": int(stats.get("planner.activated_actions",
+                            stats.get("planner.activated_entries", 0))),
+            "total_actions": int(stats.get("planner.total_actions",
+                                stats.get("pipeline.final_actions", 0))),
         }
 
     except Exception as e:
@@ -277,6 +281,7 @@ def main():
             writer = csv.DictWriter(f, fieldnames=[
                 "instance", "strategy", "solved", "time", "solve_time",
                 "preprocess_ms", "plan_len", "horizon", "rounds",
+                "activated", "total_actions",
                 "gr_removed", "gr_initial", "gr_time_ms", "final_actions",
             ])
             writer.writeheader()
