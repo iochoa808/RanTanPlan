@@ -242,6 +242,11 @@ std::unique_ptr<BasePlanner> StrategyFactory::create_planner(
         }
         case PlannerKind::PDLA:
             return std::make_unique<PDLAPlanner>(problem, encoder, ctx);
+        case PlannerKind::PDLASelective: {
+            auto p = std::make_unique<PDLAPlanner>(problem, encoder, ctx);
+            p->set_always_activate_core(false);
+            return p;
+        }
     }
     throw std::invalid_argument("Unknown planner kind");
 }

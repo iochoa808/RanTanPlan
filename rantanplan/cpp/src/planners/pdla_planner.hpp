@@ -17,12 +17,32 @@ namespace rantanplan {
 /**
  * @brief PDLA planner — Property-Directed Lazy Activation
  *
- * Change 1 (float activation): one blocking literal per action.
- * Change 2 (incremental activation): scored selection replaces VSIDS/predictive.
- * Change 3 (obligation-driven search): IC3-style backward chaining.
- *   Phase A: process full obligation queue (no budget — structurally justified).
- *   Phase B: solver check; core → new obligations or fallback direct activation.
- * Phase 4 (split budgets): Phase A unlimited, Phase B fallback capped at K=3.
+ * Core-guided lazy activation for exists-step SAT-based planning,
+ * structured as a two-phase loop inspired by IC3/PDR and CEGAR.
+ *
+ * Architecture:
+ *   - Float activation: one blocking literal per action (not per timestep).
+ *     Activating an action makes it available at all timesteps.
+ *   - Obligation queue: backward chaining from goals through the achiever
+ *     graph.  Obligations are processed without budget (exploitation).
+ *   - Core classification: tracked preconditions are classified into
+ *     need (no achiever), alternative (try different ground instance,
+ *     K=1 per round — exploration), or horizon signal (resource exhaustion).
+ *   - Spread priority: core-derived obligations are prioritised by the
+ *     fraction of timesteps at which the condition fails — low spread
+ *     (likely to benefit from alternatives) before high spread.
+ *   - Assumption shuffling: blocking literals are shuffled each round
+ *     to decorrelate Z3's search heuristics from assumption ordering.
+ *
+ * Two variants (controlled by always_activate_core_):
+ *   - pdla (always_activate_core_=true): blocking literals from cores
+ *     are always activated alongside structured obligation processing.
+ *     Self-regulating: sparse domains stay lean (few blocking lits in
+ *     cores), dense domains converge fast (many blocking lits activated).
+ *   - pdla-sel (always_activate_core_=false): blocking literals are
+ *     only activated as fallback when structured processing produces
+ *     no obligations.  More selective, better for sparse domains,
+ *     slower on dense domains where most actions are eventually needed.
  *
  * See docs/pdla-proposal.md for the full design document.
  */
@@ -33,6 +53,12 @@ public:
 
     void set_achievers(std::unique_ptr<AchieversAnalysis> achievers);
 
+    /// When true, blocking literals from cores are always activated
+    /// (the solver's direct demand is trusted unconditionally).
+    /// When false, blocking literals are only activated as a fallback
+    /// when structured processing produces no obligations.
+    void set_always_activate_core(bool v) { always_activate_core_ = v; }
+
     Plan search() override;
 
 protected:
@@ -40,6 +66,7 @@ protected:
 
     int current_horizon_ = -1;
     int goal_timestep_ = -1;
+    bool always_activate_core_ = true;
 
     std::unordered_map<const Action*, z3::expr> block_lit_;
     std::unordered_set<const Action*> blocked_;

@@ -6,6 +6,7 @@
 #include "../util/memory_tracker.hpp"
 #include <algorithm>
 #include <chrono>
+#include <random>
 
 namespace rantanplan {
 
@@ -322,9 +323,23 @@ double PDLAPlanner::score_action(const Action* action) const {
 }
 
 z3::expr_vector PDLAPlanner::build_assumptions() {
-    z3::expr_vector assumptions(ctx_);
+    // Collect blocking literals into a temporary vector and shuffle.
+    // Z3's assumption ordering affects its internal search heuristics
+    // (VSIDS initial activity, conflict clause ordering).  Shuffling
+    // reduces deterministic bias and smooths out the variance from
+    // Z3's sensitivity to assumption order — analogous to random
+    // restarts in SAT solvers (Nadel 2010).
+    std::vector<z3::expr> blk_lits;
+    blk_lits.reserve(blocked_.size());
     for (const Action* a : blocked_) {
-        assumptions.push_back(block_lit_.at(a));
+        blk_lits.push_back(block_lit_.at(a));
+    }
+    static std::mt19937 rng(42);  // fixed seed for reproducibility
+    std::shuffle(blk_lits.begin(), blk_lits.end(), rng);
+
+    z3::expr_vector assumptions(ctx_);
+    for (auto& lit : blk_lits) {
+        assumptions.push_back(lit);
     }
     assumptions.push_back(goal_assumption_);
     return assumptions;
@@ -554,26 +569,30 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
         }
     }
 
-    // Fallback: activate ALL blocking literals from the core.
+    // Blocking-literal activations: always activate, not gated on
+    // whether structured processing produced obligations.
     //
-    // This fires only when structured processing (three-way classification
-    // of tracked preconditions + blocking-lit-to-obligation conversion)
-    // produced zero new obligations.  At this point we have no domain
-    // knowledge to distinguish which blocking literals matter — the
-    // achiever graph has nothing more to say.  The solver's blocking
-    // literals are our only signal, so we trust them fully.
+    // Blocking literals and tracked preconditions are independent signals:
+    //   - Blocking literals: "I want these actions available" (solver demand)
+    //   - Tracked preconditions: "these conditions are failing" (diagnosis)
+    //
+    // The obligation queue handles tracked preconditions (structured,
+    // selective, one alternative at a time).  Blocking literals are the
+    // solver's direct demand for specific actions — suppressing them
+    // because obligations were also produced loses information.
     //
     // This makes PDLA self-regulating:
-    //   - Sparse domains: structured processing handles most cores,
-    //     fallback rarely fires, activation stays lean.
-    //   - Dense domains: structured processing quickly exhausts
-    //     alternatives, fallback fires and bulk-activates, converging
-    //     to CE-like behavior.
-    //   - Mixed: alternates — bulk activation injects actions, producing
-    //     richer cores with tracked preconds, which structured processing
-    //     handles selectively, until obligations dry up and the next
-    //     bulk round fires.
-    if (result.new_obligations == 0 && !core_blocked_actions.empty()) {
+    //   - Sparse domains: cores have few blocking literals → few direct
+    //     activations.  The obligation queue handles most of the work.
+    //   - Dense domains: cores have many blocking literals → bulk
+    //     activation, converging to CE-like behavior.
+    //   - The obligation queue's three-way classification still provides
+    //     structured feedback (horizon signals, selective alternatives)
+    //     on top of the direct activations.
+    // Activate blocking literals: either always (solver demand is trusted)
+    // or only as fallback (when structured processing produced nothing).
+    bool do_direct = always_activate_core_ || (result.new_obligations == 0);
+    if (do_direct) {
         for (const Action* a : core_blocked_actions) {
             if (!blocked_.count(a)) continue;
             activate_action(a);
