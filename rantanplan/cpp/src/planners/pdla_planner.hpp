@@ -73,12 +73,19 @@ protected:
         int depth;
         const Action* requester;  ///< action whose precondition created this (nullptr for goals)
         bool from_core;           ///< true if derived from a solver core (not backward chaining)
+        double spread;            ///< fraction of timesteps at which condition fails in core [0,1]
     };
 
     struct ObligationCompare {
         bool operator()(const Obligation& a, const Obligation& b) const {
-            if (a.depth != b.depth) return a.depth < b.depth;  // higher depth first
-            return a.deadline > b.deadline;  // earlier deadline first
+            // 1. Higher depth first (deeper causal chains resolved first)
+            if (a.depth != b.depth) return a.depth < b.depth;
+            // 2. Lower spread first (conditions failing at fewer timesteps
+            //    are more likely to benefit from alternatives — the solver
+            //    only proved failure at a subset of temporal placements)
+            if (a.spread != b.spread) return a.spread > b.spread;
+            // 3. Earlier deadline first
+            return a.deadline > b.deadline;
         }
     };
 

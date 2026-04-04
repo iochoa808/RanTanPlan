@@ -351,7 +351,7 @@ void PDLAPlanner::push_precondition_obligations(
     for (ExprID p : prec_it->second) {
         if (init_satisfied_conditions_.count(p)) continue;
         if (has_activated_achiever(p)) continue;
-        obligation_queue_.push({p, std::max(0, deadline - 1), parent_depth + 1, action, false});
+        obligation_queue_.push({p, std::max(0, deadline - 1), parent_depth + 1, action, false, 0.0});
     }
 }
 
@@ -447,20 +447,40 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
     //   (b) Activated achiever + blocked alternatives → from_core obligation
     //       (try a different ground instance)
     //   (c) Activated achiever + NO blocked alternatives → horizon signal
+    //
+    // For case (b), compute the timestep spread: the fraction of timesteps
+    // at which the condition fails in this core.  High spread (fails at
+    // many timesteps) means the solver exhaustively explored temporal
+    // placements — a different achiever is unlikely to help.  The spread
+    // is used as a priority signal: low-spread obligations are tried first.
 
-    std::unordered_map<int, TrackedPrecond> precond_earliest;
+    // Collect per-condition: representative TrackedPrecond + set of failing timesteps
+    struct CondEntry {
+        TrackedPrecond tp;          // representative (earliest timestep)
+        std::unordered_set<int> failing_timesteps;
+    };
+    std::unordered_map<int, CondEntry> cond_entries;
+
     for (unsigned i = 0; i < core.size(); ++i) {
         unsigned eid = core[i].id();
         auto tp_it = tracked_precond_id_.find(eid);
         if (tp_it == tracked_precond_id_.end()) continue;
         auto& tp = tp_it->second;
-        auto pe_it = precond_earliest.find(tp.condition.id);
-        if (pe_it == precond_earliest.end() || tp.timestep < pe_it->second.timestep) {
-            precond_earliest[tp.condition.id] = tp;
+        auto ce_it = cond_entries.find(tp.condition.id);
+        if (ce_it == cond_entries.end()) {
+            cond_entries[tp.condition.id] = {tp, {tp.timestep}};
+        } else {
+            ce_it->second.failing_timesteps.insert(tp.timestep);
+            if (tp.timestep < ce_it->second.tp.timestep) {
+                ce_it->second.tp = tp;
+            }
         }
     }
 
-    for (auto& [cond_id, tp] : precond_earliest) {
+    double horizon_denom = std::max(1.0, static_cast<double>(current_horizon_ + 1));
+
+    for (auto& [cond_id, entry] : cond_entries) {
+        auto& tp = entry.tp;
         if (init_satisfied_conditions_.count(tp.condition)) continue;
 
         int depth = 1;
@@ -478,9 +498,11 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
             }
         }
 
+        double spread = static_cast<double>(entry.failing_timesteps.size()) / horizon_denom;
+
         if (!has_activated) {
             // (a) No achiever activated — genuinely need a new action
-            obligation_queue_.push({tp.condition, tp.timestep, depth, tp.action, false});
+            obligation_queue_.push({tp.condition, tp.timestep, depth, tp.action, false, 0.0});
             result.new_obligations++;
             if (Config::instance().is_verbose()) {
                 Logger::instance().info("  Core→need: " + tp.action->label() +
@@ -489,14 +511,16 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
                     " (d=" + std::to_string(depth) + ")");
             }
         } else if (has_blocked_alt) {
-            // (b) Achiever exists but solver can't use it — try alternative
-            obligation_queue_.push({tp.condition, tp.timestep, depth, tp.action, true});
+            // (b) Achiever exists but solver can't use it — try alternative.
+            // Spread used for priority: low spread = high priority.
+            obligation_queue_.push({tp.condition, tp.timestep, depth, tp.action, true, spread});
             result.new_obligations++;
             if (Config::instance().is_verbose()) {
                 Logger::instance().info("  Core→alt: " + tp.action->label() +
                     "@t" + std::to_string(tp.timestep) +
                     " c" + std::to_string(tp.condition.id) +
-                    " (d=" + std::to_string(depth) + ")");
+                    " (spread=" + std::to_string(spread) +
+                    ", d=" + std::to_string(depth) + ")");
             }
         } else {
             // (c) All achievers already activated — resource/horizon exhaustion
@@ -525,7 +549,7 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
         for (ExprID cond : achieved) {
             if (init_satisfied_conditions_.count(cond)) continue;
             if (has_activated_achiever(cond)) continue;
-            obligation_queue_.push({cond, current_horizon_, 0, nullptr, true});
+            obligation_queue_.push({cond, current_horizon_, 0, nullptr, true, 0.0});
             result.new_obligations++;
         }
     }
@@ -616,7 +640,7 @@ Plan PDLAPlanner::search() {
     // 4. Push goal conditions as initial obligations
     for (ExprID g : goal_condition_ids_) {
         if (!init_satisfied_conditions_.count(g)) {
-            obligation_queue_.push({g, current_horizon_, 0, nullptr, false});
+            obligation_queue_.push({g, current_horizon_, 0, nullptr, false, 0.0});
         }
     }
 
