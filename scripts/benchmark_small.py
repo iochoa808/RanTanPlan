@@ -11,7 +11,7 @@ Selected from SLURM cluster results to cover:
 
 Usage:
     python benchmark_small.py                       # All 6 strategies
-    python benchmark_small.py -s causal-exists      # Single strategy
+    python benchmark_small.py -s pdla               # Single strategy
     python benchmark_small.py --timeout 180         # Custom timeout
     python benchmark_small.py --csv results.csv     # Save CSV
 """
@@ -36,10 +36,10 @@ from rantanplan.planner_wrapper import RantanPlanPlanner
 BENCH_DIR = Path("pddl/small-test")
 
 STRATEGIES = [
-    "causal-exists",
-    "causal-exists-fp",
     "exists-lazy-semantic-chain",
     "exists-lazy-semantic-chain-fp",
+    "pdla",
+    "pdla-sa",
 ]
 
 DEFAULT_TIMEOUT = 120
@@ -159,7 +159,7 @@ def print_header(strategies):
     hdr = f"{'Instance':40s}"
     for s in strategies:
         label = (s.replace("exists-lazy-semantic-chain", "elsc")
-                  .replace("causal-exists", "ce"))
+                  )
         hdr += f" | {label:>12s}"
     print(f"\n{B}{hdr}{E}")
     print("-" * len(hdr.replace("\033[1m", "").replace("\033[0m", "")))
@@ -271,7 +271,7 @@ def main():
     print(f"{B}Coverage:{E}")
     for s in strategies:
         label = (s.replace("exists-lazy-semantic-chain", "elsc")
-                  .replace("causal-exists", "ce"))
+                  )
         n = solved_counts[s]
         pct = 100 * n / len(instances)
         print(f"  {label:>20s}: {n}/{len(instances)} ({pct:.0f}%)")

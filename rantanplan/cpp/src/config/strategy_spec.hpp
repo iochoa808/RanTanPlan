@@ -9,7 +9,7 @@ enum class EncoderFamily { Grounded, Chained, R2E };
 enum class SemanticsKind { Sequential, Forall, Exists };
 enum class InterferenceKind { None, EagerSyntactic, EagerSemantic, LazySyntactic, LazySemantic };
 enum class PropagatorKind { Null, Forall, LazyForall, Exists, FrameExists, StateAwareExists };
-enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, LazyR2E, CausalLazyR2E, CausalExists, CausalExistsGuided, PDLA, PDLASelective };
+enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, PDLA, PDLASelective };
 
 /// Search mode — orthogonal to strategy (encoding/semantics/interference/propagator).
 ///   Satisficing: find first valid plan, return immediately.
@@ -48,14 +48,11 @@ inline PlannerKind resolve_planner_kind(SearchMode mode, const StrategySpec& spe
             "Mode '" + mode_str + "' is incompatible with double-tail strategies. "
             "Use a non-dt strategy (e.g., 'forall-lazy' instead of 'forall-lazy-dt').");
     }
-    if (spec.planner == PlannerKind::LazyR2E || spec.planner == PlannerKind::CausalLazyR2E ||
-        spec.planner == PlannerKind::CausalExists ||
-        spec.planner == PlannerKind::CausalExistsGuided ||
-        spec.planner == PlannerKind::PDLA ||
+    if (spec.planner == PlannerKind::PDLA ||
         spec.planner == PlannerKind::PDLASelective) {
         std::string mode_str = (mode == SearchMode::Optimal) ? "optimal" : "anytime";
         throw std::invalid_argument(
-            "Mode '" + mode_str + "' is incompatible with lazy strategies.");
+            "Mode '" + mode_str + "' is incompatible with PDLA strategies.");
     }
     return PlannerKind::BranchAndBound;
 }
@@ -87,11 +84,9 @@ inline bool sdac_unsafe(const StrategySpec& spec) {
     return spec.semantics == SemanticsKind::Exists;
 }
 
-/// Returns true if the strategy uses a CausalExists planner variant (or PDLA).
-inline bool uses_causal_exists(const StrategySpec& spec) {
-    return spec.planner == PlannerKind::CausalExists ||
-           spec.planner == PlannerKind::CausalExistsGuided ||
-           spec.planner == PlannerKind::PDLA ||
+/// Returns true if the strategy uses a PDLA planner variant.
+inline bool uses_pdla(const StrategySpec& spec) {
+    return spec.planner == PlannerKind::PDLA ||
            spec.planner == PlannerKind::PDLASelective;
 }
 

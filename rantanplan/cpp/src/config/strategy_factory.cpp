@@ -16,9 +16,6 @@
 #include "../planners/sequential.hpp"
 #include "../planners/double_tail_planner.hpp"
 #include "../planners/branch_and_bound_planner.hpp"
-#include "../planners/lazy_r2e_planner.hpp"
-#include "../planners/causal_lazy_r2e_planner.hpp"
-#include "../planners/causal_exists_planner.hpp"
 #include "../planners/pdla_planner.hpp"
 
 #include "../planners/propagators/null_propagator.hpp"
@@ -80,22 +77,6 @@ void StrategyFactory::validate(const StrategySpec& spec,
     // which is only implemented in SequentialPlanner. DoubleTailPlanner
     // tests a specific (forward_end, backward_start) pair per iteration
     // and cannot skip horizons while preserving completeness.
-    // LazyR2E requires Grounded encoder (needs convert_expr_id_to_z3 and variable factory).
-    if (spec.planner == PlannerKind::LazyR2E && spec.encoder != EncoderFamily::Grounded) {
-        throw std::invalid_argument(
-            "Lazy R2E planner requires Grounded encoder. Strategy: '" + strategy_name + "'.");
-    }
-    if (spec.planner == PlannerKind::CausalLazyR2E && spec.encoder != EncoderFamily::Grounded) {
-        throw std::invalid_argument(
-            "Causal Lazy R2E planner requires Grounded encoder. Strategy: '" + strategy_name + "'.");
-    }
-    if ((spec.planner == PlannerKind::CausalExists ||
-         spec.planner == PlannerKind::CausalExistsGuided) &&
-        spec.encoder != EncoderFamily::Grounded && spec.encoder != EncoderFamily::Chained) {
-        throw std::invalid_argument(
-            "Causal Exists planner requires Grounded or Chained encoder. Strategy: '" + strategy_name + "'.");
-    }
-
     if (horizon_schedule != "linear" && uses_double_tail(spec)) {
         throw std::invalid_argument(
             "Non-linear horizon schedule '" + horizon_schedule +
@@ -233,17 +214,6 @@ std::unique_ptr<BasePlanner> StrategyFactory::create_planner(
         case PlannerKind::BranchAndBound:
             return std::make_unique<BranchAndBoundPlanner>(
                 problem, encoder, ctx, interference, spec.semantics);
-        case PlannerKind::LazyR2E:
-            return std::make_unique<LazyR2EPlanner>(problem, encoder, ctx);
-        case PlannerKind::CausalLazyR2E:
-            return std::make_unique<CausalLazyR2EPlanner>(problem, encoder, ctx);
-        case PlannerKind::CausalExists:
-            return std::make_unique<CausalExistsPlanner>(problem, encoder, ctx);
-        case PlannerKind::CausalExistsGuided: {
-            auto p = std::make_unique<CausalExistsPlanner>(problem, encoder, ctx);
-            p->set_guided_activation(true);
-            return p;
-        }
         case PlannerKind::PDLA:
             return std::make_unique<PDLAPlanner>(problem, encoder, ctx);
         case PlannerKind::PDLASelective: {

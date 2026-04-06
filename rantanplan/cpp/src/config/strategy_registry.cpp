@@ -52,20 +52,8 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         {"exists-lazy-semantic-dt",        {E::Grounded, S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail}},
         {"exists-lazy-semantic-chain-dt",  {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail}},
 
-        // Lazy R2E with flowing frontier (core-guided, no interference/propagators needed)
-        {"lazy-r2e",                       {E::Grounded, S::Sequential, I::None,             P::Null,              K::LazyR2E}},
-        {"causal-lazy-r2e",                {E::Grounded, S::Sequential, I::None,             P::Null,              K::CausalLazyR2E}},
-
-        // Causal exists: core-guided lazy activation over exists-step encoding
-        {"causal-exists",                  {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::CausalExists}},
-
-        // Frame propagator variants: lazy frame axiom enforcement via user propagator
+        // Frame propagator variant: lazy frame axiom enforcement via user propagator
         {"exists-lazy-semantic-chain-fp",  {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::Sequential}},
-        {"causal-exists-fp",               {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::CausalExists}},
-
-        // Guided causal-exists: condition-based substitution + tracked preconditions
-        {"causal-exists-guided",           {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::CausalExistsGuided}},
-        {"causal-exists-guided-fp",        {E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::CausalExistsGuided}},
 
         // PDLA: Property-Directed Lazy Activation (see docs/pdla-proposal.md)
         // pdla: always activates blocking literals from cores (fast convergence on dense domains)

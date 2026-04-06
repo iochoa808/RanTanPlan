@@ -16,7 +16,7 @@
 #include "problem/problem.hpp"
 #include "problem/protobuf_io.hpp"
 #include "planners/sequential.hpp"
-#include "planners/causal_exists_planner.hpp"
+#include "planners/pdla_planner.hpp"
 #include "planners/formula_exporter.hpp"
 #include "util/memory_tracker.hpp"
 #include "util/stats.hpp"
@@ -139,11 +139,11 @@ PlanGenerationResult solve_planning_problem(rantanplan::PipelineResult& pipeline
     planner->set_arithmetic_profile(pipeline_result.arithmetic_profile);
     rantanplan::StrategyFactory::configure_planner(*planner, spec, pipeline_result);
 
-    // Pass pre-built achiever analysis to CausalExists planners (from GoalRelevancePass)
-    if (pipeline_result.achievers && rantanplan::uses_causal_exists(spec)) {
-        auto* causal_planner = dynamic_cast<rantanplan::CausalExistsPlanner*>(planner.get());
-        if (causal_planner) {
-            causal_planner->set_achievers(std::move(pipeline_result.achievers));
+    // Pass pre-built achiever analysis to PDLA planners (from GoalRelevancePass)
+    if (pipeline_result.achievers && rantanplan::uses_pdla(spec)) {
+        auto* pdla_planner = dynamic_cast<rantanplan::PDLAPlanner*>(planner.get());
+        if (pdla_planner) {
+            pdla_planner->set_achievers(std::move(pipeline_result.achievers));
         }
     }
 
@@ -308,7 +308,7 @@ int main(int argc, char* argv[]) {
     // that cannot contribute to any goal condition (even transitively).
     // Runs after RPG (needs reachability-pruned problem) and before interference
     // (fewer actions = smaller interference graph).
-    // Internally checks uses_causal_exists() — no-op for other strategies.
+    // Internally checks uses_pdla() — no-op for other strategies.
     rantanplan::GoalRelevancePass goal_relevance_pass;
     passes.push_back(&goal_relevance_pass);
 
