@@ -40,7 +40,7 @@ def get_available_strategies():
         line = line.strip()
         # Skip header line and empty lines
         if line and not line.startswith('Available'):
-            strategies.append(line)
+            strategies.append(line.split()[0])
     return strategies
 
 # Benchmark strategies (excluding sequential for performance focus)
@@ -48,10 +48,10 @@ BENCHMARK_STRATEGIES = [
     "r2e",
     "lazy-r2e",
     #"dec",
-    "exists-lazy-semantic-chain",
-    #"forall-lazy-semantic-chain",
-    #"exists-lazy",
-    #"forall-lazy"
+    "elsc",
+    #"flsc",
+    #"el",
+    #"fl"
 ]
 
 # Default timeout per solver run (seconds)

@@ -29,8 +29,8 @@ void BasePlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> pr
     //   SMT backend. Setting sat.* params via solver.set() BEFORE this switch
     //   silently disables ALL user propagator callbacks (fixed, final, push, pop).
     //   The propagator object exists and is registered, but Z3 never invokes it.
-    //   This caused invalid plans for every propagator-based strategy (forall-prop,
-    //   forall-lazy*, exists-lazy*, dec) while eager strategies were unaffected
+    //   This caused invalid plans for every propagator-based strategy (f-p,
+    //   fl*, el*, dec) while eager strategies were unaffected
     //   (they encode parallelism as clauses, not via callbacks).
     //
     //   Symptom: the solver returns SAT with interfering actions at the same

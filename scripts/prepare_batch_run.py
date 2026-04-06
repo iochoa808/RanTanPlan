@@ -21,8 +21,8 @@ from collections import defaultdict
 DEFAULT_STRATEGIES = [
     "exists",
     "r2e",
-    "exists-lazy-semantic-chain",
-    "exists-lazy-semantic-chain-dt",
+    "elsc",
+    "elsc-dt",
 ]
 
 DEFAULT_MODES = ["satisficing"]

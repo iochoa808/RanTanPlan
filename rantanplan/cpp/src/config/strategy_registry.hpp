@@ -7,6 +7,11 @@
 
 namespace rantanplan {
 
+struct StrategyEntry {
+    StrategySpec spec;
+    std::string description;
+};
+
 class StrategyRegistry {
 public:
     /// Look up a strategy spec by name.
@@ -17,8 +22,8 @@ public:
 
     static std::vector<std::string> list_strategies();
 
-private:
-    static const std::map<std::string, StrategySpec>& get_registry();
+    /// Return the full registry (name -> entry with spec + description).
+    static const std::map<std::string, StrategyEntry>& get_registry();
 };
 
 } // namespace rantanplan

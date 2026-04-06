@@ -22,7 +22,7 @@ def parse_arguments():
         epilog="""
 Examples:
   %(prog)s -d domain.pddl -p problem.pddl --strategy seq
-  %(prog)s -d domain.pddl -p problem.pddl --strategy forall-lazy --timeout 60
+  %(prog)s -d domain.pddl -p problem.pddl --strategy fl --timeout 60
   %(prog)s --list-strategies
 
 Use --list-strategies to see available strategies and their descriptions.

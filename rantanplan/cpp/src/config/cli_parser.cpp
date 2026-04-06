@@ -36,9 +36,12 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         else if (arg == "--list-strategies") {
             // Print available strategies and exit
             std::cout << "Available strategies:" << std::endl;
-            auto strategies = StrategyRegistry::list_strategies();
-            for (const auto& name : strategies) {
-                std::cout << "  " << name << std::endl;
+            auto& registry = StrategyRegistry::get_registry();
+            for (const auto& [name, entry] : registry) {
+                std::cout << "  " << name;
+                // Pad to 12 chars for alignment
+                for (size_t pad = name.size(); pad < 12; ++pad) std::cout << ' ';
+                std::cout << " " << entry.description << std::endl;
             }
             exit(0);
         }

@@ -46,7 +46,7 @@ inline PlannerKind resolve_planner_kind(SearchMode mode, const StrategySpec& spe
         std::string mode_str = (mode == SearchMode::Optimal) ? "optimal" : "anytime";
         throw std::invalid_argument(
             "Mode '" + mode_str + "' is incompatible with double-tail strategies. "
-            "Use a non-dt strategy (e.g., 'forall-lazy' instead of 'forall-lazy-dt').");
+            "Use a non-dt strategy (e.g., 'fl' instead of 'fl-dt').");
     }
     if (spec.planner == PlannerKind::PDLA ||
         spec.planner == PlannerKind::PDLASelective) {

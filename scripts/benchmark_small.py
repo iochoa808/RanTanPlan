@@ -36,8 +36,8 @@ from rantanplan.planner_wrapper import RantanPlanPlanner
 BENCH_DIR = Path("pddl/small-test")
 
 STRATEGIES = [
-    "exists-lazy-semantic-chain",
-    "exists-lazy-semantic-chain-fp",
+    "elsc",
+    "elsc-fp",
     "pdla",
     "pdla-sa",
 ]
@@ -158,9 +158,7 @@ E = "\033[0m"   # end
 def print_header(strategies):
     hdr = f"{'Instance':40s}"
     for s in strategies:
-        label = (s.replace("exists-lazy-semantic-chain", "elsc")
-                  )
-        hdr += f" | {label:>12s}"
+        hdr += f" | {s:>12s}"
     print(f"\n{B}{hdr}{E}")
     print("-" * len(hdr.replace("\033[1m", "").replace("\033[0m", "")))
 
@@ -270,11 +268,9 @@ def main():
     print()
     print(f"{B}Coverage:{E}")
     for s in strategies:
-        label = (s.replace("exists-lazy-semantic-chain", "elsc")
-                  )
         n = solved_counts[s]
         pct = 100 * n / len(instances)
-        print(f"  {label:>20s}: {n}/{len(instances)} ({pct:.0f}%)")
+        print(f"  {s:>20s}: {n}/{len(instances)} ({pct:.0f}%)")
 
     # CSV output
     if args.csv:

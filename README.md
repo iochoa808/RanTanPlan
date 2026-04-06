@@ -38,19 +38,19 @@ python build.py
 rantanplan -d domain.pddl -p problem.pddl --strategy seq
 
 # Forall-step with lazy semantic interference and chaining
-rantanplan -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chain --timeout 120
+rantanplan -d domain.pddl -p problem.pddl --strategy flsc --timeout 120
 
 # Cost-optimal planning with Branch & Bound
-rantanplan -d domain.pddl -p problem.pddl --strategy exists-lazy-semantic-chain --mode optimal
+rantanplan -d domain.pddl -p problem.pddl --strategy elsc --mode optimal
 
 # Anytime planning (writes improving plans to disk)
-rantanplan -d domain.pddl -p problem.pddl --strategy forall-lazy --mode anytime
+rantanplan -d domain.pddl -p problem.pddl --strategy fl --mode anytime
 
 # R2E semantics (declaration-order parallelism)
 rantanplan -d domain.pddl -p problem.pddl --strategy r2e --output-plan solution.txt
 
 # Double-tail bidirectional search
-rantanplan -d domain.pddl -p problem.pddl --strategy forall-lazy-semantic-chain-dt
+rantanplan -d domain.pddl -p problem.pddl --strategy flsc-dt
 
 # Core-guided lazy activation over exists-step encoding
 rantanplan -d domain.pddl -p problem.pddl --strategy causal-exists --detect-symmetries
@@ -69,24 +69,26 @@ rantanplan -d domain.pddl -p problem.pddl --strategy causal-exists --detect-symm
 | Strategy | Parallelism | Interference | Encoding | Notes |
 |----------|-------------|--------------|----------|-------|
 | `seq` | Sequential | N/A | Grounded | Classic planning |
-| `forall` | ∀-step | Eager syntactic | Grounded | Basic parallel |
-| `forall-prop` | ∀-step | Eager + propagator | Grounded | Optimized |
-| `forall-lazy` | ∀-step | Lazy syntactic | Grounded | On-demand |
-| `forall-lazy-semantic` | ∀-step | Lazy semantic | Grounded | Advanced |
-| `forall-lazy-semantic-chain` | ∀-step | Lazy semantic | Chained | Best for ∀-step |
-| `forall-eager-semantic` | ∀-step | Eager semantic | Grounded | Experimental |
-| `forall-eager-semantic-chain` | ∀-step | Eager semantic | Chained | Experimental |
-| `exists` | ∃-step | Eager syntactic | Grounded | Basic parallel |
-| `exists-lazy` | ∃-step | Lazy syntactic | Grounded | With cycle detection |
-| `exists-lazy-semantic` | ∃-step | Lazy semantic | Grounded | Advanced |
-| `exists-lazy-semantic-chain` | ∃-step | Lazy semantic | Chained | Best for ∃-step |
-| `exists-eager-semantic` | ∃-step | Eager semantic | Grounded | Experimental |
-| `exists-eager-semantic-chain` | ∃-step | Eager semantic | Chained | Experimental |
+| `f` | ∀-step | Eager syntactic | Grounded | Basic parallel |
+| `f-p` | ∀-step | Eager + propagator | Grounded | Optimized |
+| `fl` | ∀-step | Lazy syntactic | Grounded | On-demand |
+| `fls` | ∀-step | Lazy semantic | Grounded | Advanced |
+| `flsc` | ∀-step | Lazy semantic | Chained | Best for ∀-step |
+| `fgs` | ∀-step | Eager semantic | Grounded | Experimental |
+| `fgsc` | ∀-step | Eager semantic | Chained | Experimental |
+| `e` | ∃-step | Eager syntactic | Grounded | Basic parallel |
+| `el` | ∃-step | Lazy syntactic | Grounded | With cycle detection |
+| `els` | ∃-step | Lazy semantic | Grounded | Advanced |
+| `elsc` | ∃-step | Lazy semantic | Chained | Best for ∃-step |
+| `egs` | ∃-step | Eager semantic | Grounded | Experimental |
+| `egsc` | ∃-step | Eager semantic | Chained | Experimental |
 | `r2e` | R2∃-step | ARPG-based order | R2E | Novel encoding |
+
+Strategy names encode components: **e**xists/**f**orall, **l**azy/**g**(ea)**g**er, **s**emantic, **c**hain. Use `--list-strategies` for a full list with descriptions.
 
 All strategies (except `-dt` variants) support `--mode optimal` and `--mode anytime` for cost-optimal and anytime planning respectively.
 
-**Double-tail variants** (`seq-dt`, `forall-dt`, `forall-lazy-dt`, `exists-dt`, `exists-lazy-dt`, etc.) use bidirectional (forward + backward) search for faster satisficing planning. Only compatible with `--mode satisficing`.
+**Double-tail variants** (`seq-dt`, `f-dt`, `fl-dt`, `e-dt`, `el-dt`, etc.) use bidirectional (forward + backward) search for faster satisficing planning. Only compatible with `--mode satisficing`.
 
 ### Python API
 
@@ -103,7 +105,7 @@ with OneshotPlanner(name='RantanPlan') as planner:
 
 # Or use directly
 from rantanplan.planner_wrapper import RantanPlanPlanner
-planner = RantanPlanPlanner(strategy='forall-lazy-semantic-chain')
+planner = RantanPlanPlanner(strategy='flsc')
 result = planner.solve(problem)
 ```
 
