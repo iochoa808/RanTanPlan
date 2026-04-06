@@ -50,6 +50,7 @@ QUICK_STRATEGIES = [
     "causal-exists",                    # CausalExists planner kind
     "causal-exists-fp",                 # CausalExists + frame propagator
     "causal-exists-guided",            # CausalExists + guided achiever selection + tracked preconditions
+    "pdla",                                 # PDLA: property-directed lazy activation
 ]
 
 TIMEOUT = 60  # seconds per test

@@ -9,6 +9,34 @@
 
 namespace rantanplan {
 
+/// Source of interference detected by semantic analysis.
+/// Used by the state-aware propagator to decide whether a condition can be derived.
+///
+/// From Definition 3.9 of "Relaxing non-interference requirements in parallel plans"
+/// (Bofill, Espasa, Villaret 2019):
+///
+///   CHECK1: Prevention — Pre_a ∧ Pre_b ∧ ¬(Pre_b σ_a) is T-satisfiable.
+///     "a can impede execution of b."  STATE-DEPENDENT: the condition ¬(Pre_b σ_a)
+///     may hold in some states but not others.
+///
+///   CHECK2_UNCOMM: Not simply commuting (Def 3.5/3.3) — the assignments themselves
+///     don't commute algebraically.  STATE-INDEPENDENT: unconditional interference.
+///
+///   CHECK2_HAPPEN: Simply commuting but happening ≠ sequential (Def 3.6/3.7) —
+///     Pre_a ∧ Pre_b ∧ ¬(x σ_{h({a,b})} = x σ_b σ_a) is T-satisfiable.
+///     "Effects compose differently in parallel vs sequentially."  STATE-DEPENDENT.
+///
+///   CONFLICTING_COND_EFFECTS: Conservative fallback for actions with non-exclusive
+///     conditional effects on the same fluent.  STATE-INDEPENDENT.
+///
+enum class InterferenceSource {
+    NONE,
+    CHECK1,           // state-dependent: ¬(Pre_b σ_a)
+    CHECK2_UNCOMM,    // state-independent: assignments don't commute
+    CHECK2_HAPPEN,    // state-dependent: happening ≠ sequential
+    CONFLICTING_COND_EFFECTS  // state-independent: conservative
+};
+
 /**
  * @brief Semantic interference analysis implementation
  * 
@@ -46,6 +74,10 @@ public:
     bool is_lazy() const override { return true; }
     void output_interference_graph_dot(const std::string& filename = "interference.dot") const override;
 
+    /// Return the source of interference for a previously-queried pair.
+    /// Only valid after has_interference(source, target) has been called.
+    InterferenceSource get_interference_source(int source_id, int target_id) const;
+
 private:
     
     // Z3 context and solver for semantic checks
@@ -59,6 +91,9 @@ private:
     // Cache for semantic interference results to avoid recomputation
     // Keyed by (action_id_1, action_id_2) pair for correct per-instance caching
     mutable std::unordered_map<std::pair<int,int>, bool, PairHash> semantic_cache_;
+
+    // Cache for interference source (what check produced the result)
+    mutable std::unordered_map<std::pair<int,int>, InterferenceSource, PairHash> source_cache_;
 
     // Cache for per-action conflicting conditional effects check
     mutable std::unordered_map<int, bool> conflicting_effects_cache_;
@@ -100,12 +135,13 @@ private:
     bool check1(const Action& source, const Action& target) const;
     
     /**
-     * @brief Check condition 2 of Definition 3.9: effect commutativity
-     * @param source Source action
-     * @param target Target action
-     * @return True if source affects target due to non-commutativity
+     * @brief Check condition 2 of Definition 3.9: effect commutativity.
+     * Returns the specific sub-case:
+     *   CHECK2_UNCOMM:  not simply commuting (state-independent)
+     *   CHECK2_HAPPEN:  simply commuting but happening ≠ sequential (state-dependent)
+     *   NONE:           no interference from condition 2
      */
-    bool check2(const Action& source, const Action& target) const;
+    InterferenceSource check2_source(const Action& source, const Action& target) const;
     
     /**
      * @brief Check if two actions are simply commuting (all their effects commute)

@@ -42,6 +42,12 @@ public:
     virtual std::string get_name() const = 0;
     virtual bool manages_parallelism_constraints() const { return false; }
 
+    /// Called by PDLA when an action is activated (default no-op).
+    /// The state-aware propagator overrides this to register edge conditions.
+    virtual void on_action_activated(int action_id, int max_timestep) {
+        (void)action_id; (void)max_timestep;
+    }
+
     // ---- Logging ----
 
     void enable_logging(const std::string& log_file_path, const std::string& strategy_name);

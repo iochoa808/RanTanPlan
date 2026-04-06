@@ -225,6 +225,7 @@ void PDLAPlanner::activate_action(const Action* action) {
     for (int t = 0; t <= current_horizon_; t++) {
         encode_action_at(action, t);
     }
+    propagator_strategy_->on_action_activated(action->id(), current_horizon_);
 }
 
 void PDLAPlanner::encode_action_at(const Action* action, int timestep) {

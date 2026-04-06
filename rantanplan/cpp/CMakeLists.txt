@@ -144,6 +144,7 @@ add_executable(rantanplan
     src/planners/propagators/lazy_forall_propagator.cpp
     src/planners/propagators/exists_propagator.cpp
     src/planners/propagators/frame_exists_propagator.cpp
+    src/planners/propagators/state_aware_exists_propagator.cpp
     src/symmetries/smt_symmetry_checker.cpp
     src/abstraction/achievers_analysis.cpp
     src/analysis/relaxed_planning_graph.cpp

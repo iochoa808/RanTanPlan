@@ -72,6 +72,12 @@ const std::map<std::string, StrategySpec>& StrategyRegistry::get_registry() {
         // pdla-sel: selective — blocking literals only as fallback (leaner on sparse domains)
         {"pdla",                           {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::PDLA}},
         {"pdla-sel",                       {E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::PDLASelective}},
+
+        // State-aware exists: condition-guarded interference edges via Z3 theory solver.
+        // Edges classified as NEVER/ALWAYS/SOMETIMES at activation time.
+        // Only SOMETIMES edges get Z3 edge literals; ALWAYS use static check.
+        {"pdla-sa",                        {E::Chained,  S::Exists,     I::LazySemantic,    P::StateAwareExists,  K::PDLA}},
+        {"pdla-sel-sa",                    {E::Chained,  S::Exists,     I::LazySemantic,    P::StateAwareExists,  K::PDLASelective}},
     };
     return registry;
 }

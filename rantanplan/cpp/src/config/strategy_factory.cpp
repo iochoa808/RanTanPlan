@@ -26,6 +26,7 @@
 #include "../planners/propagators/lazy_forall_propagator.hpp"
 #include "../planners/propagators/exists_propagator.hpp"
 #include "../planners/propagators/frame_exists_propagator.hpp"
+#include "../planners/propagators/state_aware_exists_propagator.hpp"
 
 #include "../util/logger.hpp"
 
@@ -114,7 +115,8 @@ void StrategyFactory::adjust_spec(StrategySpec& spec, const Problem& problem) {
             "SDAC detected with exists-step semantics — downgrading to "
             "forall semantics for sound cost evaluation.");
         spec.semantics = SemanticsKind::Forall;
-        if (spec.propagator == PropagatorKind::Exists) {
+        if (spec.propagator == PropagatorKind::Exists ||
+            spec.propagator == PropagatorKind::StateAwareExists) {
             spec.propagator = PropagatorKind::LazyForall;
         }
     }
@@ -213,6 +215,8 @@ std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
             if (grounded) grounded->set_lazy_frames(true);
             return std::make_unique<FrameExistsPropagator>(solver, problem, encoder);
         }
+        case PropagatorKind::StateAwareExists:
+            return std::make_unique<StateAwareExistsPropagator>(solver, problem, encoder);
     }
     throw std::invalid_argument("Unknown propagator kind");
 }

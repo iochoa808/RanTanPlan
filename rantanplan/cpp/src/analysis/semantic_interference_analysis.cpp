@@ -20,6 +20,7 @@ void SemanticInterferenceAnalysis::initialize(const Problem& problem) {
     // Clear any existing data
     action_analysis_.clear();
     semantic_cache_.clear();
+    source_cache_.clear();
     
     // Setup common functionality using base class methods
     analyze_all_actions();
@@ -63,8 +64,10 @@ bool SemanticInterferenceAnalysis::action_affects_semantically(const Action& a1,
     // If a1 has conditional effects on the same fluent with non-exclusive
     // conditions, the ite-based substitution may not faithfully model the
     // combined effect. Conservatively report interference in that case.
+    InterferenceSource source = InterferenceSource::NONE;
     if (has_conflicting_conditional_effects(a1)) {
         affects = true;
+        source = InterferenceSource::CONFLICTING_COND_EFFECTS;
     } else {
         // Based on Definition 3.9 from the paper:
         // Action a affects action b if either:
@@ -72,14 +75,27 @@ bool SemanticInterferenceAnalysis::action_affects_semantically(const Action& a1,
         // 2. a's effects don't commute properly with b's effects
         if (check1(a1, a2)) {
             affects = true;
-        } else if (check2(a1, a2)) {
-            affects = true;
+            source = InterferenceSource::CHECK1;
+        } else {
+            // check2 returns the specific sub-case
+            InterferenceSource c2 = check2_source(a1, a2);
+            if (c2 != InterferenceSource::NONE) {
+                affects = true;
+                source = c2;
+            }
         }
     }
-    
-    // Cache the directional "affects" result
+
+    // Cache the directional "affects" result and its source
     semantic_cache_[cache_key] = affects;
+    source_cache_[cache_key] = source;
     return affects;
+}
+
+InterferenceSource SemanticInterferenceAnalysis::get_interference_source(int source_id, int target_id) const {
+    auto it = source_cache_.find({source_id, target_id});
+    if (it != source_cache_.end()) return it->second;
+    return InterferenceSource::NONE;
 }
 
 
@@ -168,23 +184,21 @@ bool SemanticInterferenceAnalysis::check1(const Action& a1, const Action& a2) co
     return (result == z3::sat); // Source can prevent a2's execution if satisfiable
 }
 
-bool SemanticInterferenceAnalysis::check2(const Action& a1, const Action& a2) const {
-    // Condition 2: either actions are not simply commuting, or effects don't commute properly
-    
-    // First check: are they simply commuting?
+InterferenceSource SemanticInterferenceAnalysis::check2_source(const Action& a1, const Action& a2) const {
+    // Condition 2 of Definition 3.9:
+    //   2a. Not simply commuting (Def 3.5/3.3) → unconditional interference
+    //   2b. Simply commuting but happening ≠ sequential → state-dependent
+
     if (!are_simply_commuting(a1, a2)) {
-        return true; // Not simply commuting, so a1 affects a2
+        return InterferenceSource::CHECK2_UNCOMM;
     }
-    
-    // Second check: do effects commute properly?
-    // We need to check if pre(a1) ∧ pre(a2) ∧ ¬(x^{σ_h({a1,a2})} = x^{σ_a2 ∘ σ_a1}) is satisfiable
-    // Get preconditions
+
+    // Simply commuting — check if happening effect matches sequential execution.
+    // Formula: pre(a1) ∧ pre(a2) ∧ ¬(x σ_{h({a1,a2})} = x σ_a2 ∘ σ_a1)
     z3::expr a1_pre = convert_precondition_to_z3(a1);
     z3::expr a2_pre = convert_precondition_to_z3(a2);
-    
-    // Check all variables that could be affected by either action (use ExprID to deduplicate)
-    std::unordered_set<ExprID> affected_var_eids;
 
+    std::unordered_set<ExprID> affected_var_eids;
     for (const Effect& effect : a1.effects()) {
         affected_var_eids.insert(effect.effect_expression().fluent_id());
     }
@@ -192,39 +206,36 @@ bool SemanticInterferenceAnalysis::check2(const Action& a1, const Action& a2) co
         affected_var_eids.insert(effect.effect_expression().fluent_id());
     }
 
-    // For each affected variable, check if happening and sequential execution differ
     for (ExprID var_eid : affected_var_eids) {
         z3::expr var_z3 = grounded_visitor_->convert_from_pool(var_eid, -1);
-        
-        // Create happening effect: apply a1 and a2 in parallel
+
+        // Happening effect: compose effects in parallel
         z3::expr var_after_happening = var_z3;
         var_after_happening = apply_action_effects_substitution(a2, var_after_happening);
         var_after_happening = apply_action_effects_substitution(a1, var_after_happening);
-        
-        // Create sequential effect: apply a2 after a1 (σ_target ∘ σ_source)
+
+        // Sequential effect: apply a1 then a2
         z3::expr var_after_sequential = var_z3;
         var_after_sequential = apply_action_effects_substitution(a1, var_after_sequential);
         var_after_sequential = apply_action_effects_substitution(a2, var_after_sequential);
-        
-        // Check if the substitutions actually changed anything
+
         if (z3::eq(var_after_happening, var_after_sequential)) {
-            continue; // No difference, so this variable commutes properly
+            continue;
         }
-        
-        // Check if pre(a1) ∧ pre(a2) ∧ ¬(happening = sequential) is satisfiable
+
         z3::expr non_commutativity = a1_pre && a2_pre && (var_after_happening != var_after_sequential);
-        
+
         z3_solver_->push();
         z3_solver_->add(non_commutativity);
         z3::check_result result = z3_solver_->check();
         z3_solver_->pop();
-        
+
         if (result == z3::sat) {
-            return true; // Effects don't commute for this variable!
+            return InterferenceSource::CHECK2_HAPPEN;
         }
     }
-    
-    return false; // All variables commute properly
+
+    return InterferenceSource::NONE;
 }
 
 bool SemanticInterferenceAnalysis::are_simply_commuting(const Action& a1, const Action& a2) const {
