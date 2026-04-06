@@ -18,12 +18,10 @@
 #include "../planners/branch_and_bound_planner.hpp"
 #include "../planners/pdla_planner.hpp"
 
-#include "../planners/propagators/null_propagator.hpp"
-#include "../planners/propagators/forall_propagator.hpp"
-#include "../planners/propagators/lazy_forall_propagator.hpp"
-#include "../planners/propagators/exists_propagator.hpp"
-#include "../planners/propagators/frame_exists_propagator.hpp"
-#include "../planners/propagators/state_aware_exists_propagator.hpp"
+#include "../planners/propagators/modules/exists_cycle_module.hpp"
+#include "../planners/propagators/modules/forall_mutex_module.hpp"
+#include "../planners/propagators/modules/frame_axiom_module.hpp"
+#include "../planners/propagators/modules/state_aware_edge_module.hpp"
 
 #include "../util/logger.hpp"
 
@@ -44,39 +42,26 @@ static bool is_none(InterferenceKind kind) {
 void StrategyFactory::validate(const StrategySpec& spec,
                                const std::string& strategy_name,
                                const std::string& horizon_schedule) {
-    // --- Spec-internal constraints ---
-
     // Lazy interference requires a propagator that uses has_interference()
-    // rather than graph methods. NullPropagator and ForallPropagator need
-    // get_neighbours() / get_interference_graph() which lazy doesn't support.
-    if (is_lazy(spec.interference) && spec.propagator == PropagatorKind::Null) {
+    // rather than graph methods. ForallEager needs get_neighbours().
+    if (is_lazy(spec.interference) && spec.propagator.empty()) {
         throw std::invalid_argument(
-            "Lazy interference requires a propagator (Null propagator needs "
+            "Lazy interference requires a propagator (empty propagator needs "
             "graph methods that lazy analysis does not provide)");
     }
-    if (is_lazy(spec.interference) && spec.propagator == PropagatorKind::Forall) {
+    if (is_lazy(spec.interference) &&
+        spec.propagator.count(PropagatorModuleKind::ForallEager)) {
         throw std::invalid_argument(
-            "Lazy interference is incompatible with ForallPropagator "
-            "(use LazyForall propagator instead)");
+            "Lazy interference is incompatible with ForallEager "
+            "(use ForallLazy instead)");
     }
 
-    // Eager interference with lazy-only propagators is valid but unusual.
-    // No hard constraint — eager provides a superset of lazy's interface.
-
-    // No interference is only valid with sequential semantics (which has
-    // built-in at-most-one constraint and doesn't need interference analysis).
     if (is_none(spec.interference) && spec.semantics != SemanticsKind::Sequential) {
         throw std::invalid_argument(
             "No interference analysis requires Sequential semantics "
             "(Forall/Exists semantics need interference for mutex constraints)");
     }
 
-    // --- Spec-vs-config constraints ---
-
-    // Non-linear horizon schedules rely on prefix-monotone front-loading,
-    // which is only implemented in SequentialPlanner. DoubleTailPlanner
-    // tests a specific (forward_end, backward_start) pair per iteration
-    // and cannot skip horizons while preserving completeness.
     if (horizon_schedule != "linear" && uses_double_tail(spec)) {
         throw std::invalid_argument(
             "Non-linear horizon schedule '" + horizon_schedule +
@@ -86,9 +71,6 @@ void StrategyFactory::validate(const StrategySpec& spec,
 }
 
 void StrategyFactory::adjust_spec(StrategySpec& spec, const Problem& problem) {
-    // SDAC + exists-step is unsound for cost-optimal planning: exists semantics
-    // evaluates costs at x_t but the serialized cost depends on intermediate
-    // states. Downgrade to forall semantics which is SDAC-safe.
     if (uses_branch_and_bound(spec) &&
         problem.has_metric() && problem.has_state_dependent_costs() &&
         sdac_unsafe(spec)) {
@@ -96,9 +78,10 @@ void StrategyFactory::adjust_spec(StrategySpec& spec, const Problem& problem) {
             "SDAC detected with exists-step semantics — downgrading to "
             "forall semantics for sound cost evaluation.");
         spec.semantics = SemanticsKind::Forall;
-        if (spec.propagator == PropagatorKind::Exists ||
-            spec.propagator == PropagatorKind::StateAwareExists) {
-            spec.propagator = PropagatorKind::LazyForall;
+        if (spec.propagator.count(PropagatorModuleKind::ExistsCycle)) {
+            spec.propagator.erase(PropagatorModuleKind::ExistsCycle);
+            spec.propagator.erase(PropagatorModuleKind::StateAwareEdge);
+            spec.propagator.insert(PropagatorModuleKind::ForallLazy);
         }
     }
 
@@ -182,24 +165,33 @@ std::unique_ptr<InterferenceAnalysis> StrategyFactory::create_interference(
 std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
     const StrategySpec& spec, z3::solver& solver,
     const Problem& problem, BaseEncoder& encoder) {
-    switch (spec.propagator) {
-        case PropagatorKind::Null:
-            return std::make_unique<NullPropagator>(solver, encoder);
-        case PropagatorKind::Forall:
-            return std::make_unique<ForallPropagator>(solver, problem, encoder);
-        case PropagatorKind::LazyForall:
-            return std::make_unique<LazyForallPropagator>(solver, problem, encoder);
-        case PropagatorKind::Exists:
-            return std::make_unique<ExistsPropagator>(solver, problem, encoder);
-        case PropagatorKind::FrameExists: {
-            auto* grounded = dynamic_cast<GroundedEncoder*>(&encoder);
-            if (grounded) grounded->set_lazy_frames(true);
-            return std::make_unique<FrameExistsPropagator>(solver, problem, encoder);
-        }
-        case PropagatorKind::StateAwareExists:
-            return std::make_unique<StateAwareExistsPropagator>(solver, problem, encoder);
+
+    const auto& mods = spec.propagator;
+
+    // Enable lazy frame mode in the encoder if frame axioms are active
+    if (mods.count(PropagatorModuleKind::FrameAxiom)) {
+        auto* grounded = dynamic_cast<GroundedEncoder*>(&encoder);
+        if (grounded) grounded->set_lazy_frames(true);
     }
-    throw std::invalid_argument("Unknown propagator kind");
+
+    auto composite = std::make_unique<PropagatorStrategy>(solver, problem, encoder);
+
+    // Parallelism modules (order: first, cheapest conflict source).
+    // StateAwareEdge subsumes ExistsCycle — it does its own cycle detection.
+    if (mods.count(PropagatorModuleKind::ForallEager))
+        composite->add_module(std::make_unique<ForallMutexModule>());
+    if (mods.count(PropagatorModuleKind::ForallLazy))
+        composite->add_module(std::make_unique<LazyForallMutexModule>());
+    if (mods.count(PropagatorModuleKind::StateAwareEdge))
+        composite->add_module(std::make_unique<StateAwareEdgeModule>());
+    else if (mods.count(PropagatorModuleKind::ExistsCycle))
+        composite->add_module(std::make_unique<ExistsCycleModule>());
+
+    // Frame axiom module (after parallelism — more expensive, skipped on conflict)
+    if (mods.count(PropagatorModuleKind::FrameAxiom))
+        composite->add_module(std::make_unique<FrameAxiomModule>());
+
+    return composite;
 }
 
 std::unique_ptr<BasePlanner> StrategyFactory::create_planner(

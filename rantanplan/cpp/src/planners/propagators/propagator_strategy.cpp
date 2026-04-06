@@ -1,121 +1,180 @@
 #include "propagator_strategy.hpp"
+#include "../../config/config.hpp"
 #include "../../encoders/z3_variable_factory.hpp"
 
 namespace rantanplan {
 
-PropagatorStrategy::PropagatorStrategy(z3::solver& solver, const BaseEncoder& encoder)
-    : z3::user_propagator_base(&solver), encoder_(&encoder) {
-    // Register Z3 callbacks that all propagators need
+PropagatorStrategy::PropagatorStrategy(z3::solver& solver,
+                                       const Problem& problem,
+                                       BaseEncoder& encoder)
+    : z3::user_propagator_base(&solver) {
     register_fixed();
     register_final();
+
+    solver.set("smt.up.persist_clauses", Config::instance().global.persist_clauses);
+
+    shared_.problem = &problem;
+    shared_.variable_factory = &encoder.get_variable_factory();
+    shared_.parallelism = encoder.get_parallelism_strategy();
+    shared_.interference = shared_.parallelism->get_interference_analyzer();
+    shared_.encoder = &encoder;
+    shared_.solver = &solver;
+}
+
+void PropagatorStrategy::add_module(std::unique_ptr<PropagatorModule> m) {
+    if (m->wants_decide_callback()) register_decide_callback();
+    m->initialize(shared_, *this);
+    modules_.push_back(std::move(m));
 }
 
 // ---------------------------------------------------------------------------
-// Logging
+// Z3 API delegation
 // ---------------------------------------------------------------------------
 
-void PropagatorStrategy::enable_logging(const std::string& log_file_path,
-                                         const std::string& strategy_name) {
-    log_file_.open(log_file_path);
-    if (log_file_.is_open()) {
-        logging_enabled_ = true;
-        strategy_name_ = strategy_name;
-        log_file_ << "# rantanplan solver log | strategy: " << strategy_name << "\n";
-        // Enable the decide callback so we get notified of solver decisions
+void PropagatorStrategy::module_conflict(const z3::expr_vector& fixed) {
+    conflict(fixed);
+    conflict_raised_ = true;
+}
+
+void PropagatorStrategy::module_propagate(const z3::expr_vector& fixed,
+                                          const z3::expr& consequence) {
+    propagate(fixed, consequence);
+}
+
+void PropagatorStrategy::module_add(const z3::expr& e) {
+    add(e);
+}
+
+void PropagatorStrategy::register_decide_callback() {
+    if (!decide_registered_) {
         register_decide();
+        decide_registered_ = true;
     }
 }
 
 // ---------------------------------------------------------------------------
-// register_timestep_variables — base implementation
+// Shared action trail management
 // ---------------------------------------------------------------------------
 
-void PropagatorStrategy::register_timestep_variables(int timestep) {
-    if (logging_enabled_) {
-        log_file_ << "inc\n";
-        // Reset restart detection state at SAT-call boundary
-        current_decision_level_ = 0;
-        max_decision_level_seen_ = 0;
-    }
-    register_all_variables_for_logging(timestep);
-}
+bool PropagatorStrategy::update_action_trail(const z3::expr& ast,
+                                             const z3::expr& value) {
+    if (!value.is_true()) return false;
+    auto action_info = shared_.variable_factory->get_action_from_variable(ast);
+    if (!action_info) return false;
 
-void PropagatorStrategy::register_all_variables_for_logging(int timestep) {
-    if (!logging_enabled_) return;
-
-    const Z3VariableFactory& vf = encoder_->get_variable_factory();
-
-    // Register fluent (state) variables for this timestep
-    auto fluent_vars = vf.get_all_fluent_variables(timestep);
-    for (const auto& var_ptr : fluent_vars) {
-        add(*var_ptr);
-    }
-
-    // Register action variables for the previous timestep (actions at t cause
-    // transition from state t to state t+1; they are created when
-    // encode_actions(t) is called, which happens before
-    // register_timestep_variables(t+1)).
-    if (timestep > 0) {
-        auto action_vars = vf.get_all_action_variables(timestep - 1);
-        for (const auto& var_ptr : action_vars) {
-            add(*var_ptr);
-        }
-    }
+    const Action& action = action_info->first;
+    int timestep = action_info->second;
+    shared_.action_trail.push_back({action.id(), timestep});
+    shared_.active_actions_per_timestep[timestep].insert(action.id());
+    return true;
 }
 
 // ---------------------------------------------------------------------------
-// Z3 callbacks — delegate to on_* hooks after base-level bookkeeping
+// Z3 callbacks
 // ---------------------------------------------------------------------------
 
 void PropagatorStrategy::push() {
-    current_decision_level_++;
-    if (current_decision_level_ > max_decision_level_seen_) {
-        max_decision_level_seen_ = current_decision_level_;
-    }
-    on_push();
+    shared_.action_decision_levels.push_back(shared_.action_trail.size());
+    for (auto& m : modules_) m->on_push();
 }
 
 void PropagatorStrategy::pop(unsigned num_scopes) {
-    current_decision_level_ -= static_cast<int>(num_scopes);
-
-    // Restart detection: pop back to level 0 after having been deeper
-    if (logging_enabled_ && current_decision_level_ == 0 && max_decision_level_seen_ > 1) {
-        log_file_ << "restart\n";
-        max_decision_level_seen_ = 0;
-    }
-
-    on_pop(num_scopes);
-}
-
-void PropagatorStrategy::fixed(z3::expr const& ast, z3::expr const& value) {
-    on_fixed(ast, value);
-}
-
-void PropagatorStrategy::decide(z3::expr const& val, unsigned bit, bool is_pos) {
-    if (logging_enabled_) {
-        const char* sign = is_pos ? "+" : "-";
-        // Arity-0 = pure named variable; otherwise compound expression
-        if (val.is_app() && val.decl().arity() == 0) {
-            log_file_ << "dec " << sign << val.decl().name().str() << "\n";
-        } else {
-            // Z3's to_string() can produce multi-line output for complex
-            // expressions; collapse to a single line for the log format
-            std::string s = val.to_string();
-            for (char& c : s) {
-                if (c == '\n') c = ' ';
+    // Restore shared action trail
+    for (unsigned i = 0; i < num_scopes; ++i) {
+        if (!shared_.action_decision_levels.empty()) {
+            size_t level_start = shared_.action_decision_levels.back();
+            shared_.action_decision_levels.pop_back();
+            while (shared_.action_trail.size() > level_start) {
+                const auto& [action_node_id, timestep] = shared_.action_trail.back();
+                shared_.active_actions_per_timestep[timestep].erase(action_node_id);
+                shared_.action_trail.pop_back();
             }
-            log_file_ << "dec " << sign << s << "\n";
         }
     }
-    on_decide(val, bit, is_pos);
+    // Dispatch to modules (each undoes its private trail)
+    for (auto& m : modules_) m->on_pop(num_scopes);
+}
+
+void PropagatorStrategy::fixed(const z3::expr& ast, const z3::expr& value) {
+    conflict_raised_ = false;
+    update_action_trail(ast, value);
+    for (auto& m : modules_) {
+        m->on_fixed(ast, value);
+        if (conflict_raised_) break;
+    }
+}
+
+void PropagatorStrategy::decide(const z3::expr& val, unsigned bit, bool is_pos) {
+    for (auto& m : modules_) m->on_decide(val, bit, is_pos);
 }
 
 void PropagatorStrategy::final() {
-    on_final();
+    conflict_raised_ = false;
+    for (auto& m : modules_) {
+        m->on_final();
+        if (conflict_raised_) break;
+    }
 }
 
-z3::user_propagator_base* PropagatorStrategy::fresh(z3::context& ctx) {
-    return on_fresh(ctx);
+z3::user_propagator_base* PropagatorStrategy::fresh(z3::context& /*ctx*/) {
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Variable registration
+// ---------------------------------------------------------------------------
+
+void PropagatorStrategy::register_timestep_variables(int timestep) {
+    // Register action variables in shared state (once per timestep)
+    if (timestep > 0 && !shared_.registered_action_vars.contains(timestep - 1)) {
+        auto vars = shared_.variable_factory->get_all_action_variables(timestep - 1);
+        if (!vars.empty()) {
+            shared_.registered_action_vars[timestep - 1] = std::move(vars);
+            for (const auto& v : shared_.registered_action_vars[timestep - 1])
+                add(*v);
+        }
+    }
+
+    // Let modules register their own variables
+    for (auto& m : modules_) m->register_timestep_variables(timestep);
+}
+
+// ---------------------------------------------------------------------------
+// Delegated interface
+// ---------------------------------------------------------------------------
+
+void PropagatorStrategy::cleanup() {
+    for (auto& m : modules_) m->cleanup();
+}
+
+std::string PropagatorStrategy::get_name() const {
+    std::string name = "Propagator[";
+    for (size_t i = 0; i < modules_.size(); ++i) {
+        if (i > 0) name += ", ";
+        name += modules_[i]->get_name();
+    }
+    name += "]";
+    return name;
+}
+
+bool PropagatorStrategy::manages_parallelism_constraints() const {
+    for (const auto& m : modules_)
+        if (m->manages_parallelism_constraints()) return true;
+    return false;
+}
+
+void PropagatorStrategy::on_action_activated(int action_id, int max_timestep) {
+    for (auto& m : modules_)
+        m->on_action_activated(action_id, max_timestep);
+}
+
+std::vector<const Action*> PropagatorStrategy::serialize_actions(
+        int timestep, const std::vector<const Action*>& actions) const {
+    for (const auto& m : modules_) {
+        auto result = m->serialize_actions(timestep, actions);
+        if (!result.empty()) return result;
+    }
+    return {};
 }
 
 } // namespace rantanplan

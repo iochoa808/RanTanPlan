@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include <stdexcept>
 
@@ -8,8 +9,12 @@ namespace rantanplan {
 enum class EncoderFamily { Grounded, Chained, R2E };
 enum class SemanticsKind { Sequential, Forall, Exists };
 enum class InterferenceKind { None, EagerSyntactic, EagerSemantic, LazySyntactic, LazySemantic };
-enum class PropagatorKind { Null, Forall, LazyForall, Exists, FrameExists, StateAwareExists };
 enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, PDLA, PDLASelective };
+
+/// Composable propagator module kinds.
+enum class PropagatorModuleKind { ForallEager, ForallLazy, ExistsCycle, FrameAxiom, StateAwareEdge };
+
+using PropagatorFlags = std::set<PropagatorModuleKind>;
 
 /// Search mode — orthogonal to strategy (encoding/semantics/interference/propagator).
 ///   Satisficing: find first valid plan, return immediately.
@@ -21,7 +26,7 @@ struct StrategySpec {
     EncoderFamily encoder;
     SemanticsKind semantics;
     InterferenceKind interference;
-    PropagatorKind propagator;
+    PropagatorFlags propagator;
     PlannerKind planner;
 };
 
@@ -62,7 +67,7 @@ inline PlannerKind resolve_planner_kind(SearchMode mode, const StrategySpec& spe
 // ---------------------------------------------------------------------------
 
 inline bool supports_formula_export(const StrategySpec& spec) {
-    return spec.propagator == PropagatorKind::Null &&
+    return spec.propagator.empty() &&
            spec.planner == PlannerKind::Sequential;
 }
 

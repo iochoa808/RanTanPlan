@@ -7,93 +7,89 @@ namespace rantanplan {
 using E = EncoderFamily;
 using S = SemanticsKind;
 using I = InterferenceKind;
-using P = PropagatorKind;
+using M = PropagatorModuleKind;
 using K = PlannerKind;
 
 const std::map<std::string, StrategyEntry>& StrategyRegistry::get_registry() {
     static const std::map<std::string, StrategyEntry> registry = {
         // Sequential
-        {"seq",       {{E::Grounded, S::Sequential, I::None,             P::Null,              K::Sequential},
+        {"seq",       {{E::Grounded, S::Sequential, I::None,             {},                       K::Sequential},
                        "Sequential encoding (baseline)"}},
 
         // Forall variants
-        {"f",         {{E::Grounded, S::Forall,     I::EagerSyntactic,  P::Null,              K::Sequential},
+        {"f",         {{E::Grounded, S::Forall,     I::EagerSyntactic,  {M::ForallEager},         K::Sequential},
                        "Forall-step, eager syntactic interference"}},
-        {"f-p",       {{E::Grounded, S::Forall,     I::EagerSyntactic,  P::Forall,            K::Sequential},
+        {"f-p",       {{E::Grounded, S::Forall,     I::EagerSyntactic,  {M::ForallEager},         K::Sequential},
                        "Forall-step with forall propagator"}},
-        {"fl",        {{E::Grounded, S::Forall,     I::LazySyntactic,   P::LazyForall,        K::Sequential},
+        {"fl",        {{E::Grounded, S::Forall,     I::LazySyntactic,   {M::ForallLazy},          K::Sequential},
                        "Forall-step, lazy syntactic interference"}},
-        {"fls",       {{E::Grounded, S::Forall,     I::LazySemantic,    P::LazyForall,        K::Sequential},
+        {"fls",       {{E::Grounded, S::Forall,     I::LazySemantic,    {M::ForallLazy},          K::Sequential},
                        "Forall-step, lazy semantic interference"}},
-        {"flsc",      {{E::Chained,  S::Forall,     I::LazySemantic,    P::LazyForall,        K::Sequential},
+        {"flsc",      {{E::Chained,  S::Forall,     I::LazySemantic,    {M::ForallLazy},          K::Sequential},
                        "Forall-step, lazy semantic interference, chained encoder"}},
 
         // Exists variants
-        {"e",         {{E::Grounded, S::Exists,     I::EagerSyntactic,  P::Null,              K::Sequential},
+        {"e",         {{E::Grounded, S::Exists,     I::EagerSyntactic,  {M::ExistsCycle},         K::Sequential},
                        "Exists-step, eager syntactic interference"}},
-        {"el",        {{E::Grounded, S::Exists,     I::LazySyntactic,   P::Exists,            K::Sequential},
+        {"el",        {{E::Grounded, S::Exists,     I::LazySyntactic,   {M::ExistsCycle},         K::Sequential},
                        "Exists-step, lazy syntactic interference"}},
-        {"els",       {{E::Grounded, S::Exists,     I::LazySemantic,    P::Exists,            K::Sequential},
+        {"els",       {{E::Grounded, S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::Sequential},
                        "Exists-step, lazy semantic interference"}},
-        {"elsc",      {{E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::Sequential},
+        {"elsc",      {{E::Chained,  S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::Sequential},
                        "Exists-step, lazy semantic interference, chained encoder"}},
 
         // Special strategies
-        {"r2e",       {{E::R2E,      S::Sequential, I::None,             P::Null,              K::Sequential},
+        {"r2e",       {{E::R2E,      S::Sequential, I::None,             {},                       K::Sequential},
                        "R2E encoding (relaxed-to-exact)"}},
 
         // Experimental eager-semantic
-        {"fgs",       {{E::Grounded, S::Forall,     I::EagerSemantic,   P::Null,              K::Sequential},
+        {"fgs",       {{E::Grounded, S::Forall,     I::EagerSemantic,   {M::ForallEager},         K::Sequential},
                        "Forall-step, eager semantic interference"}},
-        {"fgsc",      {{E::Chained,  S::Forall,     I::EagerSemantic,   P::Null,              K::Sequential},
+        {"fgsc",      {{E::Chained,  S::Forall,     I::EagerSemantic,   {M::ForallEager},         K::Sequential},
                        "Forall-step, eager semantic interference, chained encoder"}},
-        {"egs",       {{E::Grounded, S::Exists,     I::EagerSemantic,   P::Null,              K::Sequential},
+        {"egs",       {{E::Grounded, S::Exists,     I::EagerSemantic,   {M::ExistsCycle},         K::Sequential},
                        "Exists-step, eager semantic interference"}},
-        {"egsc",      {{E::Chained,  S::Exists,     I::EagerSemantic,   P::Null,              K::Sequential},
+        {"egsc",      {{E::Chained,  S::Exists,     I::EagerSemantic,   {M::ExistsCycle},         K::Sequential},
                        "Exists-step, eager semantic interference, chained encoder"}},
 
         // Double-tail sequential
-        {"seq-dt",    {{E::Grounded, S::Sequential, I::None,             P::Null,              K::DoubleTail},
+        {"seq-dt",    {{E::Grounded, S::Sequential, I::None,             {},                       K::DoubleTail},
                        "Sequential encoding, double-tail planner"}},
 
         // Double-tail forall
-        {"f-dt",      {{E::Grounded, S::Forall,     I::EagerSyntactic,  P::Null,              K::DoubleTail},
+        {"f-dt",      {{E::Grounded, S::Forall,     I::EagerSyntactic,  {M::ForallEager},         K::DoubleTail},
                        "Forall-step, eager syntactic interference, double-tail"}},
-        {"fl-dt",     {{E::Grounded, S::Forall,     I::LazySyntactic,   P::LazyForall,        K::DoubleTail},
+        {"fl-dt",     {{E::Grounded, S::Forall,     I::LazySyntactic,   {M::ForallLazy},          K::DoubleTail},
                        "Forall-step, lazy syntactic interference, double-tail"}},
-        {"fls-dt",    {{E::Grounded, S::Forall,     I::LazySemantic,    P::LazyForall,        K::DoubleTail},
+        {"fls-dt",    {{E::Grounded, S::Forall,     I::LazySemantic,    {M::ForallLazy},          K::DoubleTail},
                        "Forall-step, lazy semantic interference, double-tail"}},
-        {"flsc-dt",   {{E::Chained,  S::Forall,     I::LazySemantic,    P::LazyForall,        K::DoubleTail},
+        {"flsc-dt",   {{E::Chained,  S::Forall,     I::LazySemantic,    {M::ForallLazy},          K::DoubleTail},
                        "Forall-step, lazy semantic interference, chained encoder, double-tail"}},
 
         // Double-tail exists
-        {"e-dt",      {{E::Grounded, S::Exists,     I::EagerSyntactic,  P::Null,              K::DoubleTail},
+        {"e-dt",      {{E::Grounded, S::Exists,     I::EagerSyntactic,  {M::ExistsCycle},         K::DoubleTail},
                        "Exists-step, eager syntactic interference, double-tail"}},
-        {"el-dt",     {{E::Grounded, S::Exists,     I::LazySyntactic,   P::Exists,            K::DoubleTail},
+        {"el-dt",     {{E::Grounded, S::Exists,     I::LazySyntactic,   {M::ExistsCycle},         K::DoubleTail},
                        "Exists-step, lazy syntactic interference, double-tail"}},
-        {"els-dt",    {{E::Grounded, S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail},
+        {"els-dt",    {{E::Grounded, S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::DoubleTail},
                        "Exists-step, lazy semantic interference, double-tail"}},
-        {"elsc-dt",   {{E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::DoubleTail},
+        {"elsc-dt",   {{E::Chained,  S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::DoubleTail},
                        "Exists-step, lazy semantic interference, chained encoder, double-tail"}},
 
-        // Frame propagator variant: lazy frame axiom enforcement via user propagator
-        {"elsc-fp",   {{E::Chained,  S::Exists,     I::LazySemantic,    P::FrameExists,       K::Sequential},
+        // Frame propagator variant
+        {"elsc-fp",   {{E::Chained,  S::Exists,     I::LazySemantic,    {M::ExistsCycle, M::FrameAxiom}, K::Sequential},
                        "Exists-step, lazy semantic, chained encoder, frame propagator"}},
 
-        // PDLA: Property-Directed Lazy Activation (see docs/pdla-proposal.md)
-        // pdla: always activates blocking literals from cores (fast convergence on dense domains)
-        // pdla-sel: selective — blocking literals only as fallback (leaner on sparse domains)
-        {"pdla",      {{E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::PDLA},
+        // PDLA
+        {"pdla",      {{E::Chained,  S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::PDLA},
                        "Property-directed lazy activation"}},
-        {"pdla-sel",  {{E::Chained,  S::Exists,     I::LazySemantic,    P::Exists,            K::PDLASelective},
+        {"pdla-sel",  {{E::Chained,  S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::PDLASelective},
                        "PDLA, selective blocking (leaner on sparse domains)"}},
 
-        // State-aware exists: condition-guarded interference edges via Z3 theory solver.
-        // Edges classified as NEVER/ALWAYS/SOMETIMES at activation time.
-        // Only SOMETIMES edges get Z3 edge literals; ALWAYS use static check.
-        {"pdla-sa",   {{E::Chained,  S::Exists,     I::LazySemantic,    P::StateAwareExists,  K::PDLA},
+        // State-aware exists (grounded encoding — no chaining for numeric soundness)
+        {"pdla-sa",   {{E::Grounded, S::Exists,     I::LazySemantic,    {M::ExistsCycle, M::StateAwareEdge}, K::PDLA},
                        "PDLA with state-aware interference"}},
-        {"pdla-sel-sa", {{E::Chained,  S::Exists,     I::LazySemantic,    P::StateAwareExists,  K::PDLASelective},
+        {"pdla-sel-sa", {{E::Grounded, S::Exists,   I::LazySemantic,    {M::ExistsCycle, M::StateAwareEdge}, K::PDLASelective},
                        "PDLA selective with state-aware interference"}},
     };
     return registry;

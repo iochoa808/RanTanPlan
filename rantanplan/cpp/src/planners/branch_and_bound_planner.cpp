@@ -1,7 +1,6 @@
 #include "branch_and_bound_planner.hpp"
 #include "../config/config.hpp"
 #include "../encoders/base_encoder.hpp"
-#include "propagators/null_propagator.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/stats.hpp"
 #include "../util/logger.hpp"

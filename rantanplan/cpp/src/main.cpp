@@ -21,6 +21,7 @@
 #include "util/memory_tracker.hpp"
 #include "util/stats.hpp"
 #include "util/logger.hpp"
+#include "planners/propagators/modules/logging_module.hpp"
 #include "passes/pipeline.hpp"
 #include "passes/numeric_rpg_pass.hpp"
 #include "passes/symmetry_pass.hpp"
@@ -150,9 +151,10 @@ PlanGenerationResult solve_planning_problem(rantanplan::PipelineResult& pipeline
     // Get solver reference and create propagator using factory
     auto propagator = rantanplan::StrategyFactory::create_propagator(spec, planner->get_solver(), problem, *encoder);
 
-    // Enable solver decision logging if requested
+    // Add logging module if requested
     if (config.has_log_file()) {
-        propagator->enable_logging(config.logging.log_file, config.planner.strategy);
+        propagator->add_module(std::make_unique<rantanplan::LoggingModule>(
+            config.logging.log_file, config.planner.strategy));
     }
 
     planner->set_propagator_strategy(std::move(propagator));

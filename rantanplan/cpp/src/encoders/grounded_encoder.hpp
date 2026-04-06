@@ -60,7 +60,6 @@ public:
     // Create action variables for all actions at timestep t without encoding constraints.
     void ensure_action_variables(int t);
 
-    // Plan extraction from Z3 model
     Plan extract_plan(const z3::model& model, int max_timestep) const override;
     
     // Helper functions to convert expressions/effects to Z3 using visitor (implementing base interface)
@@ -94,6 +93,10 @@ protected:
 public:
     const auto& get_epc_index() const { return epc_index_; }
     void set_lazy_frames(bool enabled) { lazy_frames_enabled_ = enabled; }
+
+    /// Extract true action variables at a timestep from a Z3 model.
+    std::vector<const Action*> extract_parallel_actions_at_timestep(const z3::model& model, int timestep) const;
+
 protected:
 
     bool lazy_frames_enabled_ = false;
@@ -101,8 +104,6 @@ protected:
     int layers_encoded_ = -1; // Tracks the highest layer for which transitions are encoded
 
 private:
-    // Helper methods for plan extraction (moved from SequentialPlanner)
-    std::vector<const Action*> extract_parallel_actions_at_timestep(const z3::model& model, int timestep) const;
     std::vector<const Action*> topologically_sort_actions(const std::vector<const Action*>& actions) const;
 };
 

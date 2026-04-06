@@ -2,7 +2,6 @@
 #include "../config/config.hpp"
 #include "../analysis/graph.hpp"
 #include "../analysis/interference_analysis.hpp"
-#include "propagators/null_propagator.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/stats.hpp"
 #include "../util/logger.hpp"

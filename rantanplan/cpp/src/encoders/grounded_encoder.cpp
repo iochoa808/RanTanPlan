@@ -410,7 +410,6 @@ Plan GroundedEncoder::extract_plan(const z3::model& model, int max_timestep) con
             
             if (!parallel_actions.empty()) {
                 std::vector<const Action*> ordered_actions = topologically_sort_actions(parallel_actions);
-                // Add ordered actions to plan
                 for (const Action* action : ordered_actions) {
                     plan.add_action(action);
                 }
@@ -454,20 +453,14 @@ std::vector<const Action*> GroundedEncoder::extract_parallel_actions_at_timestep
 
 std::vector<const Action*> GroundedEncoder::topologically_sort_actions(
     const std::vector<const Action*>& actions) const {
-    
+
     if (actions.size() <= 1) {
-        std::vector<const Action*> result;
-        result.reserve(actions.size());
-        for (const Action* action : actions) {
-            result.push_back(action);
-        }
-        return result; // No sorting needed
+        return actions;
     }
-    
-    // We always have a strategy and analyzer available
+
     const ParallelismStrategy* strategy = get_parallelism_strategy();
     const InterferenceAnalysis* analyzer = strategy->get_interference_analyzer();
-    
+
     return analyzer->topological_sort_actions(actions);
 }
 

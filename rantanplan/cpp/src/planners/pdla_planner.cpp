@@ -612,7 +612,35 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
 }
 
 Plan PDLAPlanner::extract_plan(const z3::model& model) {
-    return encoder_.extract_plan(model, current_horizon_ + 1);
+    int max_t = current_horizon_ + 1;
+
+    // State-aware propagator: build a flat plan using the propagator's
+    // realized edge graph, which the static analysis may disagree with.
+    // Only StateAwareEdgeModule returns non-empty from serialize_actions;
+    // other modules return empty, causing fallback to the encoder path.
+    auto* grounded = dynamic_cast<GroundedEncoder*>(&encoder_);
+    if (grounded && propagator_strategy_) {
+        Plan plan;
+        bool used_propagator = false;
+        for (int t = 0; t < max_t; ++t) {
+            auto parallel = grounded->extract_parallel_actions_at_timestep(model, t);
+            if (parallel.empty()) continue;
+            auto ordered = propagator_strategy_->serialize_actions(t, parallel);
+            if (!ordered.empty()) {
+                used_propagator = true;
+                for (const Action* a : ordered) plan.add_action(a);
+            } else {
+                // Module has no opinion — can't mix propagator and static paths.
+                // If we already used the propagator for earlier timesteps, those
+                // are fine (ordered correctly). For this timestep, add as-is
+                // (single action or no interference).
+                for (const Action* a : parallel) plan.add_action(a);
+            }
+        }
+        if (used_propagator) return plan;
+    }
+
+    return encoder_.extract_plan(model, max_t);
 }
 
 // ---------------------------------------------------------------------------

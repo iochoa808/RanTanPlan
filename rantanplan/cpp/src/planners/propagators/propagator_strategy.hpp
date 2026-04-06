@@ -1,59 +1,72 @@
 #pragma once
 
-#include "../../encoders/base_encoder.hpp"
+#include "propagator_module.hpp"
 #include <z3++.h>
+#include <vector>
 #include <memory>
 #include <string>
-#include <fstream>
 
 namespace rantanplan {
 
-// Forward declarations
-class BaseEncoder;
-
 /**
- * @brief Abstract base class for different propagator strategies
+ * @brief The single Z3 user propagator that dispatches to composable modules.
  *
- * Inherits from z3::user_propagator_base so that ALL propagators (including NullPropagator)
- * are Z3-connected. This centralizes:
- *   - Z3 callback registration (fixed, final, decide)
- *   - Solver decision logging (dec, inc, restart events)
- *   - Decision-level tracking for restart detection
+ * Z3 supports exactly one user_propagator_base per solver.  PropagatorStrategy
+ * owns that slot and multiplexes callbacks to an ordered list of modules.
  *
- * Subclasses override on_push/on_pop/on_fixed/on_decide/on_final/on_fresh
- * instead of the Z3 virtuals directly.
+ * Shared state (action trail, footprint index, registered vars) lives in
+ * PropagatorSharedState, managed here.  Each module maintains its own
+ * private trail for its own concern (frame axioms, edge literals, etc.).
+ *
+ * Conflict short-circuit: when any module raises a conflict(), subsequent
+ * modules are skipped for the remainder of that callback invocation.
+ * Propagations (unit implications) do NOT trigger the short-circuit.
  */
 class PropagatorStrategy : public z3::user_propagator_base {
 public:
-    PropagatorStrategy(z3::solver& solver, const BaseEncoder& encoder);
-    virtual ~PropagatorStrategy() = default;
+    PropagatorStrategy(z3::solver& solver, const Problem& problem,
+                       BaseEncoder& encoder);
+    ~PropagatorStrategy() override = default;
 
-    // ---- Existing PropagatorStrategy interface (subclasses must implement) ----
+    /// Add a module. Modules are called in insertion order.
+    /// Call BEFORE the first solver.check().
+    void add_module(std::unique_ptr<PropagatorModule> m);
 
-    /**
-     * @brief Register variables for a specific timestep after constraints are added.
-     *        Base implementation emits "inc" when logging and registers fluent variables.
-     *        Subclasses should call PropagatorStrategy::register_timestep_variables() first,
-     *        then register their own action variables.
-     */
-    virtual void register_timestep_variables(int timestep);
+    // --- Z3 API delegation for modules ---
 
-    virtual void cleanup() = 0;
-    virtual std::string get_name() const = 0;
-    virtual bool manages_parallelism_constraints() const { return false; }
+    /// Modules call this instead of conflict() directly.
+    void module_conflict(const z3::expr_vector& fixed);
 
-    /// Called by PDLA when an action is activated (default no-op).
-    /// The state-aware propagator overrides this to register edge conditions.
-    virtual void on_action_activated(int action_id, int max_timestep) {
-        (void)action_id; (void)max_timestep;
-    }
+    /// Modules call this instead of propagate() directly.
+    void module_propagate(const z3::expr_vector& fixed, const z3::expr& consequence);
 
-    // ---- Logging ----
+    /// Modules call this instead of add() directly.
+    void module_add(const z3::expr& e);
 
-    void enable_logging(const std::string& log_file_path, const std::string& strategy_name);
-    bool is_logging_enabled() const { return logging_enabled_; }
+    /// Register the Z3 decide callback.  Called by modules that need
+    /// on_decide notifications (e.g. logging).  Safe to call multiple times;
+    /// the Z3 registration happens at most once.
+    void register_decide_callback();
 
-    // ---- Z3 callbacks (final — subclasses override on_* instead) ----
+    /// Check whether a conflict has been raised in the current callback.
+    bool conflict_raised() const { return conflict_raised_; }
+
+    /// Access the Z3 context (modules need this to build expressions).
+    z3::context& z3_ctx() { return ctx(); }
+
+    // --- External interface (called by planners) ---
+
+    void register_timestep_variables(int timestep);
+    void cleanup();
+    std::string get_name() const;
+    bool manages_parallelism_constraints() const;
+    void on_action_activated(int action_id, int max_timestep);
+    std::vector<const Action*> serialize_actions(
+        int timestep, const std::vector<const Action*>& actions) const;
+
+    PropagatorSharedState& shared() { return shared_; }
+
+    // --- Z3 callbacks (final overrides) ---
 
     void push() override final;
     void pop(unsigned num_scopes) override final;
@@ -62,32 +75,14 @@ public:
     void final() override final;
     z3::user_propagator_base* fresh(z3::context& ctx) override final;
 
-protected:
-    // ---- Virtual hooks for subclasses ----
-
-    virtual void on_push() {}
-    virtual void on_pop(unsigned num_scopes) {}
-    virtual void on_fixed(z3::expr const& ast, z3::expr const& value) {}
-    virtual void on_decide(z3::expr const& val, unsigned bit, bool is_pos) {}
-    virtual void on_final() {}
-    virtual z3::user_propagator_base* on_fresh(z3::context& ctx) { return nullptr; }
-
-    // ---- Shared state ----
-
-    const BaseEncoder* encoder_;
-
 private:
-    // Logging state
-    std::ofstream log_file_;
-    bool logging_enabled_ = false;
-    std::string strategy_name_;
+    PropagatorSharedState shared_;
+    std::vector<std::unique_ptr<PropagatorModule>> modules_;
+    bool conflict_raised_ = false;
+    bool decide_registered_ = false;
 
-    // Restart detection
-    int current_decision_level_ = 0;
-    int max_decision_level_seen_ = 0;
-
-    // Register all variables (action + fluent) for logging at a timestep
-    void register_all_variables_for_logging(int timestep);
+    /// Update the shared action trail when an action variable is fixed to true.
+    bool update_action_trail(const z3::expr& ast, const z3::expr& value);
 };
 
 } // namespace rantanplan
