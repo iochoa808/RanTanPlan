@@ -39,18 +39,16 @@ QUICK_TEST_DIRS = [
 # Strategies tested in --quick mode. Covers each major code path without
 # redundant variants (eager-syntactic, eager-semantic, non-chained lazy, etc.).
 QUICK_STRATEGIES = [
-    "seq",                              # Sequential baseline, Grounded encoder
-    "r2e",                              # R2E encoder, declaration-order parallelism
-    "forall-lazy-semantic-chain",       # Forall, Chained encoder, lazy semantic, LazyForall propagator
-    "forall-lazy-semantic-chain-dt",    # DoubleTail planner
-    "exists-lazy-semantic-chain",       # Exists, Chained encoder, lazy semantic, Exists propagator
-    "exists-lazy-semantic-chain-dt",    # DoubleTail exists
-    "exists-lazy-semantic-chain-fp",    # Frame propagator variant
-    "exists-lazy-semantic-chain-foot",  # Footprint-indexed exists
-    "causal-exists",                    # CausalExists planner kind
-    "causal-exists-fp",                 # CausalExists + frame propagator
-    "causal-exists-guided",            # CausalExists + guided achiever selection + tracked preconditions
-    "pdla",                                 # PDLA: property-directed lazy activation
+    "seq",        # No parallelism module (baseline)
+    "r2e",        # R2E encoder, no parallelism module
+    "f",          # ForallEager module (eager syntactic)
+    "flsc",       # ForallLazy module (lazy semantic, chained)
+    "flsc-dt",    # ForallLazy module + DoubleTail planner
+    "elsc",       # ExistsCycle module (lazy semantic, chained)
+    "elsc-dt",    # ExistsCycle module + DoubleTail planner
+    "elsc-fp",    # ExistsCycle + FrameAxiom modules
+    "pdla",       # ExistsCycle module + PDLA planner
+    "pdla-sa",    # StateAwareEdge module + PDLA planner
 ]
 
 TIMEOUT = 60  # seconds per test
@@ -79,7 +77,7 @@ def get_strategies():
         capture_output=True, text=True, check=True,
     )
     return [
-        line.strip()
+        line.strip().split()[0]
         for line in result.stdout.strip().split('\n')
         if line.strip() and not line.strip().startswith('Available')
     ]
@@ -150,13 +148,13 @@ def run_test(name, domain, problem, strategy, verbose=False, up_grounding=False,
 ## Strategies to test with --mode optimal (replaces the old -opt registry entries)
 OPTIMAL_MODE_STRATEGIES = [
     "seq", "r2e",
-    "forall", "forall-prop", "forall-lazy", "forall-lazy-semantic", "forall-lazy-semantic-chain",
-    "exists", "exists-lazy", "exists-lazy-semantic", "exists-lazy-semantic-chain",
+    "f", "f-p", "fl", "fls", "flsc",
+    "e", "el", "els", "elsc",
 ]
 
 QUICK_OPTIMAL_MODE_STRATEGIES = [
     "seq",
-    "exists-lazy-semantic-chain",
+    "elsc",
 ]
 
 
