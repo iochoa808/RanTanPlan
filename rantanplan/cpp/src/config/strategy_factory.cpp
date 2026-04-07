@@ -213,6 +213,11 @@ std::unique_ptr<BasePlanner> StrategyFactory::create_planner(
             p->set_always_activate_core(false);
             return p;
         }
+        case PlannerKind::PDLAFinegrained: {
+            auto p = std::make_unique<PDLAPlanner>(problem, encoder, ctx);
+            p->set_finegrained(true);
+            return p;
+        }
     }
     throw std::invalid_argument("Unknown planner kind");
 }

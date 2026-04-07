@@ -59,6 +59,11 @@ public:
     /// when structured processing produces no obligations.
     void set_always_activate_core(bool v) { always_activate_core_ = v; }
 
+    /// When true, use per-timestep blocking literals instead of float
+    /// activation.  Actions are activated at specific timesteps guided
+    /// by the UNSAT core, rather than at all timesteps at once.
+    void set_finegrained(bool v) { finegrained_ = v; }
+
     Plan search() override;
 
 protected:
@@ -67,11 +72,19 @@ protected:
     int current_horizon_ = -1;
     int goal_timestep_ = -1;
     bool always_activate_core_ = true;
+    bool finegrained_ = false;
 
+    // ---- Float activation (finegrained_=false) ----
     std::unordered_map<const Action*, z3::expr> block_lit_;
     std::unordered_set<const Action*> blocked_;
     std::unordered_set<const Action*> activated_;
     std::unordered_map<unsigned, const Action*> blk_id_to_action_;
+
+    // ---- Per-timestep activation (finegrained_=true) ----
+    struct BlockKey { const Action* action; int timestep; };
+    std::unordered_map<const Action*, std::unordered_map<int, z3::expr>> block_lit_ts_;
+    std::unordered_map<const Action*, std::unordered_set<int>> activated_at_;
+    std::unordered_map<unsigned, BlockKey> blk_id_to_action_ts_;
 
     z3::expr goal_assumption_;
     int next_goal_version_ = 0;
@@ -169,8 +182,12 @@ protected:
     z3::expr_vector build_assumptions();
     double score_action(const Action* action) const;
     void activate_action(const Action* action);
+    void activate_action_at(const Action* action, int timestep);
+    void activate_action_all(const Action* action);
     void encode_action_at(const Action* action, int timestep);
     bool has_activated_achiever(ExprID condition) const;
+    bool is_action_blocked_anywhere(const Action* action) const;
+    void create_blocking_literal_at(const Action* action, int timestep);
 
     // ---- Obligation-driven search ----
 

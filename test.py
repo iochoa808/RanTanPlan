@@ -49,6 +49,7 @@ QUICK_STRATEGIES = [
     "elsc-fp",    # ExistsCycle + FrameAxiom modules
     "pdla",       # ExistsCycle module + PDLA planner
     "pdla-sa",    # StateAwareEdge module + PDLA planner
+    "pdla-fg",    # PDLA with per-timestep activation
 ]
 
 TIMEOUT = 60  # seconds per test

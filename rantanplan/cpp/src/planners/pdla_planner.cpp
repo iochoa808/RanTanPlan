@@ -218,6 +218,11 @@ void PDLAPlanner::extract_relaxed_plan() {
 // ---------------------------------------------------------------------------
 
 void PDLAPlanner::activate_action(const Action* action) {
+    if (finegrained_) {
+        // In finegrained mode, activate at all current timesteps
+        activate_action_all(action);
+        return;
+    }
     if (!blocked_.count(action)) return;
     blocked_.erase(action);
     activated_.insert(action);
@@ -226,6 +231,71 @@ void PDLAPlanner::activate_action(const Action* action) {
         encode_action_at(action, t);
     }
     propagator_strategy_->on_action_activated(action->id(), current_horizon_);
+}
+
+void PDLAPlanner::activate_action_at(const Action* action, int timestep) {
+    auto& ts_set = activated_at_[action];
+    if (ts_set.count(timestep)) return;
+    ts_set.insert(timestep);
+
+    // Remove blocking literal for this (action, timestep)
+    auto& ts_map = block_lit_ts_[action];
+    auto it = ts_map.find(timestep);
+    if (it != ts_map.end()) {
+        blk_id_to_action_ts_.erase(it->second.id());
+        ts_map.erase(it);
+    }
+
+    encode_action_at(action, timestep);
+    propagator_strategy_->on_action_activated(action->id(), timestep);
+
+    // Also mark as fully activated if all timesteps covered
+    if (static_cast<int>(ts_set.size()) > current_horizon_) {
+        activated_.insert(action);
+        blocked_.erase(action);
+    }
+}
+
+void PDLAPlanner::activate_action_all(const Action* action) {
+    for (int t = 0; t <= current_horizon_; t++) {
+        auto& ts_set = activated_at_[action];
+        if (ts_set.count(t)) continue;
+        ts_set.insert(t);
+
+        auto& ts_map = block_lit_ts_[action];
+        auto it = ts_map.find(t);
+        if (it != ts_map.end()) {
+            blk_id_to_action_ts_.erase(it->second.id());
+            ts_map.erase(it);
+        }
+        encode_action_at(action, t);
+    }
+    activated_.insert(action);
+    blocked_.erase(action);
+    propagator_strategy_->on_action_activated(action->id(), current_horizon_);
+}
+
+bool PDLAPlanner::is_action_blocked_anywhere(const Action* action) const {
+    if (!finegrained_) return blocked_.count(action) > 0;
+    auto it = block_lit_ts_.find(action);
+    return it != block_lit_ts_.end() && !it->second.empty();
+}
+
+void PDLAPlanner::create_blocking_literal_at(const Action* action, int timestep) {
+    auto& ts_set = activated_at_[action];
+    if (ts_set.count(timestep)) return;  // already activated here
+
+    auto& ts_map = block_lit_ts_[action];
+    if (ts_map.count(timestep)) return;  // already has blocking literal
+
+    z3::expr blk = ctx_.bool_const(
+        ("blk_a" + std::to_string(action->id()) + "_t" + std::to_string(timestep)).c_str());
+    ts_map.insert({timestep, blk});
+    blk_id_to_action_ts_[blk.id()] = {action, timestep};
+
+    auto& vf = encoder_.get_variable_factory();
+    const z3::expr& action_var = vf.get_action_variable(*action, timestep);
+    solver_.add(z3::implies(blk, !action_var));
 }
 
 void PDLAPlanner::encode_action_at(const Action* action, int timestep) {
@@ -267,13 +337,33 @@ void PDLAPlanner::add_timestep(int t) {
     solver_.add(*encoder_.encode_symmetries(t));
     solver_.add(*grounded_encoder().encode_cumulative_effects(t));
     propagator_strategy_->register_timestep_variables(t + 1);
-    auto& vf = encoder_.get_variable_factory();
-    for (const Action* a : blocked_) {
-        const z3::expr& action_var = vf.get_action_variable(*a, t);
-        solver_.add(z3::implies(block_lit_.at(a), !action_var));
-    }
-    for (const Action* a : activated_) {
-        encode_action_at(a, t);
+
+    if (finegrained_) {
+        // Per-timestep mode: for each action, either auto-activate at the
+        // new timestep (if already activated anywhere) or create a blocking
+        // literal.  Actions that were needed at prior timesteps are likely
+        // needed at new ones too — auto-activating avoids death-by-a-
+        // thousand-cuts on horizon extension.
+        for (const Action& a : problem_.actions()) {
+            const Action* ptr = &a;
+            auto& ts_set = activated_at_[ptr];
+            if (!ts_set.empty()) {
+                // Action was needed somewhere — auto-activate at new timestep
+                activate_action_at(ptr, t);
+            } else {
+                // Never activated — create per-timestep blocking literal
+                create_blocking_literal_at(ptr, t);
+            }
+        }
+    } else {
+        auto& vf = encoder_.get_variable_factory();
+        for (const Action* a : blocked_) {
+            const z3::expr& action_var = vf.get_action_variable(*a, t);
+            solver_.add(z3::implies(block_lit_.at(a), !action_var));
+        }
+        for (const Action* a : activated_) {
+            encode_action_at(a, t);
+        }
     }
 }
 
@@ -332,10 +422,20 @@ z3::expr_vector PDLAPlanner::build_assumptions() {
     // Z3's sensitivity to assumption order — analogous to random
     // restarts in SAT solvers (Nadel 2010).
     std::vector<z3::expr> blk_lits;
-    blk_lits.reserve(blocked_.size());
-    for (const Action* a : blocked_) {
-        blk_lits.push_back(block_lit_.at(a));
+
+    if (finegrained_) {
+        for (auto& [action, ts_map] : block_lit_ts_) {
+            for (auto& [ts, lit] : ts_map) {
+                blk_lits.push_back(lit);
+            }
+        }
+    } else {
+        blk_lits.reserve(blocked_.size());
+        for (const Action* a : blocked_) {
+            blk_lits.push_back(block_lit_.at(a));
+        }
     }
+
     static std::mt19937 rng(42);  // fixed seed for reproducibility
     std::shuffle(blk_lits.begin(), blk_lits.end(), rng);
 
@@ -352,6 +452,11 @@ bool PDLAPlanner::has_activated_achiever(ExprID condition) const {
     if (it == condition_achievers_.end()) return false;
     for (const Action* a : it->second) {
         if (activated_.count(a)) return true;
+        // In finegrained mode, also check if activated at any timestep
+        if (finegrained_) {
+            auto at_it = activated_at_.find(a);
+            if (at_it != activated_at_.end() && !at_it->second.empty()) return true;
+        }
     }
     return false;
 }
@@ -416,7 +521,13 @@ int PDLAPlanner::process_obligations() {
         const Action* best = nullptr;
         double best_score = -1e9;
         for (const Action* a : ach_it->second) {
-            if (!blocked_.count(a)) continue;
+            if (finegrained_) {
+                // In finegrained mode, skip actions already activated at the deadline
+                auto at_it = activated_at_.find(a);
+                if (at_it != activated_at_.end() && at_it->second.count(ob.deadline)) continue;
+            } else {
+                if (!blocked_.count(a)) continue;
+            }
             double s = score_action(a);
             if (s > best_score || (s == best_score && (!best || a->id() < best->id()))) {
                 best_score = s;
@@ -429,7 +540,11 @@ int PDLAPlanner::process_obligations() {
             continue;
         }
 
-        activate_action(best);
+        if (finegrained_) {
+            activate_action_at(best, ob.deadline);
+        } else {
+            activate_action(best);
+        }
         action_activation_depth_[best] = ob.depth;
         activations++;
         if (ob.from_core) core_activations++;
@@ -439,6 +554,7 @@ int PDLAPlanner::process_obligations() {
                 " d=" + std::to_string(ob.depth) +
                 (ob.from_core ? " [alt]" : "") +
                 " → " + best->label() +
+                (finegrained_ ? "@t" + std::to_string(ob.deadline) : "") +
                 " (score=" + std::to_string(best_score) + ")");
         }
 
@@ -511,7 +627,7 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
         auto ach_it = condition_achievers_.find(tp.condition);
         if (ach_it != condition_achievers_.end()) {
             for (const Action* a : ach_it->second) {
-                if (blocked_.count(a)) { has_blocked_alt = true; break; }
+                if (is_action_blocked_anywhere(a)) { has_blocked_alt = true; break; }
             }
         }
 
@@ -552,21 +668,37 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
 
     // ---- Source 2: blocking literals ----
 
-    std::vector<const Action*> core_blocked_actions;
+    // In finegrained mode, blocking literals carry timestep info.
+    // In float mode, they identify actions only.
+    struct CoreBlockedEntry {
+        const Action* action;
+        int timestep;  // -1 for float mode (no timestep info)
+    };
+    std::vector<CoreBlockedEntry> core_blocked_entries;
+
     for (unsigned i = 0; i < core.size(); ++i) {
         unsigned eid = core[i].id();
-        auto it = blk_id_to_action_.find(eid);
-        if (it == blk_id_to_action_.end()) continue;
-        core_blocked_actions.push_back(it->second);
+        if (finegrained_) {
+            auto it = blk_id_to_action_ts_.find(eid);
+            if (it != blk_id_to_action_ts_.end()) {
+                core_blocked_entries.push_back({it->second.action, it->second.timestep});
+            }
+        } else {
+            auto it = blk_id_to_action_.find(eid);
+            if (it != blk_id_to_action_.end()) {
+                core_blocked_entries.push_back({it->second, -1});
+            }
+        }
     }
 
     // Try structured path: convert to condition obligations
-    for (const Action* action : core_blocked_actions) {
+    for (auto& [action, ts] : core_blocked_entries) {
         const auto& achieved = achievers_->get_achieved_conditions(*action);
         for (ExprID cond : achieved) {
             if (init_satisfied_conditions_.count(cond)) continue;
             if (has_activated_achiever(cond)) continue;
-            obligation_queue_.push({cond, current_horizon_, 0, nullptr, true, 0.0});
+            int deadline = (ts >= 0) ? ts : current_horizon_;
+            obligation_queue_.push({cond, deadline, 0, nullptr, true, 0.0});
             result.new_obligations++;
         }
     }
@@ -595,16 +727,22 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
     // or only as fallback (when structured processing produced nothing).
     bool do_direct = always_activate_core_ || (result.new_obligations == 0);
     if (do_direct) {
-        for (const Action* a : core_blocked_actions) {
-            if (!blocked_.count(a)) continue;
-            activate_action(a);
-            action_activation_depth_[a] = 0;
+        for (auto& [action, ts] : core_blocked_entries) {
+            if (!is_action_blocked_anywhere(action)) continue;
+            if (finegrained_ && ts >= 0) {
+                activate_action_at(action, ts);
+            } else {
+                activate_action(action);
+            }
+            action_activation_depth_[action] = 0;
             result.direct_activations++;
 
             if (Config::instance().is_verbose()) {
-                Logger::instance().info("  Core→direct: " + a->label());
+                Logger::instance().info("  Core→direct: " + action->label() +
+                    (finegrained_ && ts >= 0 ? "@t" + std::to_string(ts) : ""));
             }
-            push_precondition_obligations(a, current_horizon_, 0);
+            int deadline = (ts >= 0) ? ts : current_horizon_;
+            push_precondition_obligations(action, deadline, 0);
         }
     }
 
@@ -657,13 +795,23 @@ Plan PDLAPlanner::search() {
 
     Logger::instance().info("Starting PDLA search, timeout: " + format_timeout_string());
 
-    // 0. Create per-action blocking literals
-    for (const Action& a : problem_.actions()) {
-        z3::expr blk = ctx_.bool_const(("blk_a" + std::to_string(a.id())).c_str());
-        const Action* ptr = &a;
-        block_lit_.insert({ptr, blk});
-        blocked_.insert(ptr);
-        blk_id_to_action_[blk.id()] = ptr;
+    // 0. Create blocking literals
+    if (finegrained_) {
+        Logger::instance().info("PDLA finegrained mode: per-timestep blocking literals");
+        // In finegrained mode, blocking literals are created per (action, timestep)
+        // in add_timestep(). Here we just mark all actions as blocked.
+        for (const Action& a : problem_.actions()) {
+            blocked_.insert(&a);
+        }
+    } else {
+        // Float mode: one blocking literal per action
+        for (const Action& a : problem_.actions()) {
+            z3::expr blk = ctx_.bool_const(("blk_a" + std::to_string(a.id())).c_str());
+            const Action* ptr = &a;
+            block_lit_.insert({ptr, blk});
+            blocked_.insert(ptr);
+            blk_id_to_action_[blk.id()] = ptr;
+        }
     }
 
     // 1. Encode initial state
@@ -809,9 +957,20 @@ Plan PDLAPlanner::search() {
             // Extend when: (1) no activation progress was made, AND either
             //   (a) core produced only horizon signals (resource exhaustion), or
             //   (b) queue is empty and nothing was produced at all.
-            bool made_progress = (phase_a_activations > 0 ||
-                                  cr.new_obligations > 0 ||
-                                  cr.direct_activations > 0);
+            //
+            // In finegrained mode, obligations that can't produce activations
+            // (all achievers already activated at the deadline timestep) are
+            // not real progress — they just pile up in the queue.  Use a
+            // stricter check: actual activations, not just obligations created.
+            bool made_progress;
+            if (finegrained_) {
+                made_progress = (phase_a_activations > 0 ||
+                                 cr.direct_activations > 0);
+            } else {
+                made_progress = (phase_a_activations > 0 ||
+                                 cr.new_obligations > 0 ||
+                                 cr.direct_activations > 0);
+            }
 
             bool horizon_exhausted = (!made_progress && cr.horizon_signals > 0);
             bool completely_stuck = (!made_progress && cr.horizon_signals == 0 &&

@@ -93,13 +93,13 @@ RE_TIMESTEP = re.compile(
     r"step:\s+([\d.]+)s\s+\|\s+"
     r"mem:\s+(\d+)MB"
 )
-RE_TIMESTEP_CAUSAL = re.compile(
-    r"\[Solving T(\d+)\s*\]\s+"
+RE_TIMESTEP_PDLA = re.compile(
+    r"\[Solving R(\d+)\s*\]\s+"
     r"solve:\s+([\d.]+)s\s+\|\s+"
     r"round:\s+([\d.]+)s\s+\|\s+"
     r"horizon:\s+\d+\s+\|\s+"
-    r"blocked:\s+\d+\s+\|\s+"
-    r"total_entries:\s+\d+\s+\|\s+"
+    r"activated:\s+\d+/\d+\s+\|\s+"
+    r"queue:\s+\d+\s+\|\s+"
     r"mem:\s+(\d+)MB"
 )
 RE_PLAN_FOUND = re.compile(
@@ -111,8 +111,8 @@ RE_DT_PLAN_FOUND = re.compile(
 RE_R2E_PLAN_FOUND = re.compile(
     r"\*\*\* PLAN FOUND: (\d+) actions, (\d+) rounds, \d+ extensions \(total time: ([\d.]+)s\)"
 )
-RE_CAUSAL_EXISTS_PLAN_FOUND = re.compile(
-    r"\*\*\* PLAN FOUND: (\d+) actions, (\d+) rounds, horizon=(\d+) \(total time: ([\d.]+)s\)"
+RE_PDLA_PLAN_FOUND = re.compile(
+    r"\*\*\* PLAN FOUND: (\d+) actions, (\d+) rounds, horizon=(\d+),\s+activated=\d+/\d+ \(total time: ([\d.]+)s\)"
 )
 RE_OPTIMAL_FOUND = re.compile(
     r"\*\*\* OPTIMAL PLAN FOUND: horizon=(\d+), actions=(\d+), cost=[\d.]+.*\(total time: ([\d.]+)s\)"
@@ -181,7 +181,7 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
                     last_memory_mb = ts.memory_mb
                     return
 
-                m = RE_TIMESTEP_CAUSAL.search(line)
+                m = RE_TIMESTEP_PDLA.search(line)
                 if m:
                     ts = TimestepData(
                         timestep=int(m.group(1)),
@@ -217,7 +217,7 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
                     total_time = float(m.group(3))
                     return
 
-                m = RE_CAUSAL_EXISTS_PLAN_FOUND.search(line)
+                m = RE_PDLA_PLAN_FOUND.search(line)
                 if m:
                     solved = True
                     num_actions = int(m.group(1))

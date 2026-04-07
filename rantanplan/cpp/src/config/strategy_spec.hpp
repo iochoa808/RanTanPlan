@@ -9,7 +9,7 @@ namespace rantanplan {
 enum class EncoderFamily { Grounded, Chained, R2E };
 enum class SemanticsKind { Sequential, Forall, Exists };
 enum class InterferenceKind { None, EagerSyntactic, EagerSemantic, LazySyntactic, LazySemantic };
-enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, PDLA, PDLASelective };
+enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, PDLA, PDLASelective, PDLAFinegrained };
 
 /// Composable propagator module kinds.
 enum class PropagatorModuleKind { ForallEager, ForallLazy, ExistsCycle, FrameAxiom, StateAwareEdge };
@@ -54,7 +54,8 @@ inline PlannerKind resolve_planner_kind(SearchMode mode, const StrategySpec& spe
             "Use a non-dt strategy (e.g., 'fl' instead of 'fl-dt').");
     }
     if (spec.planner == PlannerKind::PDLA ||
-        spec.planner == PlannerKind::PDLASelective) {
+        spec.planner == PlannerKind::PDLASelective ||
+        spec.planner == PlannerKind::PDLAFinegrained) {
         std::string mode_str = (mode == SearchMode::Optimal) ? "optimal" : "anytime";
         throw std::invalid_argument(
             "Mode '" + mode_str + "' is incompatible with PDLA strategies.");
@@ -92,7 +93,8 @@ inline bool sdac_unsafe(const StrategySpec& spec) {
 /// Returns true if the strategy uses a PDLA planner variant.
 inline bool uses_pdla(const StrategySpec& spec) {
     return spec.planner == PlannerKind::PDLA ||
-           spec.planner == PlannerKind::PDLASelective;
+           spec.planner == PlannerKind::PDLASelective ||
+           spec.planner == PlannerKind::PDLAFinegrained;
 }
 
 } // namespace rantanplan
