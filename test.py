@@ -48,7 +48,6 @@ QUICK_STRATEGIES = [
     "elsc-dt",    # ExistsCycle module + DoubleTail planner
     "elsc-fp",    # ExistsCycle + FrameAxiom modules
     "pdla",       # ExistsCycle module + PDLA planner
-    "pdla-sa",    # StateAwareEdge module + PDLA planner
     "pdla-fg",    # PDLA with per-timestep activation
 ]
 

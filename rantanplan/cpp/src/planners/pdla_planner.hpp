@@ -183,6 +183,7 @@ protected:
     double score_action(const Action* action) const;
     void activate_action(const Action* action);
     void activate_action_at(const Action* action, int timestep);
+    void activate_action_up_to(const Action* action, int deadline);
     void activate_action_all(const Action* action);
     void encode_action_at(const Action* action, int timestep);
     bool has_activated_achiever(ExprID condition) const;

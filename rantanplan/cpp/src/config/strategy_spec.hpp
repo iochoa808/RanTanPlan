@@ -12,7 +12,7 @@ enum class InterferenceKind { None, EagerSyntactic, EagerSemantic, LazySyntactic
 enum class PlannerKind { Sequential, DoubleTail, BranchAndBound, PDLA, PDLASelective, PDLAFinegrained };
 
 /// Composable propagator module kinds.
-enum class PropagatorModuleKind { ForallEager, ForallLazy, ExistsCycle, FrameAxiom, StateAwareEdge };
+enum class PropagatorModuleKind { ForallEager, ForallLazy, ExistsCycle, FrameAxiom };
 
 using PropagatorFlags = std::set<PropagatorModuleKind>;
 

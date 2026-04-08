@@ -168,13 +168,4 @@ void PropagatorStrategy::on_action_activated(int action_id, int max_timestep) {
         m->on_action_activated(action_id, max_timestep);
 }
 
-std::vector<const Action*> PropagatorStrategy::serialize_actions(
-        int timestep, const std::vector<const Action*>& actions) const {
-    for (const auto& m : modules_) {
-        auto result = m->serialize_actions(timestep, actions);
-        if (!result.empty()) return result;
-    }
-    return {};
-}
-
 } // namespace rantanplan

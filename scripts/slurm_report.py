@@ -12,6 +12,8 @@ Usage:
 """
 import argparse
 import csv
+import multiprocessing
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -36,15 +38,6 @@ class Status(Enum):
 
 
 @dataclass
-class TimestepData:
-    timestep: int
-    formula_time: float
-    solve_time: float
-    step_time: float
-    memory_mb: int
-
-
-@dataclass
 class SlurmJobResult:
     domain: str
     instance: str
@@ -56,7 +49,6 @@ class SlurmJobResult:
     horizon: Optional[int] = None
     num_actions: Optional[int] = None
     last_memory_mb: Optional[int] = None
-    timesteps: List[TimestepData] = field(default_factory=list)
     stats: Dict[str, float] = field(default_factory=dict)
 
 
@@ -68,19 +60,56 @@ class ExperimentData:
     domains: List[str]
     skipped_empty: int = 0
     skipped_no_metadata: int = 0
+    # Indexes built by _build_indexes()
+    _job_index: Dict[Tuple[str, str, str], "SlurmJobResult"] = field(
+        default_factory=dict, repr=False
+    )
+    _instance_keys: List[Tuple[str, str]] = field(
+        default_factory=list, repr=False
+    )
+    _jobs_by_strategy: Dict[str, List["SlurmJobResult"]] = field(
+        default_factory=dict, repr=False
+    )
+    _jobs_by_domain: Dict[str, List["SlurmJobResult"]] = field(
+        default_factory=dict, repr=False
+    )
+    _jobs_by_domain_strategy: Dict[Tuple[str, str], List["SlurmJobResult"]] = field(
+        default_factory=dict, repr=False
+    )
+
+    def _build_indexes(self) -> None:
+        """Build all lookup indexes. Call once after jobs list is final."""
+        self._job_index = {}
+        by_strat: Dict[str, List[SlurmJobResult]] = {}
+        by_dom: Dict[str, List[SlurmJobResult]] = {}
+        by_ds: Dict[Tuple[str, str], List[SlurmJobResult]] = {}
+        keys: Set[Tuple[str, str]] = set()
+        for j in self.jobs:
+            self._job_index[(j.domain, j.instance, j.strategy)] = j
+            keys.add((j.domain, j.instance))
+            by_strat.setdefault(j.strategy, []).append(j)
+            by_dom.setdefault(j.domain, []).append(j)
+            by_ds.setdefault((j.domain, j.strategy), []).append(j)
+        self._instance_keys = sorted(keys)
+        self._jobs_by_strategy = by_strat
+        self._jobs_by_domain = by_dom
+        self._jobs_by_domain_strategy = by_ds
 
     def job_for(
         self, domain: str, instance: str, strategy: str
     ) -> Optional[SlurmJobResult]:
-        for j in self.jobs:
-            if j.domain == domain and j.instance == instance and j.strategy == strategy:
-                return j
-        return None
+        return self._job_index.get((domain, instance, strategy))
 
     def instance_keys(self) -> List[Tuple[str, str]]:
-        """Return sorted unique (domain, instance) pairs."""
-        keys = sorted({(j.domain, j.instance) for j in self.jobs})
-        return keys
+        return self._instance_keys
+
+    def get_jobs_by_strategy(self, strategy: str) -> List[SlurmJobResult]:
+        return self._jobs_by_strategy.get(strategy, [])
+
+    def get_jobs_by_domain_strategy(
+        self, domain: str, strategy: str
+    ) -> List[SlurmJobResult]:
+        return self._jobs_by_domain_strategy.get((domain, strategy), [])
 
 
 # --- Regex Patterns ---
@@ -130,10 +159,11 @@ RE_METADATA = re.compile(r"^(\w+)=(.+)$")
 
 # --- Parsing ---
 
-def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
+def parse_slurm_log(
+    log_path: Path, exclude_strategies: Optional[List[str]] = None
+) -> Optional[SlurmJobResult]:
     """Parse a single SLURM .out log file. Streams line-by-line for huge files."""
     metadata: Dict[str, str] = {}
-    timesteps: List[TimestepData] = []
     solved = False
     total_time: Optional[float] = None
     horizon: Optional[int] = None
@@ -160,38 +190,27 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
 
             # Check required metadata
             if "domain" not in metadata or "strategy" not in metadata:
-                print(f"Warning: skipping {log_path.name} (missing metadata)", file=sys.stderr)
                 return None
 
-            # Process the first non-metadata line and continue
+            # Early exit for excluded strategies (avoids reading rest of file)
+            if exclude_strategies:
+                strat = metadata["strategy"]
+                if any(pat in strat for pat in exclude_strategies):
+                    return None
+
+            # Process the remaining lines
             def process_line(line: str) -> None:
                 nonlocal solved, total_time, horizon, num_actions
                 nonlocal last_memory_mb, is_timeout, is_memout, is_error
 
                 m = RE_TIMESTEP.search(line)
                 if m:
-                    ts = TimestepData(
-                        timestep=int(m.group(1)),
-                        formula_time=float(m.group(2)),
-                        solve_time=float(m.group(3)),
-                        step_time=float(m.group(4)),
-                        memory_mb=int(m.group(5)),
-                    )
-                    timesteps.append(ts)
-                    last_memory_mb = ts.memory_mb
+                    last_memory_mb = int(m.group(5))
                     return
 
                 m = RE_TIMESTEP_PDLA.search(line)
                 if m:
-                    ts = TimestepData(
-                        timestep=int(m.group(1)),
-                        formula_time=0.0,
-                        solve_time=float(m.group(2)),
-                        step_time=float(m.group(3)),
-                        memory_mb=int(m.group(4)),
-                    )
-                    timesteps.append(ts)
-                    last_memory_mb = ts.memory_mb
+                    last_memory_mb = int(m.group(4))
                     return
 
                 for pattern in (RE_PLAN_FOUND, RE_OPTIMAL_FOUND, RE_BEST_FOUND):
@@ -256,8 +275,7 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
             for line in f:
                 process_line(line.strip())
 
-    except OSError as e:
-        print(f"Warning: could not read {log_path}: {e}", file=sys.stderr)
+    except OSError:
         return None
 
     # Determine status with priority: SOLVED > MEMOUT > TIMEOUT > ERROR
@@ -284,8 +302,21 @@ def parse_slurm_log(log_path: Path) -> Optional[SlurmJobResult]:
         horizon=horizon,
         num_actions=num_actions,
         last_memory_mb=last_memory_mb,
-        timesteps=timesteps,
     )
+
+
+_worker_exclude: Optional[List[str]] = None
+
+
+def _init_worker(exclude: Optional[List[str]]) -> None:
+    """Initializer for pool workers — sets the exclude list."""
+    global _worker_exclude
+    _worker_exclude = exclude
+
+
+def _parse_slurm_log_worker(log_path_str: str) -> Optional[SlurmJobResult]:
+    """Multiprocessing wrapper — accepts str path, returns result."""
+    return parse_slurm_log(Path(log_path_str), _worker_exclude)
 
 
 def parse_stats_file(stats_path: Path) -> Dict[str, float]:
@@ -352,6 +383,7 @@ def load_experiment(
     logs_dir: Path,
     stats_dir: Optional[Path],
     timeout_override: Optional[float],
+    exclude_strategies: Optional[List[str]] = None,
 ) -> ExperimentData:
     """Load all SLURM logs and optionally enrich with stats."""
     log_files = sorted(logs_dir.glob("*.out"))
@@ -359,19 +391,33 @@ def load_experiment(
         print(f"Error: no .out files found in {logs_dir}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Parsing {len(log_files)} log files...", file=sys.stderr)
-    jobs: List[SlurmJobResult] = []
+    # Filter empty files first (cheap stat call)
+    non_empty: List[Path] = []
     skipped_empty = 0
-    skipped_no_metadata = 0
-    for i, lf in enumerate(log_files):
-        if (i + 1) % 200 == 0:
-            print(f"  parsed {i + 1}/{len(log_files)}...", file=sys.stderr)
+    for lf in log_files:
         if lf.stat().st_size == 0:
             skipped_empty += 1
-            continue
-        job = parse_slurm_log(lf)
-        if job is not None:
-            jobs.append(job)
+        else:
+            non_empty.append(lf)
+
+    n_workers = min(os.cpu_count() or 1, len(non_empty))
+    print(
+        f"Parsing {len(non_empty)} log files with {n_workers} workers...",
+        file=sys.stderr,
+    )
+
+    # Parallel parsing
+    paths_str = [str(p) for p in non_empty]
+    with multiprocessing.Pool(
+        n_workers, initializer=_init_worker, initargs=(exclude_strategies,)
+    ) as pool:
+        results = pool.map(_parse_slurm_log_worker, paths_str, chunksize=64)
+
+    jobs: List[SlurmJobResult] = []
+    skipped_no_metadata = 0
+    for r in results:
+        if r is not None:
+            jobs.append(r)
         else:
             skipped_no_metadata += 1
 
@@ -429,7 +475,7 @@ def load_experiment(
     strategies = sorted({j.strategy for j in jobs})
     domains = sorted({j.domain for j in jobs})
 
-    return ExperimentData(
+    data = ExperimentData(
         jobs=jobs,
         timeout=timeout,
         strategies=strategies,
@@ -437,6 +483,8 @@ def load_experiment(
         skipped_empty=skipped_empty,
         skipped_no_metadata=skipped_no_metadata,
     )
+    data._build_indexes()
+    return data
 
 
 # --- CSV Generation ---
@@ -477,10 +525,7 @@ def write_summary_by_domain_csv(data: ExperimentData, output_path: Path) -> None
         for domain in data.domains:
             row = [domain]
             for strategy in data.strategies:
-                domain_jobs = [
-                    j for j in data.jobs
-                    if j.domain == domain and j.strategy == strategy
-                ]
+                domain_jobs = data.get_jobs_by_domain_strategy(domain, strategy)
                 solved = sum(1 for j in domain_jobs if j.status == Status.SOLVED)
                 timeout = sum(1 for j in domain_jobs if j.status == Status.TIMEOUT)
                 memout = sum(1 for j in domain_jobs if j.status == Status.MEMOUT)
@@ -496,7 +541,7 @@ def write_summary_overall_csv(data: ExperimentData, output_path: Path) -> None:
         writer = csv.writer(f)
         writer.writerow(["strategy", "solved", "timeout", "memout", "error", "total"])
         for strategy in data.strategies:
-            strat_jobs = [j for j in data.jobs if j.strategy == strategy]
+            strat_jobs = data.get_jobs_by_strategy(strategy)
             solved = sum(1 for j in strat_jobs if j.status == Status.SOLVED)
             timeout = sum(1 for j in strat_jobs if j.status == Status.TIMEOUT)
             memout = sum(1 for j in strat_jobs if j.status == Status.MEMOUT)
@@ -888,11 +933,8 @@ def write_domain_aggregate_csv(data: ExperimentData, output_path: Path) -> None:
             for strategy in data.strategies:
                 jobs = [
                     j
-                    for j in data.jobs
-                    if j.domain == domain
-                    and j.strategy == strategy
-                    and j.status == Status.SOLVED
-                    and j.stats
+                    for j in data.get_jobs_by_domain_strategy(domain, strategy)
+                    if j.status == Status.SOLVED and j.stats
                 ]
                 if not jobs:
                     continue
@@ -1182,8 +1224,8 @@ def plot_time_breakdowns(data: ExperimentData, pdf: PdfPages) -> None:
     for strategy in data.strategies:
         strat_jobs = [
             j
-            for j in data.jobs
-            if j.strategy == strategy and j.status == Status.SOLVED and j.stats
+            for j in data.get_jobs_by_strategy(strategy)
+            if j.status == Status.SOLVED and j.stats
         ]
         if not strat_jobs:
             continue
@@ -1299,11 +1341,8 @@ def plot_domain_summaries(data: ExperimentData, pdf: PdfPages) -> None:
         for strategy in data.strategies:
             jobs = [
                 j
-                for j in data.jobs
-                if j.domain == domain
-                and j.strategy == strategy
-                and j.status == Status.SOLVED
-                and j.stats
+                for j in data.get_jobs_by_domain_strategy(domain, strategy)
+                if j.status == Status.SOLVED and j.stats
             ]
             if len(jobs) >= 3:
                 strat_data[strategy] = jobs
@@ -1456,7 +1495,7 @@ def generate_all_outputs(
     # Print summary
     print("\n=== Summary ===", file=sys.stderr)
     for strategy in data.strategies:
-        strat_jobs = [j for j in data.jobs if j.strategy == strategy]
+        strat_jobs = data.get_jobs_by_strategy(strategy)
         solved = sum(1 for j in strat_jobs if j.status == Status.SOLVED)
         timeout = sum(1 for j in strat_jobs if j.status == Status.TIMEOUT)
         memout = sum(1 for j in strat_jobs if j.status == Status.MEMOUT)
@@ -1517,6 +1556,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip all stats-based analysis",
     )
+    parser.add_argument(
+        "--exclude-strategy",
+        action="append",
+        default=[],
+        metavar="SUBSTR",
+        help="Exclude strategies whose name contains SUBSTR (repeatable)",
+    )
     return parser.parse_args()
 
 
@@ -1533,7 +1579,9 @@ def main() -> None:
         print(f"Error: {stats_dir} is not a directory", file=sys.stderr)
         sys.exit(1)
 
-    data = load_experiment(logs_dir, stats_dir, args.timeout)
+    data = load_experiment(
+        logs_dir, stats_dir, args.timeout, args.exclude_strategy or None
+    )
 
     # Determine stats sections to run
     if args.no_stats:

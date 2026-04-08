@@ -104,13 +104,6 @@ public:
     /// PDLA hook — called between solver.check() calls when an action is activated.
     virtual void on_action_activated(int /*action_id*/, int /*max_timestep*/) {}
 
-    /// Serialize parallel actions at a timestep into a valid execution order.
-    /// Returns empty vector if this module has no opinion (use default).
-    virtual std::vector<const Action*> serialize_actions(
-        int /*timestep*/, const std::vector<const Action*>& /*actions*/) const {
-        return {};
-    }
-
     /// Report statistics at end of search.
     virtual void cleanup() {}
 

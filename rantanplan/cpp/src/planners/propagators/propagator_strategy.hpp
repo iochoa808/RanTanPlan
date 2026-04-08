@@ -61,8 +61,6 @@ public:
     std::string get_name() const;
     bool manages_parallelism_constraints() const;
     void on_action_activated(int action_id, int max_timestep);
-    std::vector<const Action*> serialize_actions(
-        int timestep, const std::vector<const Action*>& actions) const;
 
     PropagatorSharedState& shared() { return shared_; }
 

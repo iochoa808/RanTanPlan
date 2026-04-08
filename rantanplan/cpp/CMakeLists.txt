@@ -141,7 +141,6 @@ add_executable(rantanplan
     src/planners/propagators/modules/exists_cycle_module.cpp
     src/planners/propagators/modules/forall_mutex_module.cpp
     src/planners/propagators/modules/frame_axiom_module.cpp
-    src/planners/propagators/modules/state_aware_edge_module.cpp
     src/symmetries/smt_symmetry_checker.cpp
     src/abstraction/achievers_analysis.cpp
     src/analysis/relaxed_planning_graph.cpp

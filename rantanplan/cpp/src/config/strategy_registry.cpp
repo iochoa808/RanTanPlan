@@ -86,17 +86,9 @@ const std::map<std::string, StrategyEntry>& StrategyRegistry::get_registry() {
         {"pdla-sel",  {{E::Chained,  S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::PDLASelective},
                        "PDLA, selective blocking (leaner on sparse domains)"}},
 
-        // State-aware exists (grounded encoding — no chaining for numeric soundness)
-        {"pdla-sa",   {{E::Grounded, S::Exists,     I::LazySemantic,    {M::ExistsCycle, M::StateAwareEdge}, K::PDLA},
-                       "PDLA with state-aware interference"}},
-        {"pdla-sel-sa", {{E::Grounded, S::Exists,   I::LazySemantic,    {M::ExistsCycle, M::StateAwareEdge}, K::PDLASelective},
-                       "PDLA selective with state-aware interference"}},
-
         // Per-timestep PDLA (fine-grained activation)
         {"pdla-fg",   {{E::Chained,  S::Exists,     I::LazySemantic,    {M::ExistsCycle},         K::PDLAFinegrained},
                        "PDLA with per-timestep activation"}},
-        {"pdla-fg-sa", {{E::Grounded, S::Exists,    I::LazySemantic,    {M::ExistsCycle, M::StateAwareEdge}, K::PDLAFinegrained},
-                       "PDLA per-timestep with state-aware interference"}},
     };
     return registry;
 }

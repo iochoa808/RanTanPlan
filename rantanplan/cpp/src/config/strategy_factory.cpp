@@ -21,8 +21,6 @@
 #include "../planners/propagators/modules/exists_cycle_module.hpp"
 #include "../planners/propagators/modules/forall_mutex_module.hpp"
 #include "../planners/propagators/modules/frame_axiom_module.hpp"
-#include "../planners/propagators/modules/state_aware_edge_module.hpp"
-
 #include "../util/logger.hpp"
 
 #include <algorithm>
@@ -80,7 +78,6 @@ void StrategyFactory::adjust_spec(StrategySpec& spec, const Problem& problem) {
         spec.semantics = SemanticsKind::Forall;
         if (spec.propagator.count(PropagatorModuleKind::ExistsCycle)) {
             spec.propagator.erase(PropagatorModuleKind::ExistsCycle);
-            spec.propagator.erase(PropagatorModuleKind::StateAwareEdge);
             spec.propagator.insert(PropagatorModuleKind::ForallLazy);
         }
     }
@@ -177,14 +174,11 @@ std::unique_ptr<PropagatorStrategy> StrategyFactory::create_propagator(
     auto composite = std::make_unique<PropagatorStrategy>(solver, problem, encoder);
 
     // Parallelism modules (order: first, cheapest conflict source).
-    // StateAwareEdge subsumes ExistsCycle — it does its own cycle detection.
     if (mods.count(PropagatorModuleKind::ForallEager))
         composite->add_module(std::make_unique<ForallMutexModule>());
     if (mods.count(PropagatorModuleKind::ForallLazy))
         composite->add_module(std::make_unique<LazyForallMutexModule>());
-    if (mods.count(PropagatorModuleKind::StateAwareEdge))
-        composite->add_module(std::make_unique<StateAwareEdgeModule>());
-    else if (mods.count(PropagatorModuleKind::ExistsCycle))
+    if (mods.count(PropagatorModuleKind::ExistsCycle))
         composite->add_module(std::make_unique<ExistsCycleModule>());
 
     // Frame axiom module (after parallelism — more expensive, skipped on conflict)

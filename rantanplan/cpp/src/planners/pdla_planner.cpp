@@ -275,6 +275,13 @@ void PDLAPlanner::activate_action_all(const Action* action) {
     propagator_strategy_->on_action_activated(action->id(), current_horizon_);
 }
 
+void PDLAPlanner::activate_action_up_to(const Action* action, int deadline) {
+    int limit = std::min(deadline, current_horizon_);
+    for (int t = 0; t <= limit; t++) {
+        activate_action_at(action, t);
+    }
+}
+
 bool PDLAPlanner::is_action_blocked_anywhere(const Action* action) const {
     if (!finegrained_) return blocked_.count(action) > 0;
     auto it = block_lit_ts_.find(action);
@@ -541,7 +548,12 @@ int PDLAPlanner::process_obligations() {
         }
 
         if (finegrained_) {
-            activate_action_at(best, ob.deadline);
+            auto at_it = activated_at_.find(best);
+            if (at_it != activated_at_.end() && !at_it->second.empty()) {
+                activate_action_up_to(best, ob.deadline);
+            } else {
+                activate_action_at(best, ob.deadline);
+            }
         } else {
             activate_action(best);
         }
@@ -627,7 +639,27 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
         auto ach_it = condition_achievers_.find(tp.condition);
         if (ach_it != condition_achievers_.end()) {
             for (const Action* a : ach_it->second) {
-                if (is_action_blocked_anywhere(a)) { has_blocked_alt = true; break; }
+                if (finegrained_) {
+                    // In finegrained mode, an alternative is only useful if the
+                    // achiever is not yet activated at some failing timestep.
+                    // Checking is_action_blocked_anywhere is too loose: the action
+                    // may be blocked at irrelevant timesteps, causing the system to
+                    // spin producing obligations that can never be fulfilled.
+                    auto at_it = activated_at_.find(a);
+                    if (at_it == activated_at_.end()) {
+                        has_blocked_alt = true;
+                        break;
+                    }
+                    for (int ft : entry.failing_timesteps) {
+                        if (!at_it->second.count(ft)) {
+                            has_blocked_alt = true;
+                            break;
+                        }
+                    }
+                    if (has_blocked_alt) break;
+                } else {
+                    if (is_action_blocked_anywhere(a)) { has_blocked_alt = true; break; }
+                }
             }
         }
 
@@ -730,7 +762,12 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
         for (auto& [action, ts] : core_blocked_entries) {
             if (!is_action_blocked_anywhere(action)) continue;
             if (finegrained_ && ts >= 0) {
-                activate_action_at(action, ts);
+                auto at_it = activated_at_.find(action);
+                if (at_it != activated_at_.end() && !at_it->second.empty()) {
+                    activate_action_up_to(action, ts);
+                } else {
+                    activate_action_at(action, ts);
+                }
             } else {
                 activate_action(action);
             }
@@ -751,33 +788,6 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
 
 Plan PDLAPlanner::extract_plan(const z3::model& model) {
     int max_t = current_horizon_ + 1;
-
-    // State-aware propagator: build a flat plan using the propagator's
-    // realized edge graph, which the static analysis may disagree with.
-    // Only StateAwareEdgeModule returns non-empty from serialize_actions;
-    // other modules return empty, causing fallback to the encoder path.
-    auto* grounded = dynamic_cast<GroundedEncoder*>(&encoder_);
-    if (grounded && propagator_strategy_) {
-        Plan plan;
-        bool used_propagator = false;
-        for (int t = 0; t < max_t; ++t) {
-            auto parallel = grounded->extract_parallel_actions_at_timestep(model, t);
-            if (parallel.empty()) continue;
-            auto ordered = propagator_strategy_->serialize_actions(t, parallel);
-            if (!ordered.empty()) {
-                used_propagator = true;
-                for (const Action* a : ordered) plan.add_action(a);
-            } else {
-                // Module has no opinion — can't mix propagator and static paths.
-                // If we already used the propagator for earlier timesteps, those
-                // are fine (ordered correctly). For this timestep, add as-is
-                // (single action or no interference).
-                for (const Action* a : parallel) plan.add_action(a);
-            }
-        }
-        if (used_propagator) return plan;
-    }
-
     return encoder_.extract_plan(model, max_t);
 }
 
@@ -883,14 +893,27 @@ Plan PDLAPlanner::search() {
 
         double mem = MemoryTracker::instance().get_current_memory_mb();
 
-        Logger::instance().timestep_solving(VerbosityLevel::INFO, round, {
+        // Count (action, timestep) pairs for finegrained mode
+        size_t act_ts_pairs = 0;
+        if (finegrained_) {
+            for (auto& [_, ts_set] : activated_at_)
+                act_ts_pairs += ts_set.size();
+        }
+        size_t total_pairs = problem_.actions().size() * static_cast<size_t>(current_horizon_ + 1);
+
+        std::vector<std::pair<std::string,std::string>> fields = {
             {"solve", std::to_string(solve_time) + "s"},
             {"round", std::to_string(round_time) + "s"},
             {"horizon", std::to_string(current_horizon_)},
             {"activated", std::to_string(activated_.size()) + "/" + std::to_string(problem_.actions().size())},
-            {"queue", std::to_string(obligation_queue_.size())},
-            {"mem", std::to_string(static_cast<int>(mem)) + "MB"}
-        }, "R");
+        };
+        if (finegrained_) {
+            fields.push_back({"act-pairs", std::to_string(act_ts_pairs) + "/" + std::to_string(total_pairs)});
+        }
+        fields.push_back({"queue", std::to_string(obligation_queue_.size())});
+        fields.push_back({"mem", std::to_string(static_cast<int>(mem)) + "MB"});
+
+        Logger::instance().timestep_solving(VerbosityLevel::INFO, round, fields, "R");
 
         stats.add("planner.solve_time", solve_time);
         stats.add("planner.total_time", round_time);
@@ -900,19 +923,28 @@ Plan PDLAPlanner::search() {
             solution_found_ = true;
             Plan plan = extract_plan(model);
 
-            Logger::instance().info("\n*** PLAN FOUND: " +
+            std::string plan_msg = "\n*** PLAN FOUND: " +
                 std::to_string(plan.length()) + " actions, " +
                 std::to_string(round) + " rounds, " +
                 "horizon=" + std::to_string(current_horizon_) +
                 ", activated=" + std::to_string(activated_.size()) +
-                "/" + std::to_string(problem_.actions().size()) +
-                " (total time: " + std::to_string(total_time) + "s) ***");
+                "/" + std::to_string(problem_.actions().size());
+            if (finegrained_) {
+                plan_msg += ", act-pairs=" + std::to_string(act_ts_pairs) +
+                    "/" + std::to_string(total_pairs);
+            }
+            plan_msg += " (total time: " + std::to_string(total_time) + "s) ***";
+            Logger::instance().info(plan_msg);
 
             stats.set("planner.plan_length", static_cast<double>(plan.length()));
             stats.set("planner.rounds", static_cast<double>(round));
             stats.set("planner.solution_horizon", static_cast<double>(current_horizon_));
             stats.set("planner.activated_actions", static_cast<double>(activated_.size()));
             stats.set("planner.total_actions", static_cast<double>(problem_.actions().size()));
+            if (finegrained_) {
+                stats.set("planner.activated_pairs", static_cast<double>(act_ts_pairs));
+                stats.set("planner.total_pairs", static_cast<double>(total_pairs));
+            }
 
             plan.write_ipc(config.planner.output_plan, 1,
                            -1.0, true,

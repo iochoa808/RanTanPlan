@@ -39,7 +39,6 @@ STRATEGIES = [
     "elsc",
     "elsc-fp",
     "pdla",
-    "pdla-sa",
 ]
 
 DEFAULT_TIMEOUT = 120
@@ -128,6 +127,8 @@ def run_instance(domain_path, problem_path, strategy, timeout, extra_params=None
                             stats.get("planner.activated_entries", 0))),
             "total_actions": int(stats.get("planner.total_actions",
                                 stats.get("pipeline.final_actions", 0))),
+            "activated_pairs": int(stats.get("planner.activated_pairs", 0)),
+            "total_pairs": int(stats.get("planner.total_pairs", 0)),
             "rlimit": int(stats.get("z3.rlimit count", 0)),
         }
 
@@ -278,7 +279,8 @@ def main():
             writer = csv.DictWriter(f, fieldnames=[
                 "instance", "strategy", "solved", "time", "solve_time",
                 "preprocess_ms", "plan_len", "horizon", "rounds",
-                "activated", "total_actions", "rlimit",
+                "activated", "total_actions", "activated_pairs", "total_pairs",
+                "rlimit",
                 "gr_removed", "gr_initial", "gr_time_ms", "final_actions",
             ])
             writer.writeheader()
