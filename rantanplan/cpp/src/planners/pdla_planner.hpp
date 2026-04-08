@@ -44,7 +44,6 @@ namespace rantanplan {
  *     no obligations.  More selective, better for sparse domains,
  *     slower on dense domains where most actions are eventually needed.
  *
- * See docs/pdla-proposal.md for the full design document.
  */
 class PDLAPlanner : public BasePlanner {
 public:
@@ -143,12 +142,9 @@ protected:
     std::unordered_set<ExprID> init_satisfied_conditions_;
     std::vector<ExprID> goal_condition_ids_;
     std::unordered_map<const Action*, std::vector<ExprID>> action_precondition_ids_;
-    std::unordered_set<const Action*> goal_achiever_actions_;
-    std::unordered_set<const Action*> goal_relevant_actions_;
 
     // ---- Relaxed plan (h^ff-style backward extraction) ----
 
-    std::vector<const Action*> relaxed_plan_;
     std::unordered_set<const Action*> relaxed_plan_set_;
 
     // ---- Scoring constants ----

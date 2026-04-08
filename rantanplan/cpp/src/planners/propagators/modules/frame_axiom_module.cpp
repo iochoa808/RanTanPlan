@@ -3,6 +3,7 @@
 #include "../../../util/stats.hpp"
 #include "../../../encoders/grounded_encoder.hpp"
 #include <algorithm>
+#include <cassert>
 
 namespace rantanplan {
 
@@ -15,40 +16,43 @@ void FrameAxiomModule::on_push() {
 }
 
 void FrameAxiomModule::on_pop(unsigned num_scopes) {
-    for (unsigned i = 0; i < num_scopes; ++i) {
-        if (frame_decision_levels_.empty()) continue;
-        size_t frame_level_start = frame_decision_levels_.back();
-        frame_decision_levels_.pop_back();
+    unsigned effective = std::min(num_scopes,
+                                  static_cast<unsigned>(frame_decision_levels_.size()));
+    assert(effective == num_scopes && "pop without matching push");
+    if (effective == 0) return;
 
-        std::vector<uint32_t> dirty_clauses;
+    size_t frame_level_start =
+        frame_decision_levels_[frame_decision_levels_.size() - effective];
+    frame_decision_levels_.resize(frame_decision_levels_.size() - effective);
 
-        while (frame_trail_.size() > frame_level_start) {
-            const auto& te = frame_trail_.back();
-            auto& clause = frame_clauses_[te.clause_idx];
+    std::vector<uint32_t> dirty_clauses;
 
-            switch (static_cast<VarRole::Kind>(te.kind)) {
-            case VarRole::FLUENT_T:
-                clause.ft_val = te.prev_state; break;
-            case VarRole::FLUENT_T1:
-                clause.ft1_val = te.prev_state; break;
-            case VarRole::EQ_BOOL:
-                clause.eq_state = te.prev_state; break;
-            case VarRole::ACTION:
-                clause.entries[te.entry_idx].action_state = te.prev_state; break;
-            case VarRole::CONDITION:
-                clause.entries[te.entry_idx].cond_state = te.prev_state; break;
-            }
-            dirty_clauses.push_back(te.clause_idx);
-            frame_trail_.pop_back();
+    while (frame_trail_.size() > frame_level_start) {
+        const auto& te = frame_trail_.back();
+        auto& clause = frame_clauses_[te.clause_idx];
+
+        switch (te.kind) {
+        case VarRole::FLUENT_T:
+            clause.ft_val = te.prev_state; break;
+        case VarRole::FLUENT_T1:
+            clause.ft1_val = te.prev_state; break;
+        case VarRole::EQ_BOOL:
+            clause.eq_state = te.prev_state; break;
+        case VarRole::ACTION:
+            clause.entries[te.entry_idx].action_state = te.prev_state; break;
+        case VarRole::CONDITION:
+            clause.entries[te.entry_idx].cond_state = te.prev_state; break;
         }
-
-        std::sort(dirty_clauses.begin(), dirty_clauses.end());
-        dirty_clauses.erase(
-            std::unique(dirty_clauses.begin(), dirty_clauses.end()),
-            dirty_clauses.end());
-        for (uint32_t ci : dirty_clauses)
-            recompute_derived(frame_clauses_[ci]);
+        dirty_clauses.push_back(te.clause_idx);
+        frame_trail_.pop_back();
     }
+
+    std::sort(dirty_clauses.begin(), dirty_clauses.end());
+    dirty_clauses.erase(
+        std::unique(dirty_clauses.begin(), dirty_clauses.end()),
+        dirty_clauses.end());
+    for (uint32_t ci : dirty_clauses)
+        recompute_derived(frame_clauses_[ci]);
 }
 
 // ============================================================================
@@ -67,7 +71,7 @@ void FrameAxiomModule::on_fixed(const z3::expr& ast, const z3::expr& value) {
 
         FrameTrailEntry te;
         te.clause_idx = static_cast<uint32_t>(role.clause_idx);
-        te.kind = static_cast<uint8_t>(role.kind);
+        te.kind = role.kind;
         te.entry_idx = static_cast<uint32_t>(role.entry_idx);
 
         switch (role.kind) {
@@ -93,27 +97,13 @@ void FrameAxiomModule::on_fixed(const z3::expr& ast, const z3::expr& value) {
         case VarRole::ACTION: {
             auto& entry = clause.entries[role.entry_idx];
             te.prev_state = entry.action_state;
-            bool was_cant = entry.cant_explain();
-            bool was_can = entry.can_explain();
-            entry.action_state = val_int;
-            bool now_cant = entry.cant_explain();
-            bool now_can = entry.can_explain();
-            if (now_cant != was_cant) clause.num_cant_explain += now_cant ? 1 : -1;
-            if (now_can != was_can) clause.num_can_explain += now_can ? 1 : -1;
-            clause.owned = (clause.num_can_explain > 0);
+            update_epc_entry(clause, entry, entry.action_state, val_int);
             break;
         }
         case VarRole::CONDITION: {
             auto& entry = clause.entries[role.entry_idx];
             te.prev_state = entry.cond_state;
-            bool was_cant = entry.cant_explain();
-            bool was_can = entry.can_explain();
-            entry.cond_state = val_int;
-            bool now_cant = entry.cant_explain();
-            bool now_can = entry.can_explain();
-            if (now_cant != was_cant) clause.num_cant_explain += now_cant ? 1 : -1;
-            if (now_can != was_can) clause.num_can_explain += now_can ? 1 : -1;
-            clause.owned = (clause.num_can_explain > 0);
+            update_epc_entry(clause, entry, entry.cond_state, val_int);
             break;
         }
         }
@@ -135,7 +125,7 @@ void FrameAxiomModule::on_final() {
         auto& clause = frame_clauses_[ci];
 
         if (clause.eq_state == 1) continue;
-        if (clause.owned) continue;
+        if (clause.owned()) continue;
         if (clause.eq_state == 0 && clause.num_can_explain > 0) continue;
 
         if (clause.eq_state == 0) {
@@ -160,7 +150,7 @@ void FrameAxiomModule::check_frame_clause(FrameClause& clause, size_t clause_idx
     int n = static_cast<int>(clause.entries.size());
 
     if (clause.eq_state == 1) return;
-    if (clause.owned) return;
+    if (clause.owned()) return;
 
     if (clause.num_cant_explain == n) {
         if (clause.eq_state == 0) {
@@ -259,29 +249,8 @@ void FrameAxiomModule::propagate_last_entry(const FrameClause& clause, size_t cl
 // ============================================================================
 
 void FrameAxiomModule::register_timestep_variables(int timestep) {
-    if (timestep > 0) {
-        // Register frame-specific action variables (may overlap with shared;
-        // all_registered_ids_ deduplicates via Z3 expr ID).
-        const Z3VariableFactory& vf = *shared_->variable_factory;
-        if (!shared_->registered_action_vars.contains(timestep - 1)) {
-            // Action vars not registered yet — the composite will handle this.
-            // But we need them registered for frame role tracking.
-            auto vars = vf.get_all_action_variables(timestep - 1);
-            if (!vars.empty()) {
-                for (const auto& v : vars) {
-                    if (all_registered_ids_.insert(v->id()).second)
-                        host_->module_add(*v);
-                }
-            }
-        } else {
-            // Already in shared state — just ensure they're in our ID set
-            for (const auto& v : shared_->registered_action_vars[timestep - 1]) {
-                all_registered_ids_.insert(v->id());
-            }
-        }
-
+    if (timestep > 0)
         register_frame_variables(timestep - 1);
-    }
 }
 
 void FrameAxiomModule::register_frame_variables(int t) {
@@ -318,16 +287,16 @@ void FrameAxiomModule::register_frame_variables(int t) {
 
         if (is_bool) {
             frame_eq_bool_.push_back(ctx.bool_val(true));
-            if (all_registered_ids_.insert(f_t.id()).second) host_->module_add(f_t);
+            host_->module_add(f_t);
             frame_var_to_roles_[f_t.id()].push_back({VarRole::FLUENT_T, clause_idx, 0});
-            if (all_registered_ids_.insert(f_t1.id()).second) host_->module_add(f_t1);
+            host_->module_add(f_t1);
             frame_var_to_roles_[f_t1.id()].push_back({VarRole::FLUENT_T1, clause_idx, 0});
         } else {
             std::string eq_name = "feq_" + std::to_string(clause_idx);
             z3::expr eq_bool = ctx.bool_const(eq_name.c_str());
             shared_->solver->add(eq_bool == (f_t == f_t1));
             frame_eq_bool_.push_back(eq_bool);
-            if (all_registered_ids_.insert(eq_bool.id()).second) host_->module_add(eq_bool);
+            host_->module_add(eq_bool);
             frame_var_to_roles_[eq_bool.id()].push_back({VarRole::EQ_BOOL, clause_idx, 0});
         }
 
@@ -340,13 +309,12 @@ void FrameAxiomModule::register_frame_variables(int t) {
             const auto& [action, eff_expr] = action_effects[i];
 
             EPCEntry entry;
-            entry.action = action;
             entry.is_conditional = eff_expr->is_conditional();
 
             z3::expr a = vf.get_action_variable(*action, t);
             actions_vec.push_back(a);
 
-            if (all_registered_ids_.insert(a.id()).second) host_->module_add(a);
+            host_->module_add(a);
             frame_var_to_roles_[a.id()].push_back({VarRole::ACTION, clause_idx, i});
 
             if (entry.is_conditional) {
@@ -355,7 +323,7 @@ void FrameAxiomModule::register_frame_variables(int t) {
                 z3::expr cond_z3 = grounded->convert_expr_id_to_z3(eff_expr->condition_id(), t);
                 shared_->solver->add(cond_reified == cond_z3);
                 conds_vec.push_back(cond_reified);
-                if (all_registered_ids_.insert(cond_reified.id()).second) host_->module_add(cond_reified);
+                host_->module_add(cond_reified);
                 frame_var_to_roles_[cond_reified.id()].push_back({VarRole::CONDITION, clause_idx, i});
             } else {
                 conds_vec.push_back(ctx.bool_val(true));
@@ -370,6 +338,17 @@ void FrameAxiomModule::register_frame_variables(int t) {
 // Recompute derived counters
 // ============================================================================
 
+void FrameAxiomModule::update_epc_entry(FrameClause& clause, EPCEntry& entry,
+                                        int8_t& field, int8_t new_val) {
+    bool was_cant = entry.cant_explain();
+    bool was_can = entry.can_explain();
+    field = new_val;
+    bool now_cant = entry.cant_explain();
+    bool now_can = entry.can_explain();
+    if (now_cant != was_cant) clause.num_cant_explain += now_cant ? 1 : -1;
+    if (now_can != was_can) clause.num_can_explain += now_can ? 1 : -1;
+}
+
 void FrameAxiomModule::recompute_derived(FrameClause& clause) {
     if (clause.is_boolean) {
         if (clause.ft_val >= 0 && clause.ft1_val >= 0)
@@ -383,7 +362,6 @@ void FrameAxiomModule::recompute_derived(FrameClause& clause) {
         if (entry.cant_explain()) clause.num_cant_explain++;
         if (entry.can_explain()) clause.num_can_explain++;
     }
-    clause.owned = (clause.num_can_explain > 0);
 }
 
 // ============================================================================
@@ -397,7 +375,7 @@ void FrameAxiomModule::cleanup() {
     stats.set("frame_prop.propagations", static_cast<double>(frame_propagation_count_));
     stats.set("frame_prop.on_fixed_calls", static_cast<double>(frame_on_fixed_count_));
     stats.set("frame_prop.on_final_violations", static_cast<double>(frame_final_violation_count_));
-    stats.set("frame_prop.vars_registered", static_cast<double>(all_registered_ids_.size()));
+    stats.set("frame_prop.vars_registered", static_cast<double>(host_->registered_var_count()));
 }
 
 } // namespace rantanplan

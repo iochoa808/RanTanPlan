@@ -10,14 +10,6 @@
 
 namespace rantanplan {
 
-// ===========================================================================
-// PDLAPlanner — Property-Directed Lazy Activation
-//
-// Change 1: Float activation (per-action blocking).
-// Change 2: Incremental activation (K per round, scored selection).
-// Change 3: Obligation-driven search (backward chaining from goals).
-// ===========================================================================
-
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
@@ -122,46 +114,10 @@ void PDLAPlanner::initialize_achievers() {
         std::to_string(goal_condition_ids_.size()) + " goal conditions " +
         "(" + std::to_string(init_time) + "s)");
 
-    // Direct goal achievers
-    for (ExprID g : goal_condition_ids_) {
-        auto it = condition_achievers_.find(g);
-        if (it != condition_achievers_.end()) {
-            for (const Action* a : it->second) {
-                goal_achiever_actions_.insert(a);
-            }
-        }
-    }
-
-    // Transitive achiever closure (diagnostics only)
-    {
-        std::vector<ExprID> frontier;
-        std::unordered_set<ExprID> visited;
-        for (ExprID cond : goal_condition_ids_) {
-            frontier.push_back(cond);
-            visited.insert(cond);
-        }
-        while (!frontier.empty()) {
-            std::vector<ExprID> next_frontier;
-            for (ExprID cond : frontier) {
-                auto ach_it = condition_achievers_.find(cond);
-                if (ach_it == condition_achievers_.end()) continue;
-                for (const Action* achiever : ach_it->second) {
-                    if (goal_relevant_actions_.insert(achiever).second) {
-                        auto prec_it = action_precondition_ids_.find(achiever);
-                        if (prec_it != action_precondition_ids_.end()) {
-                            for (ExprID prec_cond : prec_it->second) {
-                                if (visited.insert(prec_cond).second) {
-                                    next_frontier.push_back(prec_cond);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            frontier = std::move(next_frontier);
-        }
+    if (Config::instance().is_verbose()) {
+        auto relevant = achievers_->compute_goal_relevant_action_indices(problem_, false);
         Logger::instance().info("  Goal-relevant actions: " +
-            std::to_string(goal_relevant_actions_.size()) + "/" +
+            std::to_string(relevant.size()) + "/" +
             std::to_string(problem_.actions().size()));
     }
 
@@ -169,7 +125,6 @@ void PDLAPlanner::initialize_achievers() {
 }
 
 void PDLAPlanner::extract_relaxed_plan() {
-    relaxed_plan_.clear();
     std::unordered_set<ExprID> unsatisfied;
     for (ExprID g : goal_condition_ids_) {
         if (!init_satisfied_conditions_.count(g)) {
@@ -194,7 +149,6 @@ void PDLAPlanner::extract_relaxed_plan() {
             }
             if (best && !used.count(best)) {
                 used.insert(best);
-                relaxed_plan_.push_back(best);
                 relaxed_plan_set_.insert(best);
                 newly_satisfied.push_back(cond);
                 auto prec_it = action_precondition_ids_.find(best);
@@ -405,12 +359,7 @@ double PDLAPlanner::score_action(const Action* action) const {
         int satisfied = 0;
         for (ExprID p : prec_it->second) {
             if (init_satisfied_conditions_.count(p)) { satisfied++; continue; }
-            auto ach_it = condition_achievers_.find(p);
-            if (ach_it != condition_achievers_.end()) {
-                for (const Action* enabler : ach_it->second) {
-                    if (activated_.count(enabler)) { satisfied++; break; }
-                }
-            }
+            if (has_activated_achiever(p)) { satisfied++; }
         }
         readiness = static_cast<double>(satisfied) / static_cast<double>(total);
     }
@@ -634,31 +583,33 @@ PDLAPlanner::CoreResult PDLAPlanner::process_core_for_obligations(
             depth = ad_it->second + 1;
         }
 
-        bool has_activated = has_activated_achiever(tp.condition);
+        // Classify achievers: check activation and blocked alternatives in one pass
+        bool has_activated = false;
         bool has_blocked_alt = false;
         auto ach_it = condition_achievers_.find(tp.condition);
         if (ach_it != condition_achievers_.end()) {
             for (const Action* a : ach_it->second) {
                 if (finegrained_) {
-                    // In finegrained mode, an alternative is only useful if the
-                    // achiever is not yet activated at some failing timestep.
-                    // Checking is_action_blocked_anywhere is too loose: the action
-                    // may be blocked at irrelevant timesteps, causing the system to
-                    // spin producing obligations that can never be fulfilled.
                     auto at_it = activated_at_.find(a);
-                    if (at_it == activated_at_.end()) {
-                        has_blocked_alt = true;
-                        break;
-                    }
-                    for (int ft : entry.failing_timesteps) {
-                        if (!at_it->second.count(ft)) {
-                            has_blocked_alt = true;
-                            break;
+                    if (at_it != activated_at_.end() && !at_it->second.empty()) {
+                        has_activated = true;
+                        // Check if blocked at any failing timestep
+                        for (int ft : entry.failing_timesteps) {
+                            if (!at_it->second.count(ft)) {
+                                has_blocked_alt = true;
+                                break;
+                            }
                         }
+                    } else {
+                        // Never activated — blocked alternative
+                        has_blocked_alt = true;
                     }
-                    if (has_blocked_alt) break;
                 } else {
-                    if (is_action_blocked_anywhere(a)) { has_blocked_alt = true; break; }
+                    if (!is_action_blocked_anywhere(a)) {
+                        has_activated = true;
+                    } else {
+                        has_blocked_alt = true;
+                    }
                 }
             }
         }
@@ -844,7 +795,7 @@ Plan PDLAPlanner::search() {
         Logger::instance().info("Pre-extended horizon to " +
             std::to_string(current_horizon_) +
             " (RPG lower bound: " + std::to_string(start_ts) +
-            ", relaxed plan: " + std::to_string(relaxed_plan_.size()) + " actions)");
+            ", relaxed plan: " + std::to_string(relaxed_plan_set_.size()) + " actions)");
     }
 
     // 4. Push goal conditions as initial obligations
@@ -858,7 +809,7 @@ Plan PDLAPlanner::search() {
         std::to_string(obligation_queue_.size()) + " goal obligations, " +
         std::to_string(current_horizon_ + 1) + " timesteps, " +
         std::to_string(problem_.actions().size()) + " actions, " +
-        "h^ff RP: " + std::to_string(relaxed_plan_.size()) + " actions");
+        "h^ff RP: " + std::to_string(relaxed_plan_set_.size()) + " actions");
 
     // 5. Main search loop: Phase A (obligations) → Phase B (solver)
     int round = 0;
@@ -891,29 +842,35 @@ Plan PDLAPlanner::search() {
         double round_time = std::chrono::duration<double>(round_end - round_start).count();
         total_time = std::chrono::duration<double>(round_end - start_time).count();
 
-        double mem = MemoryTracker::instance().get_current_memory_mb();
-
-        // Count (action, timestep) pairs for finegrained mode
+        // Per-round logging (guarded to avoid syscalls and allocations in silent mode)
         size_t act_ts_pairs = 0;
-        if (finegrained_) {
-            for (auto& [_, ts_set] : activated_at_)
-                act_ts_pairs += ts_set.size();
-        }
-        size_t total_pairs = problem_.actions().size() * static_cast<size_t>(current_horizon_ + 1);
+        size_t total_pairs = 0;
+        if (config.global.verbosity >= VerbosityLevel::INFO) {
+            double mem = (round % 50 == 0)
+                ? MemoryTracker::instance().get_current_memory_mb() : -1.0;
 
-        std::vector<std::pair<std::string,std::string>> fields = {
-            {"solve", std::to_string(solve_time) + "s"},
-            {"round", std::to_string(round_time) + "s"},
-            {"horizon", std::to_string(current_horizon_)},
-            {"activated", std::to_string(activated_.size()) + "/" + std::to_string(problem_.actions().size())},
-        };
-        if (finegrained_) {
-            fields.push_back({"act-pairs", std::to_string(act_ts_pairs) + "/" + std::to_string(total_pairs)});
-        }
-        fields.push_back({"queue", std::to_string(obligation_queue_.size())});
-        fields.push_back({"mem", std::to_string(static_cast<int>(mem)) + "MB"});
+            if (finegrained_) {
+                for (auto& [_, ts_set] : activated_at_)
+                    act_ts_pairs += ts_set.size();
+                total_pairs = problem_.actions().size() * static_cast<size_t>(current_horizon_ + 1);
+            }
 
-        Logger::instance().timestep_solving(VerbosityLevel::INFO, round, fields, "R");
+            std::vector<std::pair<std::string,std::string>> fields = {
+                {"solve", std::to_string(solve_time) + "s"},
+                {"round", std::to_string(round_time) + "s"},
+                {"horizon", std::to_string(current_horizon_)},
+                {"activated", std::to_string(activated_.size()) + "/" + std::to_string(problem_.actions().size())},
+            };
+            if (finegrained_) {
+                fields.push_back({"act-pairs", std::to_string(act_ts_pairs) + "/" + std::to_string(total_pairs)});
+            }
+            fields.push_back({"queue", std::to_string(obligation_queue_.size())});
+            if (mem >= 0) {
+                fields.push_back({"mem", std::to_string(static_cast<int>(mem)) + "MB"});
+            }
+
+            Logger::instance().timestep_solving(VerbosityLevel::INFO, round, fields, "R");
+        }
 
         stats.add("planner.solve_time", solve_time);
         stats.add("planner.total_time", round_time);
@@ -923,6 +880,14 @@ Plan PDLAPlanner::search() {
             solution_found_ = true;
             Plan plan = extract_plan(model);
 
+            size_t final_act_pairs = 0;
+            size_t final_total_pairs = 0;
+            if (finegrained_) {
+                for (auto& [_, ts_set] : activated_at_)
+                    final_act_pairs += ts_set.size();
+                final_total_pairs = problem_.actions().size() * static_cast<size_t>(current_horizon_ + 1);
+            }
+
             std::string plan_msg = "\n*** PLAN FOUND: " +
                 std::to_string(plan.length()) + " actions, " +
                 std::to_string(round) + " rounds, " +
@@ -930,8 +895,8 @@ Plan PDLAPlanner::search() {
                 ", activated=" + std::to_string(activated_.size()) +
                 "/" + std::to_string(problem_.actions().size());
             if (finegrained_) {
-                plan_msg += ", act-pairs=" + std::to_string(act_ts_pairs) +
-                    "/" + std::to_string(total_pairs);
+                plan_msg += ", act-pairs=" + std::to_string(final_act_pairs) +
+                    "/" + std::to_string(final_total_pairs);
             }
             plan_msg += " (total time: " + std::to_string(total_time) + "s) ***";
             Logger::instance().info(plan_msg);
@@ -942,8 +907,8 @@ Plan PDLAPlanner::search() {
             stats.set("planner.activated_actions", static_cast<double>(activated_.size()));
             stats.set("planner.total_actions", static_cast<double>(problem_.actions().size()));
             if (finegrained_) {
-                stats.set("planner.activated_pairs", static_cast<double>(act_ts_pairs));
-                stats.set("planner.total_pairs", static_cast<double>(total_pairs));
+                stats.set("planner.activated_pairs", static_cast<double>(final_act_pairs));
+                stats.set("planner.total_pairs", static_cast<double>(final_total_pairs));
             }
 
             plan.write_ipc(config.planner.output_plan, 1,

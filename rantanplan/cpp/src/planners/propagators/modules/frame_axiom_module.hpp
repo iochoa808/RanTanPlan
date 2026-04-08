@@ -33,7 +33,6 @@ private:
     // --- Frame clause data structures ---
 
     struct EPCEntry {
-        const Action* action;
         bool is_conditional;
         int8_t action_state = -1;
         int8_t cond_state = -1;
@@ -61,7 +60,8 @@ private:
         std::vector<EPCEntry> entries;
         int num_cant_explain = 0;
         int num_can_explain = 0;
-        bool owned = false;
+
+        bool owned() const { return num_can_explain > 0; }
 
         FrameClause(int t, ExprID fid, bool is_bool)
             : timestep(t), fluent_id(fid), is_boolean(is_bool) {}
@@ -77,7 +77,7 @@ private:
     struct FrameTrailEntry {
         uint32_t clause_idx;
         uint32_t entry_idx;
-        uint8_t kind;
+        VarRole::Kind kind;
         int8_t prev_state;
     };
 
@@ -93,8 +93,6 @@ private:
     std::vector<std::vector<z3::expr>> frame_action_expr_;
     std::vector<std::vector<z3::expr>> frame_cond_expr_;
 
-    std::unordered_set<unsigned> all_registered_ids_;
-
     // Private trail
     std::vector<FrameTrailEntry> frame_trail_;
     std::vector<size_t> frame_decision_levels_;
@@ -105,11 +103,11 @@ private:
     int frame_on_fixed_count_ = 0;
     int frame_final_violation_count_ = 0;
 
-    bool persist_clauses_ = false;
-
     // --- Helpers ---
 
     void recompute_derived(FrameClause& clause);
+    void update_epc_entry(FrameClause& clause, EPCEntry& entry,
+                          int8_t& field, int8_t new_val);
     void register_frame_variables(int t);
     void check_frame_clause(FrameClause& clause, size_t clause_idx);
     void report_frame_conflict(const FrameClause& clause, size_t clause_idx);

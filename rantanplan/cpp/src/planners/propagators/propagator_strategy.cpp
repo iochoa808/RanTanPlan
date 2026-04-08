@@ -42,7 +42,8 @@ void PropagatorStrategy::module_propagate(const z3::expr_vector& fixed,
 }
 
 void PropagatorStrategy::module_add(const z3::expr& e) {
-    add(e);
+    if (registered_ids_.insert(e.id()).second)
+        add(e);
 }
 
 void PropagatorStrategy::register_decide_callback() {
@@ -130,8 +131,10 @@ void PropagatorStrategy::register_timestep_variables(int timestep) {
         auto vars = shared_.variable_factory->get_all_action_variables(timestep - 1);
         if (!vars.empty()) {
             shared_.registered_action_vars[timestep - 1] = std::move(vars);
-            for (const auto& v : shared_.registered_action_vars[timestep - 1])
+            for (const auto& v : shared_.registered_action_vars[timestep - 1]) {
+                registered_ids_.insert(v->id());
                 add(*v);
+            }
         }
     }
 

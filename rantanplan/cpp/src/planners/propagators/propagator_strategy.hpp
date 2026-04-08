@@ -51,6 +51,9 @@ public:
     /// Check whether a conflict has been raised in the current callback.
     bool conflict_raised() const { return conflict_raised_; }
 
+    /// Number of unique variables registered with this propagator.
+    size_t registered_var_count() const { return registered_ids_.size(); }
+
     /// Access the Z3 context (modules need this to build expressions).
     z3::context& z3_ctx() { return ctx(); }
 
@@ -76,6 +79,7 @@ public:
 private:
     PropagatorSharedState shared_;
     std::vector<std::unique_ptr<PropagatorModule>> modules_;
+    std::unordered_set<unsigned> registered_ids_;
     bool conflict_raised_ = false;
     bool decide_registered_ = false;
 
