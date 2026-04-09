@@ -60,6 +60,13 @@ void StrategyFactory::validate(const StrategySpec& spec,
             "(Forall/Exists semantics need interference for mutex constraints)");
     }
 
+    if (spec.propagator.count(PropagatorModuleKind::FrameAxiom) &&
+        (uses_pdla(spec) || uses_double_tail(spec))) {
+        throw std::invalid_argument(
+            "FrameAxiom propagator module is only validated with the "
+            "Sequential planner (incompatible with PDLA and DoubleTail)");
+    }
+
     if (horizon_schedule != "linear" && uses_double_tail(spec)) {
         throw std::invalid_argument(
             "Non-linear horizon schedule '" + horizon_schedule +

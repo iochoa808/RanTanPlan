@@ -126,7 +126,7 @@ void FrameAxiomModule::on_final() {
 
         if (clause.eq_state == 1) continue;
         if (clause.owned()) continue;
-        if (clause.eq_state == 0 && clause.num_can_explain > 0) continue;
+        // After owned() check: num_can_explain == 0
 
         if (clause.eq_state == 0) {
             frame_final_violation_count_++;
@@ -134,7 +134,7 @@ void FrameAxiomModule::on_final() {
             return;
         }
 
-        if (clause.eq_state == -1 && clause.num_can_explain == 0) {
+        if (clause.eq_state == -1) {
             frame_final_violation_count_++;
             propagate_fluent_preservation(clause, ci);
             return;
@@ -151,6 +151,7 @@ void FrameAxiomModule::check_frame_clause(FrameClause& clause, size_t clause_idx
 
     if (clause.eq_state == 1) return;
     if (clause.owned()) return;
+    // After owned() check: num_can_explain == 0
 
     if (clause.num_cant_explain == n) {
         if (clause.eq_state == 0) {
@@ -161,11 +162,7 @@ void FrameAxiomModule::check_frame_clause(FrameClause& clause, size_t clause_idx
         return;
     }
 
-    if (clause.eq_state == 0 && clause.num_can_explain > 0) return;
-
-    if (clause.eq_state == 0 &&
-        clause.num_cant_explain == n - 1 &&
-        clause.num_can_explain == 0) {
+    if (clause.eq_state == 0 && clause.num_cant_explain == n - 1) {
         propagate_last_entry(clause, clause_idx);
     }
 }
@@ -196,7 +193,8 @@ void FrameAxiomModule::build_frame_fixed(
         if (entry.action_state == 0) {
             fixed.push_back(actions[i]);
         } else if (entry.is_conditional && entry.cond_state == 0) {
-            fixed.push_back(actions[i]);
+            if (entry.action_state >= 0)
+                fixed.push_back(actions[i]);
             fixed.push_back(conds[i]);
         }
     }
@@ -291,6 +289,7 @@ void FrameAxiomModule::register_frame_variables(int t) {
             frame_var_to_roles_[f_t.id()].push_back({VarRole::FLUENT_T, clause_idx, 0});
             host_->module_add(f_t1);
             frame_var_to_roles_[f_t1.id()].push_back({VarRole::FLUENT_T1, clause_idx, 0});
+            frame_vars_registered_ += 2;
         } else {
             std::string eq_name = "feq_" + std::to_string(clause_idx);
             z3::expr eq_bool = ctx.bool_const(eq_name.c_str());
@@ -298,6 +297,7 @@ void FrameAxiomModule::register_frame_variables(int t) {
             frame_eq_bool_.push_back(eq_bool);
             host_->module_add(eq_bool);
             frame_var_to_roles_[eq_bool.id()].push_back({VarRole::EQ_BOOL, clause_idx, 0});
+            frame_vars_registered_++;
         }
 
         frame_action_expr_.emplace_back();
@@ -316,15 +316,26 @@ void FrameAxiomModule::register_frame_variables(int t) {
 
             host_->module_add(a);
             frame_var_to_roles_[a.id()].push_back({VarRole::ACTION, clause_idx, i});
+            frame_vars_registered_++;
 
             if (entry.is_conditional) {
-                std::string cname = "fc_" + std::to_string(clause_idx) + "_" + std::to_string(i);
-                z3::expr cond_reified = ctx.bool_const(cname.c_str());
-                z3::expr cond_z3 = grounded->convert_expr_id_to_z3(eff_expr->condition_id(), t);
-                shared_->solver->add(cond_reified == cond_z3);
+                ExprID cond_id = eff_expr->condition_id();
+                auto cache_key = std::make_pair(cond_id, t);
+                auto cache_it = cond_reification_cache_.find(cache_key);
+                z3::expr cond_reified = (cache_it != cond_reification_cache_.end())
+                    ? cache_it->second
+                    : [&]() {
+                        std::string cname = "fc_" + std::to_string(clause_idx) + "_" + std::to_string(i);
+                        z3::expr cr = ctx.bool_const(cname.c_str());
+                        z3::expr cond_z3 = grounded->convert_expr_id_to_z3(cond_id, t);
+                        shared_->solver->add(cr == cond_z3);
+                        cond_reification_cache_.emplace(cache_key, cr);
+                        return cr;
+                    }();
                 conds_vec.push_back(cond_reified);
                 host_->module_add(cond_reified);
                 frame_var_to_roles_[cond_reified.id()].push_back({VarRole::CONDITION, clause_idx, i});
+                frame_vars_registered_++;
             } else {
                 conds_vec.push_back(ctx.bool_val(true));
             }
@@ -375,7 +386,7 @@ void FrameAxiomModule::cleanup() {
     stats.set("frame_prop.propagations", static_cast<double>(frame_propagation_count_));
     stats.set("frame_prop.on_fixed_calls", static_cast<double>(frame_on_fixed_count_));
     stats.set("frame_prop.on_final_violations", static_cast<double>(frame_final_violation_count_));
-    stats.set("frame_prop.vars_registered", static_cast<double>(host_->registered_var_count()));
+    stats.set("frame_prop.vars_registered", static_cast<double>(frame_vars_registered_));
 }
 
 } // namespace rantanplan

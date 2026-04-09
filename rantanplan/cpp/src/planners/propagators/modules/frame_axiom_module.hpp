@@ -3,6 +3,7 @@
 #include "../propagator_module.hpp"
 #include "../propagator_strategy.hpp"
 #include <z3++.h>
+#include <map>
 
 namespace rantanplan {
 
@@ -93,6 +94,9 @@ private:
     std::vector<std::vector<z3::expr>> frame_action_expr_;
     std::vector<std::vector<z3::expr>> frame_cond_expr_;
 
+    // Condition reification cache: (condition ExprID, timestep) -> reified z3::expr
+    std::map<std::pair<ExprID, int>, z3::expr> cond_reification_cache_;
+
     // Private trail
     std::vector<FrameTrailEntry> frame_trail_;
     std::vector<size_t> frame_decision_levels_;
@@ -102,6 +106,7 @@ private:
     int frame_propagation_count_ = 0;
     int frame_on_fixed_count_ = 0;
     int frame_final_violation_count_ = 0;
+    int frame_vars_registered_ = 0;
 
     // --- Helpers ---
 
