@@ -23,7 +23,7 @@ public:
         int timeout = 0;              // 0 = no timeout (run indefinitely)
         std::string log_level = "INFO";
         std::string stats_file = "";  // Empty means no file output
-        bool persist_clauses = true;  // Z3 persist clauses setting for user propagators
+        bool persist_clauses = false;  // Theory lemmas discarded on backtrack; propagators re-derive eagerly
         double epsilon = 1e-6;        // Numerical tolerance for floating-point comparisons
         bool reachability_grounding = true;  // --up-grounding disables this
         bool numeric_grounding = true;       // --no-numeric-grounding disables this

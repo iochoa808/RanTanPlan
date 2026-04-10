@@ -170,7 +170,20 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_frames(int t) {
         z3::expr fluent_t = convert_expr_id_to_z3(eid, t);
         z3::expr fluent_t_plus_1 = convert_expr_id_to_z3(eid, t + 1);
 
-        // Create the "fluent changed" condition: fluent^t != fluent^(t+1)
+        // Frame axiom: (f^t != f^{t+1}) -> (a_1 v (a_2 ^ c_2) v ... v a_n)
+        //
+        // For boolean fluents, an alternative "direction-aware" encoding splits
+        // this into two clauses by effect polarity — one with only the actions
+        // that set f to true, one with only those that set f to false.  These
+        // are derivable by resolving the combined frame clause with the effect
+        // axioms and are strictly shorter.  However, a full experiment on 417
+        // instances (branch frame-polarity, Apr 2026) showed this is 16% slower
+        // on average (geo mean 1.16, 89 losses vs 45 wins).  The shorter
+        // clauses disrupt Z3's VSIDS heuristics more than they help BCP,
+        // especially on boolean-heavy domains (42% slower, 3:1 loss ratio).
+        // Mixed boolean/numeric domains benefit slightly (geo 0.93) but not
+        // enough to offset the overall loss.  Conclusion: keep the combined
+        // encoding.
         z3::expr fluent_changed = (fluent_t != fluent_t_plus_1);
         
         // Build disjunction of all actions that can cause this change

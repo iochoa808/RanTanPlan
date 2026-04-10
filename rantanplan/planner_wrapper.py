@@ -44,7 +44,7 @@ class _RantanPlanBase(Engine):
         self._verbosity = options.get('verbosity')
         self._strategy = options.get('strategy', 'seq')
         self._max_steps = options.get('max_steps')
-        self._no_persist_clauses = options.get('no_persist_clauses', False)
+        self._persist_clauses = options.get('persist_clauses', False)
         self._symmetries = options.get('symmetries', False)
         self._stats_file = options.get('stats_file')
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
@@ -199,8 +199,8 @@ class _RantanPlanBase(Engine):
             command.extend(["--verbosity", self._verbosity])
         if self._max_steps is not None:
             command.extend(["--max-steps", str(self._max_steps)])
-        if self._no_persist_clauses:
-            command.append("--no-persist-clauses")
+        if self._persist_clauses:
+            command.append("--persist-clauses")
         if self._symmetries:
             command.append("--symmetries")
         if self._stats_file is not None:

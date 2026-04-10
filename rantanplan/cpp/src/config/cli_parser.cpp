@@ -103,8 +103,8 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
             config.rpg.goal_relevance = false;
         }
         // Z3 solver options
-        else if (arg == "--no-persist-clauses") {
-            config.global.persist_clauses = false;
+        else if (arg == "--persist-clauses") {
+            config.global.persist_clauses = true;
         }
         // Statistics options
         else if (arg == "--stats-file") {

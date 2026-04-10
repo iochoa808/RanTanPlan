@@ -193,8 +193,11 @@ void FrameAxiomModule::build_frame_fixed(
         if (entry.action_state == 0) {
             fixed.push_back(actions[i]);
         } else if (entry.is_conditional && entry.cond_state == 0) {
-            if (entry.action_state >= 0)
-                fixed.push_back(actions[i]);
+            // The condition alone rules out this entry — the action's value
+            // is irrelevant (if action is true, the entry still can't explain
+            // because the condition is false; if false, it can't explain
+            // either).  Omitting the action produces a tighter reason that
+            // matches one of the eager encoding's CNF clauses.
             fixed.push_back(conds[i]);
         }
     }
