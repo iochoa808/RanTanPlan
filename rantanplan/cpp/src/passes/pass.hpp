@@ -7,6 +7,7 @@
 #include "../config/strategy_spec.hpp"
 #include "../problem/problem.hpp"
 #include "../symmetries/smt_symmetry_checker.hpp"
+#include "local_invariants.hpp"
 
 namespace rantanplan {
 
@@ -34,6 +35,7 @@ struct PipelineResult {
     std::unique_ptr<InterferenceAnalysis> interference; ///< Pre-built interference analyzer (from InterferencePass)
     std::unique_ptr<AchieversAnalysis> achievers; ///< Pre-built achiever analysis (from GoalRelevancePass)
     std::unique_ptr<NumericRelaxedPlanningGraph> fixpoint_rpg; ///< Fixpoint RPG for reuse across passes
+    StateConstraints state_constraints; ///< State constraints from InvariantOraclePass
 };
 
 /**

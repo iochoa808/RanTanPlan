@@ -144,6 +144,10 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--log-file requires a filename");
             }
         }
+        // Local reasoning options
+        else if (arg == "--no-local-reasoning") {
+            config.local_reasoning.enabled = false;
+        }
     }
 
 }

@@ -173,6 +173,7 @@ void BasePlanner::add_timestep_constraints(z3::solver& solver, BaseEncoder& enco
         solver.add(*encoder.encode_prefix_monotone(timestep));
     }
     solver.add(*encoder.encode_symmetries(timestep));
+    solver.add(*encoder.encode_state_constraints(timestep));
 
     if (!propagator.manages_parallelism_constraints()) {
         solver.add(*encoder.encode_parallelism(timestep));

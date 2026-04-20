@@ -56,6 +56,7 @@ class _RantanPlanBase(Engine):
         self._numeric_grounding = options.get('numeric_grounding', True)
         self._mode = options.get('mode')
         self._output_plan = options.get('output_plan')
+        self._no_local_reasoning = options.get('no_local_reasoning', False)
 
     # ── Verbosity helpers ────────────────────────────────────────────────
 
@@ -217,6 +218,8 @@ class _RantanPlanBase(Engine):
             command.append("--up-grounding")
         if not self._numeric_grounding:
             command.append("--no-numeric-grounding")
+        if self._no_local_reasoning:
+            command.append("--no-local-reasoning")
         if self._mode is not None:
             command.extend(["--mode", self._mode])
         if self._output_plan is not None:

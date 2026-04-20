@@ -72,6 +72,12 @@ public:
         std::string log_file = "";        // Empty = no logging; path = solver decision log
     } logging;
 
+    struct LocalReasoning {
+        bool enabled = true;              ///< Master switch (--no-local-reasoning disables)
+        bool rpg_bounds = true;           ///< Inject RPG fixpoint bounds at each timestep
+        bool mutex_discovery = true;      ///< Tier 1 syntactic mutex detection
+    } local_reasoning;
+
     void initialize(int argc, char* argv[]);
     void validate() const;
 

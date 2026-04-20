@@ -296,6 +296,7 @@ void PDLAPlanner::add_timestep(int t) {
     grounded_encoder().ensure_action_variables(t);
     solver_.add(*encoder_.encode_frames(t));
     solver_.add(*encoder_.encode_symmetries(t));
+    solver_.add(*encoder_.encode_state_constraints(t));
     solver_.add(*grounded_encoder().encode_cumulative_effects(t));
     propagator_strategy_->register_timestep_variables(t + 1);
 

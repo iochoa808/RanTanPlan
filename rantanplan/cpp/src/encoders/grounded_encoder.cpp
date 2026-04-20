@@ -347,6 +347,44 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_symmetries(int t) {
     return std::make_shared<z3::expr>(z3::mk_and(symmetry_constraints));
 }
 
+std::shared_ptr<z3::expr> GroundedEncoder::encode_state_constraints(int t) {
+    if (state_constraints_.empty()) {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    }
+
+    z3::expr_vector conjuncts(ctx_);
+
+    // Mutex constraints: atmost(members, 1) and optionally atleast(members, 1)
+    for (const auto& mutex : state_constraints_.mutexes) {
+        z3::expr_vector group(ctx_);
+        for (ExprID member : mutex.members) {
+            group.push_back(convert_expr_id_to_z3(member, t));
+        }
+        conjuncts.push_back(z3::atmost(group, 1));
+        if (mutex.exactly_one) {
+            conjuncts.push_back(z3::atleast(group, 1));
+        }
+    }
+
+    // Numeric bound constraints
+    for (const auto& bound : state_constraints_.bounds) {
+        z3::expr fluent = convert_expr_id_to_z3(bound.fluent_id, t);
+        z3::expr val = fluent.is_int()
+            ? ctx_.int_val(static_cast<int64_t>(bound.bound))
+            : ctx_.real_val(std::to_string(bound.bound).c_str());
+        if (bound.is_lower) {
+            conjuncts.push_back(fluent >= val);
+        } else {
+            conjuncts.push_back(fluent <= val);
+        }
+    }
+
+    if (conjuncts.empty()) {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    }
+    return std::make_shared<z3::expr>(z3::mk_and(conjuncts));
+}
+
 void GroundedEncoder::set_parallelism_strategy(std::unique_ptr<ParallelismStrategy> strategy) {
     parallelism_strategy_ = std::move(strategy);
     // Initialize the strategy with problem context

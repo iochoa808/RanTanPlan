@@ -80,6 +80,8 @@ Use --list-strategies to see available strategies and their descriptions.
                        help="Use Z3 SMT solver for RPG applicability checks instead of interval arithmetic (default: interval)")
     parser.add_argument("--no-goal-relevance", action="store_true",
                        help="Disable semantic goal-relevance analysis (enabled by default)")
+    parser.add_argument("--no-local-reasoning", action="store_true",
+                       help="Disable local reasoning (state constraint discovery: mutexes, RPG bounds)")
 
     # Logging
     parser.add_argument("--log-file", type=str,
@@ -137,6 +139,8 @@ def _build_planner_params(args) -> Dict[str, object]:
         planner_params['smt_rpg_checker'] = True
     if args.no_goal_relevance:
         planner_params['no_goal_relevance'] = True
+    if args.no_local_reasoning:
+        planner_params['no_local_reasoning'] = True
     if args.horizon_schedule is not None:
         planner_params['horizon_schedule'] = args.horizon_schedule
     if args.log_file:

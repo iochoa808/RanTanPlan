@@ -46,6 +46,9 @@ public:
     // Constructor
     explicit Z3VariableFactory(z3::context& ctx);
 
+    /// Access the underlying Z3 context.
+    z3::context& ctx() const { return ctx_; }
+
     /// Set the problem pointer for integer mode detection.
     void set_problem(const Problem* p) { problem_ = p; }
     

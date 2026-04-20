@@ -3,6 +3,7 @@
 #include "../problem/problem.hpp"
 #include "../problem/plan.hpp"
 #include "../problem/effect_expression.hpp"
+#include "../passes/local_invariants.hpp"
 #include "../symmetries/smt_symmetry_checker.hpp"
 #include "z3_variable_factory.hpp"
 #include "parallelism/parallelism_strategy.hpp"
@@ -69,11 +70,18 @@ public:
         return convert_expr_id_to_z3(action.cost_id(), timestep);
     }
     
+    // State constraints (mutexes, bounds) from InvariantOraclePass
+    virtual std::shared_ptr<z3::expr> encode_state_constraints(int t) = 0;
+
+    /// Receive state constraints from the pipeline result.
+    void set_state_constraints(StateConstraints sc) { state_constraints_ = std::move(sc); }
+
     // Plan extraction from Z3 model
     virtual Plan extract_plan(const z3::model& model, int max_timestep) const = 0;
 
 protected:
     std::vector<SymmetryInfo> symmetry_data_;
+    StateConstraints state_constraints_;
 };
 
 } // namespace rantanplan

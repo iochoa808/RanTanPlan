@@ -31,6 +31,7 @@
 #include "passes/interference_pass.hpp"
 #include "passes/static_fluent_pass.hpp"
 #include "passes/goal_relevance_pass.hpp"
+#include "passes/invariant_oracle_pass.hpp"
 #include "analysis/numeric_relaxed_planning_graph.hpp"
 #include "analysis/numeric_constraint_analyzer.hpp"
 
@@ -134,6 +135,7 @@ PlanGenerationResult solve_planning_problem(rantanplan::PipelineResult& pipeline
     parallelism->set_interference_analyzer(std::move(pipeline_result.interference));
     encoder->set_parallelism_strategy(std::move(parallelism));
     encoder->set_symmetry_data(pipeline_result.symmetry_data);
+    encoder->set_state_constraints(std::move(pipeline_result.state_constraints));
 
     auto planner = rantanplan::StrategyFactory::create_planner(
         spec, problem, *encoder, ctx, interference_ptr);
@@ -313,6 +315,12 @@ int main(int argc, char* argv[]) {
     // Internally checks uses_pdla() — no-op for other strategies.
     rantanplan::GoalRelevancePass goal_relevance_pass;
     passes.push_back(&goal_relevance_pass);
+
+    // Invariant oracle: discovers state invariants (mutex groups, RPG bounds)
+    // via syntactic analysis. Runs after GoalRelevance (needs fixpoint_rpg for
+    // RPG bounds) and before interference.
+    rantanplan::InvariantOraclePass invariant_oracle_pass;
+    passes.push_back(&invariant_oracle_pass);
 
     // Interference analysis runs last — needs final problem + resolved spec.
     rantanplan::InterferencePass interference_pass;

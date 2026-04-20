@@ -28,6 +28,17 @@ public:
     std::shared_ptr<z3::expr> encode_frames(int t) override;
     std::shared_ptr<z3::expr> encode_parallelism(int t) override;
 
+    // TODO: R2E uses chain-substituted intermediate variables (ζ) where each
+    // action sees a different "state" based on its position in the fixed ordering.
+    // State constraints (mutexes, bounds) apply to the TRUE state at timestep
+    // boundaries (x_t and x_{t+1}), not to intermediate chain variables.
+    // To support state constraints here, we would need to assert them only on
+    // the first chain variable (= x_t) and the last (= x_{t+1}), not on
+    // intermediate ζ values. For now, disabled.
+    std::shared_ptr<z3::expr> encode_state_constraints(int t) override {
+        return std::make_shared<z3::expr>(ctx_.bool_val(true));
+    }
+
     /// Evaluate cost at the chain-substituted state σ^t_{prev(i)} that action i
     /// actually sees under R2E's fixed ordering, making SDAC costs sound.
     z3::expr convert_cost_to_z3(const Action& action, int timestep) override;
