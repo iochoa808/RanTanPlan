@@ -108,9 +108,172 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
 
             Stats::instance().set("inv_oracle.h2_mutex_pairs",
                                   static_cast<double>(h2.mutex_pair_count()));
+
+            // Cross-predicate merger: combine h²-verified groups that share
+            // the same entity into larger exactly-one groups.
+            // Example: located(person0, *) + in(person0, *) → one FDV.
+            int verified_cross_exo = 0;
+            {
+                // Collect all verified at-most-one groups indexed by entity.
+                std::unordered_map<std::string, std::vector<size_t>> entity_to_groups;
+                for (size_t gi = 0; gi < invariants.mutexes.size(); gi++) {
+                    const auto& inv = invariants.mutexes[gi];
+                    if (inv.exactly_one) continue;  // already exactly-one, skip
+                    // Extract entity from label "predicate(entity, ...)"
+                    // Find groups from h2 phase (they have [h2] in label... but
+                    // we need the entity). Use candidates for entity lookup.
+                    // Actually, just index all at-most-one groups by scanning
+                    // candidates that were verified.
+                }
+
+                // Better approach: group verified candidates by entity directly.
+                // Collect (entity -> list of member vectors) from both tier1 and h2 results.
+                struct VerifiedGroup {
+                    std::vector<ExprID> members;
+                    std::string predicate;
+                    bool already_exo;
+                };
+                std::unordered_map<std::string, std::vector<VerifiedGroup>> by_entity;
+
+                // Tier 1 verified candidates
+                for (const auto& candidate : candidates) {
+                    // Check if this candidate was verified (exists in invariants)
+                    bool verified = false;
+                    for (const auto& inv : invariants.mutexes) {
+                        if (inv.members == candidate.members) {
+                            by_entity[candidate.entity].push_back(
+                                {candidate.members, candidate.predicate, inv.exactly_one});
+                            verified = true;
+                            break;
+                        }
+                    }
+                }
+
+                // For entities with multiple groups from different predicates,
+                // try merging into a cross-predicate exactly-one group.
+                for (auto& [entity, groups] : by_entity) {
+                    if (groups.size() < 2) continue;
+
+                    // Skip if all groups are already exactly-one
+                    bool all_exo = true;
+                    for (const auto& g : groups) {
+                        if (!g.already_exo) { all_exo = false; break; }
+                    }
+                    if (all_exo) continue;
+
+                    // Check: are all groups from DIFFERENT predicates?
+                    std::unordered_set<std::string> predicates;
+                    for (const auto& g : groups) predicates.insert(g.predicate);
+                    if (predicates.size() < 2) continue;  // same predicate, not cross
+
+                    // Merge all members into one candidate.
+                    std::vector<ExprID> merged;
+                    for (const auto& g : groups) {
+                        for (ExprID m : g.members) merged.push_back(m);
+                    }
+
+                    // Cap size to avoid huge groups.
+                    if (merged.size() > 30) continue;
+
+                    // Verify all pairs in merged group are h²-mutex.
+                    if (!h2.all_pairs_mutex(merged)) continue;
+
+                    // Check exactly-one on the merged group:
+                    // 1. Exactly one member TRUE in initial state.
+                    int init_count = 0;
+                    for (ExprID m : merged) {
+                        if (initially_true.count(m)) init_count++;
+                    }
+                    if (init_count != 1) continue;
+
+                    // 2. Every action that deletes a member adds another member
+                    //    within the merged group.
+                    std::unordered_set<ExprID> merged_set(merged.begin(), merged.end());
+                    bool is_exo = true;
+                    for (const auto& action : problem.actions()) {
+                        bool deletes_member = false;
+                        bool adds_member = false;
+                        for (const auto& effect : action.effects()) {
+                            const auto& ee = effect.effect_expression();
+                            ExprID fid = ee.fluent_id();
+                            if (merged_set.find(fid) == merged_set.end()) continue;
+                            if (ee.is_conditional()) {
+                                // Conservative: conditional effects break exactness
+                                // (might delete without adding)
+                                // Actually: conditional delete might not fire, so
+                                // it's fine. Conditional add might not fire, which
+                                // is the problem. Skip conditional adds for the
+                                // "adds_member" check.
+                                if (ee.is_assign()) {
+                                    ExprID val = ee.value_id();
+                                    if (problem.pool().is_false_constant(val)) {
+                                        // Conditional delete: might fire, would need add
+                                        deletes_member = true;
+                                    }
+                                    // Conditional add: don't count (might not fire)
+                                }
+                                continue;
+                            }
+                            if (ee.is_assign()) {
+                                ExprID val = ee.value_id();
+                                if (problem.pool().is_true_constant(val)) adds_member = true;
+                                if (problem.pool().is_false_constant(val)) deletes_member = true;
+                            }
+                        }
+                        if (deletes_member && !adds_member) {
+                            is_exo = false;
+                            break;
+                        }
+                    }
+                    if (!is_exo) continue;
+
+                    // Success! Replace the individual at-most-one groups with
+                    // one cross-predicate exactly-one group.
+                    // Remove old groups for this entity from invariants.
+                    std::string label;
+                    for (const auto& pred : predicates) {
+                        if (!label.empty()) label += "+";
+                        label += pred;
+                    }
+                    label += "(" + entity + ", ...)";
+
+                    // Remove the individual groups for this entity.
+                    invariants.mutexes.erase(
+                        std::remove_if(invariants.mutexes.begin(), invariants.mutexes.end(),
+                            [&merged_set](const MutexConstraint& inv) {
+                                // Remove if all members are in the merged set
+                                for (ExprID m : inv.members) {
+                                    if (merged_set.find(m) == merged_set.end()) return false;
+                                }
+                                return true;
+                            }),
+                        invariants.mutexes.end());
+
+                    // Add the merged exactly-one group.
+                    MutexConstraint merged_inv;
+                    merged_inv.members = merged;
+                    merged_inv.exactly_one = true;
+                    merged_inv.label = label;
+                    verified_cross_exo++;
+
+                    Logger::instance().info("  mutex exactly-one [cross]: " +
+                        label + " (" + std::to_string(merged.size()) + " members)");
+                    invariants.mutexes.push_back(std::move(merged_inv));
+                }
+            }
+
+            // Recount after cross-predicate merging
+            verified_exo = 0;
+            int final_amo = 0;
+            for (const auto& inv : invariants.mutexes) {
+                if (inv.exactly_one) verified_exo++;
+                else final_amo++;
+            }
+
+            Stats::instance().set("inv_oracle.cross_exo",
+                                  static_cast<double>(verified_cross_exo));
         }
 
-        int total_amo = verified_tier1 + verified_h2;
         Logger::instance().component(VerbosityLevel::INFO, "InvOracle", {
             {"mutex_candidates", std::to_string(candidates.size())},
             {"tier1_amo", std::to_string(verified_tier1)},
@@ -121,7 +284,7 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
         Stats::instance().set("inv_oracle.mutex_candidates",
                               static_cast<double>(candidates.size()));
         Stats::instance().set("inv_oracle.mutex_amo",
-                              static_cast<double>(total_amo));
+                              static_cast<double>(verified_tier1 + verified_h2));
         Stats::instance().set("inv_oracle.mutex_exo",
                               static_cast<double>(verified_exo));
     }
