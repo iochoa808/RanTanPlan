@@ -35,7 +35,7 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
         }
     }
 
-    // Phase B+C: Mutex candidate generation + Tier 1 syntactic verification
+    // Phase B+C: Mutex candidate generation + verification
     if (config.local_reasoning.mutex_discovery) {
         auto candidates = generate_mutex_candidates(problem);
 
@@ -49,41 +49,79 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
             }
         }
 
-        int verified_amo = 0;
+        int verified_tier1 = 0;
+        int verified_h2 = 0;
         int verified_exo = 0;
 
+        // Tier 1: syntactic check (microseconds, no fixpoint needed)
+        std::vector<const MutexCandidate*> tier1_failed;
         for (const auto& candidate : candidates) {
             if (syntactic_mutex_check(candidate, problem)) {
                 MutexConstraint inv;
                 inv.members = candidate.members;
                 inv.label = candidate.predicate + "(" + candidate.entity + ", ...)";
 
-                // Check for exactly-one upgrade
                 if (syntactic_exactly_one_check(candidate, problem, initially_true)) {
                     inv.exactly_one = true;
                     verified_exo++;
                 } else {
-                    verified_amo++;
+                    verified_tier1++;
                 }
 
                 Logger::instance().info("  mutex " +
                     std::string(inv.exactly_one ? "exactly-one" : "at-most-one") +
-                    ": " + inv.label + " (" +
+                    " [tier1]: " + inv.label + " (" +
                     std::to_string(inv.members.size()) + " members)");
                 invariants.mutexes.push_back(std::move(inv));
+            } else {
+                tier1_failed.push_back(&candidate);
             }
         }
 
+        // Tier 1.5: h² fixpoint for candidates that failed Tier 1.
+        // Only run if there are failed candidates (avoid building the checker
+        // when Tier 1 handled everything).
+        if (!tier1_failed.empty()) {
+            H2MutexChecker h2(problem);
+            h2.compute();
+
+            for (const auto* candidate : tier1_failed) {
+                if (h2.all_pairs_mutex(candidate->members)) {
+                    MutexConstraint inv;
+                    inv.members = candidate->members;
+                    inv.label = candidate->predicate + "(" + candidate->entity + ", ...)";
+
+                    if (syntactic_exactly_one_check(*candidate, problem, initially_true)) {
+                        inv.exactly_one = true;
+                        verified_exo++;
+                    } else {
+                        verified_h2++;
+                    }
+
+                    Logger::instance().info("  mutex " +
+                        std::string(inv.exactly_one ? "exactly-one" : "at-most-one") +
+                        " [h2]: " + inv.label + " (" +
+                        std::to_string(inv.members.size()) + " members)");
+                    invariants.mutexes.push_back(std::move(inv));
+                }
+            }
+
+            Stats::instance().set("inv_oracle.h2_mutex_pairs",
+                                  static_cast<double>(h2.mutex_pair_count()));
+        }
+
+        int total_amo = verified_tier1 + verified_h2;
         Logger::instance().component(VerbosityLevel::INFO, "InvOracle", {
             {"mutex_candidates", std::to_string(candidates.size())},
-            {"at_most_one", std::to_string(verified_amo)},
+            {"tier1_amo", std::to_string(verified_tier1)},
+            {"h2_amo", std::to_string(verified_h2)},
             {"exactly_one", std::to_string(verified_exo)}
         });
 
         Stats::instance().set("inv_oracle.mutex_candidates",
                               static_cast<double>(candidates.size()));
         Stats::instance().set("inv_oracle.mutex_amo",
-                              static_cast<double>(verified_amo));
+                              static_cast<double>(total_amo));
         Stats::instance().set("inv_oracle.mutex_exo",
                               static_cast<double>(verified_exo));
     }

@@ -157,6 +157,7 @@ add_executable(rantanplan
     src/passes/numeric_rpg_pass.cpp
     src/passes/goal_relevance_pass.cpp
     src/passes/invariant_oracle_pass.cpp
+    src/passes/h2_mutex_checker.cpp
     src/passes/symmetry_pass.cpp
     src/passes/grounding_pass.cpp
     src/passes/cwa_initial_state_pass.cpp

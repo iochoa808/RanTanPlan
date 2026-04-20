@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pass.hpp"
+#include "h2_mutex_checker.hpp"
 #include "../analysis/numeric_relaxed_planning_graph.hpp"
 #include <vector>
 #include <unordered_set>
