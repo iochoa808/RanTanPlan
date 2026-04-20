@@ -78,7 +78,8 @@
             :parameters (?p - port ?sh - ship ?c - cargo)
             :precondition (and
 			   (docked ?sh ?p)
-                           (>= (load_capacity ?sh) (+ (current_load ?sh) (weight ?c)))
+               (at_ ?c ?p)
+               (>= (load_capacity ?sh) (+ (current_load ?sh) (weight ?c)))
                           )
 
             :effect (and 
