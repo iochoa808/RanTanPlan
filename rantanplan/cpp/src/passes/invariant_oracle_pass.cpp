@@ -36,6 +36,11 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
             auto bounds_map = rpg_ptr->get_state_variable_bounds();
             int n_tightened = tighten_bounds_syntactically(bounds_map, problem);
 
+            // Discover conservation laws and derive additional bounds.
+            auto conservations = discover_conservation_laws(problem);
+            derive_bounds_from_conservations(bounds_map, conservations);
+            invariants.conservations = std::move(conservations);
+
             for (const auto& [eid, interval] : bounds_map) {
                 if (!problem.is_numeric_type(eid)) continue;
                 if (std::isfinite(interval.lower))
@@ -48,8 +53,12 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
             Logger::instance().component(VerbosityLevel::INFO, "InvOracle", {
                 {"rpg_bounds", std::to_string(invariants.bounds.size())},
                 {"bounds_tightened", std::to_string(n_tightened)},
+                {"conservation_laws", std::to_string(invariants.conservations.size())},
                 {"domain_constraints", std::to_string(invariants.domains.size())}
             });
+            for (const auto& cc : invariants.conservations) {
+                Logger::instance().info("  conservation: " + cc.label);
+            }
         }
     }
 

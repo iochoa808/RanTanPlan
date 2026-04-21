@@ -1,5 +1,6 @@
 #include "bound_tightening.hpp"
 #include <cmath>
+#include <unordered_set>
 
 namespace rantanplan {
 
@@ -263,6 +264,164 @@ int tighten_bounds_syntactically(
     }
 
     return tightened;
+}
+
+// ============================================================================
+// Conservation Law Discovery
+// ============================================================================
+
+std::vector<ConservationConstraint> discover_conservation_laws(
+    const Problem& problem) {
+
+    const auto& pool = problem.pool();
+
+    // Step 1: For each action, compute net constant delta per numeric fluent.
+    // delta > 0 = net increase, delta < 0 = net decrease.
+    // Actions with conditional effects or ASSIGN on numeric fluents are
+    // marked as "poisoned" for those fluents (can't participate).
+    struct ActionDeltas {
+        std::unordered_map<ExprID, double> deltas;
+        std::unordered_set<ExprID> poisoned;  // conditional/assign/non-constant
+    };
+
+    std::vector<ActionDeltas> action_data;
+    action_data.reserve(problem.actions().size());
+
+    // Also track which fluents are ever modified (to skip unmodified).
+    std::unordered_set<ExprID> ever_modified;
+
+    for (const auto& action : problem.actions()) {
+        ActionDeltas ad;
+        for (const auto& effect : action.effects()) {
+            const auto& ee = effect.effect_expression();
+            ExprID fid = ee.fluent_id();
+            if (!problem.is_numeric_type(fid)) continue;
+
+            if (ee.is_conditional() || ee.is_assign() || !ee.is_constant_value()) {
+                ad.poisoned.insert(fid);
+                continue;
+            }
+
+            double d = extract_constant(ee.value_id(), pool);
+            if (!std::isfinite(d)) { ad.poisoned.insert(fid); continue; }
+
+            if (ee.is_increase()) ad.deltas[fid] += d;
+            else if (ee.is_decrease()) ad.deltas[fid] -= d;
+
+            ever_modified.insert(fid);
+        }
+        action_data.push_back(std::move(ad));
+    }
+
+    // Step 2: Collect candidate pairs from actions where two fluents have
+    // opposite non-zero deltas. Use ordered pair (min, max) to deduplicate.
+    struct PairHash {
+        size_t operator()(const std::pair<ExprID, ExprID>& p) const {
+            return std::hash<int32_t>()(p.first.id) ^
+                   (std::hash<int32_t>()(p.second.id) << 16);
+        }
+    };
+    std::unordered_set<std::pair<ExprID, ExprID>, PairHash> candidate_pairs;
+
+    for (const auto& ad : action_data) {
+        for (auto it1 = ad.deltas.begin(); it1 != ad.deltas.end(); ++it1) {
+            if (ad.poisoned.count(it1->first)) continue;
+            if (std::abs(it1->second) < 1e-12) continue;  // skip zero net delta
+
+            for (auto it2 = std::next(it1); it2 != ad.deltas.end(); ++it2) {
+                if (ad.poisoned.count(it2->first)) continue;
+                if (std::abs(it2->second) < 1e-12) continue;
+
+                if (std::abs(it1->second + it2->second) < 1e-12) {
+                    ExprID a = it1->first, b = it2->first;
+                    if (b < a) std::swap(a, b);
+                    candidate_pairs.insert({a, b});
+                }
+            }
+        }
+    }
+
+    // Step 3: Verify each candidate across ALL actions.
+    // For (f, g): every action that modifies f or g must have delta_f + delta_g == 0.
+    // Neither f nor g may be poisoned in any action.
+    std::vector<ConservationConstraint> result;
+
+    for (const auto& [f, g] : candidate_pairs) {
+        bool valid = true;
+        for (const auto& ad : action_data) {
+            if (ad.poisoned.count(f) || ad.poisoned.count(g)) {
+                valid = false;
+                break;
+            }
+            double df = 0.0, dg = 0.0;
+            auto itf = ad.deltas.find(f);
+            auto itg = ad.deltas.find(g);
+            if (itf != ad.deltas.end()) df = itf->second;
+            if (itg != ad.deltas.end()) dg = itg->second;
+
+            // If neither is modified by this action, skip (sum preserved).
+            if (std::abs(df) < 1e-12 && std::abs(dg) < 1e-12) continue;
+
+            if (std::abs(df + dg) > 1e-12) {
+                valid = false;
+                break;
+            }
+        }
+        if (!valid) continue;
+
+        // Compute C = initial(f) + initial(g).
+        double init_f = 0.0, init_g = 0.0;
+        for (const auto& assignment : problem.initial_state()) {
+            ExprID fid = assignment.fluent_id();
+            if (fid == f) {
+                init_f = extract_constant(assignment.value_id(), pool);
+                if (!std::isfinite(init_f)) { valid = false; break; }
+            } else if (fid == g) {
+                init_g = extract_constant(assignment.value_id(), pool);
+                if (!std::isfinite(init_g)) { valid = false; break; }
+            }
+        }
+        if (!valid) continue;
+
+        ConservationConstraint cc;
+        cc.fluent1_id = f;
+        cc.fluent2_id = g;
+        cc.constant = init_f + init_g;
+        cc.label = pool.to_string(f) + " + " + pool.to_string(g) +
+                   " == " + std::to_string(cc.constant);
+        result.push_back(std::move(cc));
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Bound Derivation from Conservation Laws
+// ============================================================================
+
+void derive_bounds_from_conservations(
+    std::unordered_map<ExprID, Interval>& bounds,
+    const std::vector<ConservationConstraint>& conservations) {
+
+    for (const auto& cons : conservations) {
+        auto it1 = bounds.find(cons.fluent1_id);
+        auto it2 = bounds.find(cons.fluent2_id);
+        if (it1 == bounds.end() || it2 == bounds.end()) continue;
+
+        double C = cons.constant;
+
+        // f + g == C  =>  f <= C - lower(g),  f >= C - upper(g)
+        if (std::isfinite(it2->second.lower))
+            it1->second.upper = std::min(it1->second.upper, C - it2->second.lower);
+        if (std::isfinite(it2->second.upper))
+            it1->second.lower = std::max(it1->second.lower, C - it2->second.upper);
+
+        // Symmetric: g <= C - lower(f),  g >= C - upper(f)
+        if (std::isfinite(it1->second.lower))
+            it2->second.upper = std::min(it2->second.upper, C - it1->second.lower);
+        if (std::isfinite(it1->second.upper))
+            it2->second.lower = std::max(it2->second.lower, C - it1->second.upper);
+    }
 }
 
 } // namespace rantanplan

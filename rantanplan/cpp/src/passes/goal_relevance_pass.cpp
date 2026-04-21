@@ -45,15 +45,18 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
         rpg_data.action_first_layers = rpg->get_action_first_layers();
         rpg_data.layer_count = static_cast<int>(rpg->get_layer_count());
 
-        // Tighten RPG bounds with precondition-derived analysis before
-        // feeding to AchieversAnalysis. Recovers finite bounds for fluents
-        // where RPG widening gave -inf/+inf.
+        // Tighten RPG bounds with precondition-derived analysis and
+        // conservation laws before feeding to AchieversAnalysis.
         if (Config::instance().local_reasoning.enabled &&
             Config::instance().local_reasoning.rpg_bounds) {
             int n = tighten_bounds_syntactically(
                 rpg_data.state_variable_bounds, result.problem);
-            if (n > 0) {
-                Logger::instance().info("  bounds tightened: " + std::to_string(n));
+            auto conservations = discover_conservation_laws(result.problem);
+            derive_bounds_from_conservations(
+                rpg_data.state_variable_bounds, conservations);
+            if (n > 0 || !conservations.empty()) {
+                Logger::instance().info("  bounds tightened: " + std::to_string(n) +
+                    ", conservation laws: " + std::to_string(conservations.size()));
             }
         }
 
@@ -142,6 +145,9 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
             Config::instance().local_reasoning.rpg_bounds) {
             tighten_bounds_syntactically(
                 rpg_data.state_variable_bounds, result.problem);
+            auto conservations = discover_conservation_laws(result.problem);
+            derive_bounds_from_conservations(
+                rpg_data.state_variable_bounds, conservations);
         }
 
         result.lower_bound = std::max(result.lower_bound,

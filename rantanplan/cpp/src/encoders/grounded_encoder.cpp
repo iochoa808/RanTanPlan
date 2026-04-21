@@ -394,6 +394,16 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_state_constraints(int t) {
         }
     }
 
+    // Conservation law constraints: f_t + g_t == C
+    for (const auto& cons : state_constraints_.conservations) {
+        z3::expr f = convert_expr_id_to_z3(cons.fluent1_id, t);
+        z3::expr g = convert_expr_id_to_z3(cons.fluent2_id, t);
+        z3::expr c = f.is_int()
+            ? ctx_.int_val(static_cast<int64_t>(cons.constant))
+            : ctx_.real_val(std::to_string(cons.constant).c_str());
+        conjuncts.push_back((f + g) == c);
+    }
+
     if (conjuncts.empty()) {
         return std::make_shared<z3::expr>(ctx_.bool_val(true));
     }
