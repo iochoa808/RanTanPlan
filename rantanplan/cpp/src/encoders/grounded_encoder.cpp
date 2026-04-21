@@ -379,6 +379,21 @@ std::shared_ptr<z3::expr> GroundedEncoder::encode_state_constraints(int t) {
         }
     }
 
+    // Object fluent domain constraints: restrict to reachable values
+    for (const auto& dc : state_constraints_.domains) {
+        z3::expr fluent = convert_expr_id_to_z3(dc.fluent_id, t);
+        z3::expr_vector valid(ctx_);
+        for (int idx : dc.valid_object_indices) {
+            z3::expr val = fluent.is_int()
+                ? ctx_.int_val(idx)
+                : ctx_.real_val(idx);
+            valid.push_back(fluent == val);
+        }
+        if (!valid.empty()) {
+            conjuncts.push_back(z3::mk_or(valid));
+        }
+    }
+
     if (conjuncts.empty()) {
         return std::make_shared<z3::expr>(ctx_.bool_val(true));
     }

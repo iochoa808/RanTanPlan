@@ -180,6 +180,13 @@ public:
         return (*types_)[node.type_id].is_int() || (*types_)[node.type_id].is_real();
     }
 
+    /// Check if an interned expression has object type (user-defined, not bool/int/real).
+    bool is_object_type(ExprID eid) const {
+        const ExprNode& node = pool_->get(eid);
+        if (node.type_id < 0 || static_cast<size_t>(node.type_id) >= types_->size()) return false;
+        return (*types_)[node.type_id].is_object();
+    }
+
     /// Get the Type pointer for an interned expression (O(1) via ExprPool).
     const Type* type_for_id(ExprID eid) const {
         const ExprNode& node = pool_->get(eid);
@@ -187,6 +194,22 @@ public:
             return &(*types_)[node.type_id];
         }
         return nullptr;
+    }
+
+    /// Check if an ExprID is an object constant (CONSTANT kind, string payload, object type).
+    bool is_object_constant(ExprID eid) const {
+        if (!eid.valid()) return false;
+        const ExprNode& node = pool_->get(eid);
+        return static_cast<ExprKind>(node.kind) == ExprKind::CONSTANT &&
+               std::holds_alternative<std::string>(node.payload) &&
+               is_object_type(eid);
+    }
+
+    /// Get the global object index for an object constant, or -1 if not an object constant.
+    /// Combines is_object_constant() + find_object_index() in one call.
+    int object_constant_index(ExprID eid) const {
+        if (!is_object_constant(eid)) return -1;
+        return find_object_index(std::get<std::string>(pool_->get(eid).payload));
     }
 
 private:

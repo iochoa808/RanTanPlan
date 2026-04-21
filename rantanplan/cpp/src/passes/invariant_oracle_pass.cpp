@@ -29,8 +29,10 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
         }
         if (rpg_ptr) {
             invariants.bounds = collect_rpg_bounds(*rpg_ptr, problem);
+            invariants.domains = collect_object_domains(*rpg_ptr);
             Logger::instance().component(VerbosityLevel::INFO, "InvOracle", {
-                {"rpg_bounds", std::to_string(invariants.bounds.size())}
+                {"rpg_bounds", std::to_string(invariants.bounds.size())},
+                {"domain_constraints", std::to_string(invariants.domains.size())}
             });
         }
     }
@@ -318,6 +320,24 @@ std::vector<BoundConstraint> InvariantOraclePass::collect_rpg_bounds(
         }
     }
     return bounds;
+}
+
+// ============================================================================
+// Object Fluent Domain Collection
+// ============================================================================
+
+std::vector<DomainConstraint> InvariantOraclePass::collect_object_domains(
+    const NumericRelaxedPlanningGraph& rpg) const {
+
+    std::vector<DomainConstraint> domains;
+    auto rpg_domains = rpg.get_object_fluent_domains();
+
+    for (auto& [eid, values] : rpg_domains) {
+        if (!values.empty()) {
+            domains.push_back({eid, std::move(values)});
+        }
+    }
+    return domains;
 }
 
 // ============================================================================

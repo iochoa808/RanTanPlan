@@ -139,6 +139,9 @@ public:
         // Numeric fluent bounds (always bounded)
         std::unordered_map<int, NumericBounds> numeric_bounds;
 
+        // Object fluent reachable value sets (monotonically growing under delete-relaxation)
+        std::unordered_map<int, std::unordered_set<int>> object_value_sets;
+
         // Helper: check if two layer states are equal (for fixpoint detection)
         bool operator==(const LayerState& other) const;
     };
@@ -210,6 +213,11 @@ public:
      */
     std::unordered_map<ExprID, Interval> get_state_variable_bounds() const;
 
+    /// Get reachable value sets for object fluents at the final layer.
+    /// Returns map from ground object fluent ExprID to sorted vector of
+    /// reachable object indices.
+    std::unordered_map<ExprID, std::vector<int>> get_object_fluent_domains() const;
+
     // ========================================================================
     // INTERVAL EVALUATION (public for cost bound analysis)
     // ========================================================================
@@ -261,6 +269,7 @@ private:
     // Fluent classification
     std::unordered_set<int> boolean_fluent_ids_;
     std::unordered_set<int> numeric_fluent_ids_;
+    std::unordered_set<int> object_fluent_ids_;
 
     // ========================================================================
     // MEMBER VARIABLES - Z3 Infrastructure
@@ -456,6 +465,18 @@ private:
         BooleanReachability current_state,
         BooleanReachability& next_state,
         int layer) const;
+
+    /**
+     * @brief Propagate object fluent effects from applicable actions.
+     *
+     * For each ASSIGN effect on an object fluent, resolves the value to
+     * an object index and adds it to the fluent's reachable value set.
+     * Under delete-relaxation, value sets grow monotonically.
+     */
+    void propagate_object_effects(
+        const std::vector<const Action*>& applicable_actions,
+        int prev_layer,
+        int next_layer);
 
     // ========================================================================
     // PRIVATE METHODS - Numeric Bounds Computation

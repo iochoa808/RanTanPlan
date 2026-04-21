@@ -104,6 +104,17 @@ bool NumericRelaxedPlanningGraph::LayerState::operator==(const LayerState& other
         }
     }
 
+    // Check object fluent value set equality
+    if (object_value_sets.size() != other.object_value_sets.size()) {
+        return false;
+    }
+    for (const auto& [fluent_id, values] : object_value_sets) {
+        auto it = other.object_value_sets.find(fluent_id);
+        if (it == other.object_value_sets.end() || it->second != values) {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -234,9 +245,9 @@ void NumericRelaxedPlanningGraph::classify_fluents() {
             boolean_fluent_ids_.insert(fluent_id);
         } else if (problem_.is_numeric_type(eid)) {
             numeric_fluent_ids_.insert(fluent_id);
-        } else {
-            // Object-typed fluents are treated as Boolean (equality checks)
-            boolean_fluent_ids_.insert(fluent_id);
+        } else if (problem_.is_object_type(eid)) {
+            // Object-typed fluents: tracked via discrete value sets.
+            object_fluent_ids_.insert(fluent_id);
         }
         fluent_id++;
     }
@@ -272,6 +283,12 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
                 // constants (not true/false), so this is expected. We treat them as
                 // FALSE_ONLY for reachability purposes (conservative over-approximation).
                 initial_layer.boolean_reachability[fluent_id] = BooleanReachability::FALSE_ONLY;
+            }
+        } else if (object_fluent_ids_.contains(fluent_id)) {
+            // Object fluent: resolve value to object index and seed value set.
+            int obj_idx = problem_.object_constant_index(val_eid);
+            if (obj_idx >= 0) {
+                initial_layer.object_value_sets[fluent_id].insert(obj_idx);
             }
         } else if (numeric_fluent_ids_.contains(fluent_id)) {
             // Numeric fluent: extract value and create point bounds
@@ -341,6 +358,9 @@ bool NumericRelaxedPlanningGraph::build() {
 
         // Propagate Boolean effects
         propagate_boolean_effects(applicable_actions, layer, layer + 1);
+
+        // Propagate object fluent value sets
+        propagate_object_effects(applicable_actions, layer, layer + 1);
 
         // Compute numeric bounds
         compute_numeric_bounds(applicable_actions, layer, layer + 1);
@@ -572,6 +592,68 @@ void NumericRelaxedPlanningGraph::apply_boolean_effect(
 }
 
 // ============================================================================
+// PRIVATE METHODS - Object Fluent Value Set Propagation
+// ============================================================================
+
+void NumericRelaxedPlanningGraph::propagate_object_effects(
+    const std::vector<const Action*>& applicable_actions,
+    int prev_layer,
+    int next_layer) {
+
+    const auto& pool = problem_.pool();
+    const auto& prev_state = layer_states_[prev_layer];
+    auto& next_state = layer_states_[next_layer];
+
+    // Copy previous layer's value sets (frame axiom: values persist)
+    next_state.object_value_sets = prev_state.object_value_sets;
+
+    // Build set of applicable actions for fast lookup
+    std::unordered_set<const Action*> applicable_set(
+        applicable_actions.begin(), applicable_actions.end());
+
+    // For each object fluent, check effects from applicable actions
+    for (int fluent_id : object_fluent_ids_) {
+        ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
+
+        auto epc_it = epc_index_.find(fluent_eid);
+        if (epc_it == epc_index_.end()) continue;
+
+        for (const auto& [action, effect_expr] : epc_it->second) {
+            if (!applicable_set.count(action)) continue;
+
+            // Only ASSIGN effects matter for object fluents
+            if (!effect_expr->is_assign()) continue;
+
+            // Resolve the value expression to an object index
+            ExprID val_eid = effect_expr->value_id();
+            int obj_idx = problem_.object_constant_index(val_eid);
+            if (obj_idx >= 0) {
+                next_state.object_value_sets[fluent_id].insert(obj_idx);
+            } else if (pool.is_state_variable(val_eid)) {
+                // Value is another object fluent (e.g., assign(loc(x), loc(y))).
+                // Add all reachable values of the source fluent.
+                int src_id = find_grounded_fluent_id(val_eid);
+                if (src_id < 0 || !object_fluent_ids_.count(src_id)) {
+                    throw std::runtime_error(
+                        "Object fluent effect assigns from untracked source: " +
+                        pool.to_string(val_eid) + " -> " + pool.to_string(fluent_eid));
+                }
+                auto it = prev_state.object_value_sets.find(src_id);
+                if (it != prev_state.object_value_sets.end()) {
+                    for (int v : it->second) {
+                        next_state.object_value_sets[fluent_id].insert(v);
+                    }
+                }
+            } else {
+                throw std::runtime_error(
+                    "Object fluent effect has unresolvable value expression: " +
+                    pool.to_string(val_eid) + " -> " + pool.to_string(fluent_eid));
+            }
+        }
+    }
+}
+
+// ============================================================================
 // PRIVATE METHODS - Numeric Bounds Computation
 // ============================================================================
 
@@ -665,20 +747,44 @@ Interval NumericRelaxedPlanningGraph::evaluate_interval(ExprID eid, int layer) c
             return Interval(pool.payload_double(eid));
         if (pool.payload_is_int(eid))
             return Interval(static_cast<double>(pool.payload_int(eid)));
-        // Boolean or string constant — not numeric
+        {
+            // Object constant: map to its global index for numeric encoding.
+            // Needed for evaluating EQUALS comparisons on object fluents
+            // (e.g., preconditions like (= (person-at ?p) city0)).
+            int obj_idx = problem_.object_constant_index(eid);
+            if (obj_idx >= 0)
+                return Interval(static_cast<double>(obj_idx));
+        }
+        // Boolean or unresolved constant — not numeric
         return Interval::unbounded();
     }
 
-    // State variables -> lookup in layer's numeric_bounds
+    // State variables -> lookup in layer's numeric_bounds or object_value_sets
     if (pool.is_state_variable(eid)) {
         int fluent_id = find_grounded_fluent_id(eid);
-        if (fluent_id >= 0 && numeric_fluent_ids_.count(fluent_id)) {
-            auto it = layer_states_[layer].numeric_bounds.find(fluent_id);
-            if (it != layer_states_[layer].numeric_bounds.end()) {
-                return Interval(it->second.lower, it->second.upper);
+        if (fluent_id >= 0) {
+            if (numeric_fluent_ids_.count(fluent_id)) {
+                auto it = layer_states_[layer].numeric_bounds.find(fluent_id);
+                if (it != layer_states_[layer].numeric_bounds.end()) {
+                    return Interval(it->second.lower, it->second.upper);
+                }
+            }
+            if (object_fluent_ids_.count(fluent_id)) {
+                // Return interval hull of the reachable value set.
+                auto it = layer_states_[layer].object_value_sets.find(fluent_id);
+                if (it != layer_states_[layer].object_value_sets.end() && !it->second.empty()) {
+                    double lo = std::numeric_limits<double>::infinity();
+                    double hi = -std::numeric_limits<double>::infinity();
+                    for (int v : it->second) {
+                        double d = static_cast<double>(v);
+                        if (d < lo) lo = d;
+                        if (d > hi) hi = d;
+                    }
+                    return Interval(lo, hi);
+                }
             }
         }
-        // Uninitialized numeric fluent defaults to [0, 0]
+        // Uninitialized fluent defaults to [0, 0]
         return Interval(0.0);
     }
 
@@ -988,6 +1094,19 @@ bool NumericRelaxedPlanningGraph::is_action_applicable_smt(const Action& action,
 void NumericRelaxedPlanningGraph::add_layer_constraints(z3::solver& solver, int layer) const {
     add_boolean_constraints(solver, layer);
     add_numeric_constraints(solver, layer);
+
+    // Object fluent value set constraints
+    const auto& layer_state = layer_states_[layer];
+    for (const auto& [fluent_id, values] : layer_state.object_value_sets) {
+        if (values.empty()) continue;
+        ExprID fluent_eid = problem_.grounded_fluent(fluent_id);
+        z3::expr fluent_z3 = grounded_visitor_.convert_from_pool(fluent_eid, layer);
+        z3::expr_vector valid(ctx_);
+        for (int v : values) {
+            valid.push_back(fluent_z3 == ctx_.int_val(v));
+        }
+        solver.add(z3::mk_or(valid));
+    }
 }
 
 void NumericRelaxedPlanningGraph::add_boolean_constraints(z3::solver& solver, int layer) const {
@@ -1472,6 +1591,24 @@ std::unordered_map<ExprID, Interval> NumericRelaxedPlanningGraph::get_state_vari
     }
 
     return bounds;
+}
+
+std::unordered_map<ExprID, std::vector<int>>
+NumericRelaxedPlanningGraph::get_object_fluent_domains() const {
+    std::unordered_map<ExprID, std::vector<int>> domains;
+    if (layer_states_.empty()) return domains;
+
+    int final_layer = static_cast<int>(layer_states_.size()) - 1;
+    const auto& final_state = layer_states_[final_layer];
+
+    for (const auto& [fluent_id, values] : final_state.object_value_sets) {
+        ExprID eid = problem_.grounded_fluent(fluent_id);
+        std::vector<int> sorted_vals(values.begin(), values.end());
+        std::sort(sorted_vals.begin(), sorted_vals.end());
+        domains.emplace(eid, std::move(sorted_vals));
+    }
+
+    return domains;
 }
 
 // ============================================================================

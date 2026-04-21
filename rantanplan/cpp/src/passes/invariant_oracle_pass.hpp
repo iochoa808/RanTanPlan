@@ -73,10 +73,14 @@ public:
     std::string name() const override { return "InvariantOracle"; }
 
 private:
-    /// Collect RPG fixpoint bounds (finite only).
+    /// Collect RPG fixpoint bounds for numeric fluents (finite only).
     std::vector<BoundConstraint> collect_rpg_bounds(
         const NumericRelaxedPlanningGraph& rpg,
         const Problem& problem) const;
+
+    /// Collect domain constraints for object fluents from RPG value sets.
+    std::vector<DomainConstraint> collect_object_domains(
+        const NumericRelaxedPlanningGraph& rpg) const;
 
     /// Generate mutex candidates by grouping boolean fluent instances
     /// by predicate and argument position.
