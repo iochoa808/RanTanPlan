@@ -1,4 +1,5 @@
 #include "invariant_oracle_pass.hpp"
+#include "bound_tightening.hpp"
 #include "../config/config.hpp"
 #include "../util/logger.hpp"
 #include "../util/scoped_timer.hpp"
@@ -16,7 +17,7 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
     const auto& problem = result.problem;
     StateConstraints invariants;
 
-    // Phase A: RPG bound injection
+    // Phase A: RPG bound injection (with syntactic tightening)
     if (config.local_reasoning.rpg_bounds) {
         // Use the fixpoint RPG from GoalRelevancePass if available,
         // otherwise build a quick one.
@@ -28,10 +29,25 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
             rpg_ptr = local_rpg.get();
         }
         if (rpg_ptr) {
-            invariants.bounds = collect_rpg_bounds(*rpg_ptr, problem);
+            // Extract RPG bounds and tighten -inf/+inf entries via
+            // precondition analysis. GoalRelevancePass already does this
+            // for its achiever analysis; here we produce the final
+            // BoundConstraints for solver injection.
+            auto bounds_map = rpg_ptr->get_state_variable_bounds();
+            int n_tightened = tighten_bounds_syntactically(bounds_map, problem);
+
+            for (const auto& [eid, interval] : bounds_map) {
+                if (!problem.is_numeric_type(eid)) continue;
+                if (std::isfinite(interval.lower))
+                    invariants.bounds.push_back({eid, interval.lower, true});
+                if (std::isfinite(interval.upper))
+                    invariants.bounds.push_back({eid, interval.upper, false});
+            }
+
             invariants.domains = collect_object_domains(*rpg_ptr);
             Logger::instance().component(VerbosityLevel::INFO, "InvOracle", {
                 {"rpg_bounds", std::to_string(invariants.bounds.size())},
+                {"bounds_tightened", std::to_string(n_tightened)},
                 {"domain_constraints", std::to_string(invariants.domains.size())}
             });
         }
@@ -295,31 +311,6 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
                           static_cast<double>(invariants.bounds.size()));
 
     result.state_constraints = std::move(invariants);
-}
-
-// ============================================================================
-// RPG Bound Collection
-// ============================================================================
-
-std::vector<BoundConstraint> InvariantOraclePass::collect_rpg_bounds(
-    const NumericRelaxedPlanningGraph& rpg,
-    const Problem& problem) const {
-
-    std::vector<BoundConstraint> bounds;
-    auto rpg_bounds = rpg.get_state_variable_bounds();
-
-    for (const auto& [eid, interval] : rpg_bounds) {
-        // Only emit bounds for numeric fluents (skip boolean [1,1] entries)
-        if (!problem.is_numeric_type(eid)) continue;
-
-        if (std::isfinite(interval.lower)) {
-            bounds.push_back({eid, interval.lower, true});
-        }
-        if (std::isfinite(interval.upper)) {
-            bounds.push_back({eid, interval.upper, false});
-        }
-    }
-    return bounds;
 }
 
 // ============================================================================

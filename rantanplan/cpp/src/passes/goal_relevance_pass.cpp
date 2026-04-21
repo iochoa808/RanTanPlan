@@ -1,4 +1,5 @@
 #include "goal_relevance_pass.hpp"
+#include "bound_tightening.hpp"
 #include "../abstraction/achievers_analysis.hpp"
 #include "../analysis/numeric_relaxed_planning_graph.hpp"
 #include "../config/config.hpp"
@@ -43,6 +44,18 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
         rpg_data.state_variable_bounds = rpg->get_state_variable_bounds();
         rpg_data.action_first_layers = rpg->get_action_first_layers();
         rpg_data.layer_count = static_cast<int>(rpg->get_layer_count());
+
+        // Tighten RPG bounds with precondition-derived analysis before
+        // feeding to AchieversAnalysis. Recovers finite bounds for fluents
+        // where RPG widening gave -inf/+inf.
+        if (Config::instance().local_reasoning.enabled &&
+            Config::instance().local_reasoning.rpg_bounds) {
+            int n = tighten_bounds_syntactically(
+                rpg_data.state_variable_bounds, result.problem);
+            if (n > 0) {
+                Logger::instance().info("  bounds tightened: " + std::to_string(n));
+            }
+        }
 
         // Update lower bound (RPG on the reduced problem may give a higher bound)
         if (rpg->are_goals_achievable()) {
@@ -124,6 +137,12 @@ void GoalRelevancePass::apply(PipelineResult& result) const {
         rpg_data.state_variable_bounds = rpg->get_state_variable_bounds();
         rpg_data.action_first_layers = rpg->get_action_first_layers();
         rpg_data.layer_count = static_cast<int>(rpg->get_layer_count());
+
+        if (Config::instance().local_reasoning.enabled &&
+            Config::instance().local_reasoning.rpg_bounds) {
+            tighten_bounds_syntactically(
+                rpg_data.state_variable_bounds, result.problem);
+        }
 
         result.lower_bound = std::max(result.lower_bound,
                                       rpg->get_minimum_steps_lower_bound());

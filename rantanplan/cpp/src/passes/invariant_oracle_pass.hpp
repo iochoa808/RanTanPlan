@@ -16,7 +16,7 @@ namespace rantanplan {
 // from structural analysis of the grounded problem. These are injected into
 // the SMT solver at every timestep to prune infeasible assignments.
 //
-// Two categories of constraints are produced:
+// Three categories of constraints are produced:
 //
 // --- Mutex Groups (Tier 1 Syntactic Check) ---
 //
@@ -55,6 +55,21 @@ namespace rantanplan {
 // every timestep. This prevents the solver from exploring states with
 // out-of-bounds numeric values (e.g., negative fuel, stock exceeding supply).
 //
+// --- Precondition-Derived Lower Bounds ---
+//
+// For numeric fluents where RPG widening produces -inf as the lower bound,
+// we attempt to recover `f >= 0` by syntactic analysis. The check verifies
+// that every action preserving the bound:
+//
+//   - INCREASE effects on f: safe (f can only go up).
+//   - DECREASE effects on f by delta: safe if the action's precondition
+//     contains `f >= delta` (same expression, verified via ExprID equality).
+//   - ASSIGN effects on f to constant c >= 0: safe.
+//   - Anything else (conditional effects, unguarded decreases): reject.
+//
+// This captures the common "resource non-negativity" pattern: fuel, energy,
+// supply fluents guarded by preconditions like `fuel >= distance * burn_rate`.
+//
 // ============================================================================
 
 /**
@@ -73,11 +88,6 @@ public:
     std::string name() const override { return "InvariantOracle"; }
 
 private:
-    /// Collect RPG fixpoint bounds for numeric fluents (finite only).
-    std::vector<BoundConstraint> collect_rpg_bounds(
-        const NumericRelaxedPlanningGraph& rpg,
-        const Problem& problem) const;
-
     /// Collect domain constraints for object fluents from RPG value sets.
     std::vector<DomainConstraint> collect_object_domains(
         const NumericRelaxedPlanningGraph& rpg) const;
@@ -102,6 +112,7 @@ private:
     bool syntactic_exactly_one_check(const MutexCandidate& candidate,
                                      const Problem& problem,
                                      const std::unordered_set<ExprID>& initially_true) const;
+
 };
 
 } // namespace rantanplan
