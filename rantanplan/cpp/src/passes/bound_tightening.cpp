@@ -275,20 +275,22 @@ std::vector<ConservationConstraint> discover_conservation_laws(
 
     const auto& pool = problem.pool();
 
-    // Step 1: For each action, compute net constant delta per numeric fluent.
-    // delta > 0 = net increase, delta < 0 = net decrease.
-    // Actions with conditional effects or ASSIGN on numeric fluents are
-    // marked as "poisoned" for those fluents (can't participate).
+    // Step 1: For each action, collect per-fluent effect information.
+    //  - Constant deltas (for the existing constant-balance check)
+    //  - All unconditional increase/decrease effects (for transfer detection)
+    //  - Poisoned fluents (conditional / ASSIGN)
+    struct EffectInfo {
+        bool is_increase;
+        ExprID value_id;
+    };
     struct ActionDeltas {
-        std::unordered_map<ExprID, double> deltas;
-        std::unordered_set<ExprID> poisoned;  // conditional/assign/non-constant
+        std::unordered_map<ExprID, double> deltas;           // net constant delta
+        std::unordered_set<ExprID> poisoned;                  // conditional / ASSIGN
+        std::unordered_map<ExprID, std::vector<EffectInfo>> effects;  // all unconditional inc/dec
     };
 
     std::vector<ActionDeltas> action_data;
     action_data.reserve(problem.actions().size());
-
-    // Also track which fluents are ever modified (to skip unmodified).
-    std::unordered_set<ExprID> ever_modified;
 
     for (const auto& action : problem.actions()) {
         ActionDeltas ad;
@@ -297,24 +299,31 @@ std::vector<ConservationConstraint> discover_conservation_laws(
             ExprID fid = ee.fluent_id();
             if (!problem.is_numeric_type(fid)) continue;
 
-            if (ee.is_conditional() || ee.is_assign() || !ee.is_constant_value()) {
+            if (ee.is_conditional() || ee.is_assign()) {
                 ad.poisoned.insert(fid);
                 continue;
             }
 
-            double d = extract_constant(ee.value_id(), pool);
-            if (!std::isfinite(d)) { ad.poisoned.insert(fid); continue; }
+            if (ee.is_increase() || ee.is_decrease()) {
+                // Track all unconditional inc/dec for transfer detection
+                ad.effects[fid].push_back({ee.is_increase(), ee.value_id()});
 
-            if (ee.is_increase()) ad.deltas[fid] += d;
-            else if (ee.is_decrease()) ad.deltas[fid] -= d;
-
-            ever_modified.insert(fid);
+                // Also compute constant delta where possible
+                if (ee.is_constant_value()) {
+                    double d = extract_constant(ee.value_id(), pool);
+                    if (std::isfinite(d)) {
+                        if (ee.is_increase()) ad.deltas[fid] += d;
+                        else ad.deltas[fid] -= d;
+                    }
+                }
+            }
         }
         action_data.push_back(std::move(ad));
     }
 
-    // Step 2: Collect candidate pairs from actions where two fluents have
-    // opposite non-zero deltas. Use ordered pair (min, max) to deduplicate.
+    // Step 2: Collect candidate pairs.
+    // Source A: constant opposite deltas (existing).
+    // Source B: same-expression transfers (increase(f,E) + decrease(g,E)).
     struct PairHash {
         size_t operator()(const std::pair<ExprID, ExprID>& p) const {
             return std::hash<int32_t>()(p.first.id) ^
@@ -324,14 +333,13 @@ std::vector<ConservationConstraint> discover_conservation_laws(
     std::unordered_set<std::pair<ExprID, ExprID>, PairHash> candidate_pairs;
 
     for (const auto& ad : action_data) {
+        // Source A: constant opposite deltas
         for (auto it1 = ad.deltas.begin(); it1 != ad.deltas.end(); ++it1) {
             if (ad.poisoned.count(it1->first)) continue;
-            if (std::abs(it1->second) < 1e-12) continue;  // skip zero net delta
-
+            if (std::abs(it1->second) < 1e-12) continue;
             for (auto it2 = std::next(it1); it2 != ad.deltas.end(); ++it2) {
                 if (ad.poisoned.count(it2->first)) continue;
                 if (std::abs(it2->second) < 1e-12) continue;
-
                 if (std::abs(it1->second + it2->second) < 1e-12) {
                     ExprID a = it1->first, b = it2->first;
                     if (b < a) std::swap(a, b);
@@ -339,11 +347,54 @@ std::vector<ConservationConstraint> discover_conservation_laws(
                 }
             }
         }
+
+        // Source B: same-expression transfers
+        for (auto it1 = ad.effects.begin(); it1 != ad.effects.end(); ++it1) {
+            if (ad.poisoned.count(it1->first)) continue;
+            for (auto it2 = std::next(it1); it2 != ad.effects.end(); ++it2) {
+                if (ad.poisoned.count(it2->first)) continue;
+                // Check if any effect on f matches an effect on g
+                for (const auto& e1 : it1->second) {
+                    for (const auto& e2 : it2->second) {
+                        if (e1.value_id == e2.value_id &&
+                            e1.is_increase != e2.is_increase) {
+                            ExprID a = it1->first, b = it2->first;
+                            if (b < a) std::swap(a, b);
+                            candidate_pairs.insert({a, b});
+                        }
+                    }
+                }
+            }
+        }
     }
 
+    // Helper: check if all effects on f are transfer-matched by effects on g.
+    // Every increase(f,E) needs a decrease(g,E), and vice versa.
+    auto transfer_match = [](const std::vector<EffectInfo>& f_eff,
+                             const std::vector<EffectInfo>& g_eff) -> bool {
+        if (f_eff.size() != g_eff.size()) return false;
+        std::vector<bool> matched(g_eff.size(), false);
+        for (const auto& fe : f_eff) {
+            bool found = false;
+            for (size_t i = 0; i < g_eff.size(); ++i) {
+                if (!matched[i] &&
+                    fe.value_id == g_eff[i].value_id &&
+                    fe.is_increase != g_eff[i].is_increase) {
+                    matched[i] = true;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
+    };
+
     // Step 3: Verify each candidate across ALL actions.
-    // For (f, g): every action that modifies f or g must have delta_f + delta_g == 0.
-    // Neither f nor g may be poisoned in any action.
+    // An action preserves f + g == C if:
+    //  (a) neither f nor g is modified, OR
+    //  (b) both have constant opposite deltas and neither is poisoned, OR
+    //  (c) all effects on f transfer-match effects on g (same ExprID, opposite sign)
     std::vector<ConservationConstraint> result;
 
     for (const auto& [f, g] : candidate_pairs) {
@@ -353,19 +404,46 @@ std::vector<ConservationConstraint> discover_conservation_laws(
                 valid = false;
                 break;
             }
-            double df = 0.0, dg = 0.0;
-            auto itf = ad.deltas.find(f);
-            auto itg = ad.deltas.find(g);
-            if (itf != ad.deltas.end()) df = itf->second;
-            if (itg != ad.deltas.end()) dg = itg->second;
 
-            // If neither is modified by this action, skip (sum preserved).
-            if (std::abs(df) < 1e-12 && std::abs(dg) < 1e-12) continue;
+            bool f_has_effects = ad.effects.count(f);
+            bool g_has_effects = ad.effects.count(g);
 
-            if (std::abs(df + dg) > 1e-12) {
-                valid = false;
-                break;
+            // (a) Neither modified
+            if (!f_has_effects && !g_has_effects) continue;
+
+            // (b) Constant opposite deltas
+            if (!f_has_effects == !g_has_effects) {  // both have or both don't
+                double df = 0.0, dg = 0.0;
+                auto itf = ad.deltas.find(f);
+                auto itg = ad.deltas.find(g);
+                if (itf != ad.deltas.end()) df = itf->second;
+                if (itg != ad.deltas.end()) dg = itg->second;
+                if (std::abs(df + dg) < 1e-12) {
+                    // (c) Also check transfer match for non-constant effects
+                    auto fit = ad.effects.find(f);
+                    auto git = ad.effects.find(g);
+                    if (fit != ad.effects.end() && git != ad.effects.end() &&
+                        transfer_match(fit->second, git->second))
+                        continue;
+                    // Constant-only case: check balance
+                    if (fit != ad.effects.end() || git != ad.effects.end()) {
+                        // Has effects but transfer didn't match
+                        valid = false;
+                        break;
+                    }
+                    continue;  // neither has effects, delta check already passed
+                }
             }
+
+            // (c) Transfer match (handles variable deltas)
+            auto fit = ad.effects.find(f);
+            auto git = ad.effects.find(g);
+            if (fit != ad.effects.end() && git != ad.effects.end() &&
+                transfer_match(fit->second, git->second))
+                continue;
+
+            valid = false;
+            break;
         }
         if (!valid) continue;
 
