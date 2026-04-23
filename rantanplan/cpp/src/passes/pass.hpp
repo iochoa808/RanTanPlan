@@ -1,10 +1,13 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "../analysis/arithmetic_profile.hpp"
 #include "../config/strategy_spec.hpp"
+#include "../grounding/interval.hpp"
 #include "../problem/problem.hpp"
 #include "../symmetries/smt_symmetry_checker.hpp"
 #include "local_invariants.hpp"
@@ -27,14 +30,16 @@ struct PipelineResult {
     bool proven_unsolvable = false;     ///< True if any pass proved unsolvability
     std::string unsolvable_reason;      ///< Name of the pass that proved unsolvability
     int lower_bound = 0;               ///< Max lower bound across all passes so far
-    std::vector<ObjectSwap> detected_object_swaps; ///< From SymmetryDetectionPass (pre-grounding)
-    std::vector<SymmetryInfo> symmetry_data; ///< From SymmetryCompletionPass (post-CWA)
-    std::vector<double> sdac_cost_lower_bounds; ///< SDAC cost lower bounds (from NumericRPGPass); empty if not SDAC
+    std::optional<Problem> original_problem; ///< Pre-grounding snapshot (for symmetry detection)
+    std::vector<SymmetryInfo> symmetry_data; ///< From SymmetryAnalysisPass
+    std::vector<double> sdac_cost_lower_bounds; ///< SDAC cost lower bounds (from ActionPruningPass); empty if not SDAC
     ArithmeticProfile arithmetic_profile = ArithmeticProfile::LINEAR; ///< Numeric constraint class (set after pipeline)
     StrategySpec resolved_spec{};               ///< Finalized strategy spec (from StrategyResolutionPass)
     std::unique_ptr<InterferenceAnalysis> interference; ///< Pre-built interference analyzer (from InterferencePass)
-    std::unique_ptr<AchieversAnalysis> achievers; ///< Pre-built achiever analysis (from GoalRelevancePass)
+    std::unique_ptr<AchieversAnalysis> achievers; ///< Pre-built achiever analysis (from ActionPruningPass)
     std::unique_ptr<NumericRelaxedPlanningGraph> fixpoint_rpg; ///< Fixpoint RPG for reuse across passes
+    std::unordered_map<ExprID, Interval> tightened_bounds; ///< Tightened numeric bounds (from ActionPruningPass)
+    std::vector<ConservationConstraint> conservation_laws; ///< Conservation laws (from ActionPruningPass)
     StateConstraints state_constraints; ///< State constraints from InvariantOraclePass
 };
 

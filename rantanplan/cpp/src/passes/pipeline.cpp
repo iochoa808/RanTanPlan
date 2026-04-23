@@ -6,9 +6,8 @@
 
 namespace rantanplan {
 
-PipelineResult run_pipeline(Problem initial, const std::vector<const Pass*>& passes) {
-    PipelineResult result;
-    result.problem = std::move(initial);
+PipelineResult run_pipeline(PipelineResult initial_result, const std::vector<const Pass*>& passes) {
+    PipelineResult result = std::move(initial_result);
 
     for (const auto* pass : passes) {
         ScopedTimer timer("pass." + pass->name() + ".time_ms");

@@ -1,5 +1,4 @@
 #include "invariant_oracle_pass.hpp"
-#include "bound_tightening.hpp"
 #include "../config/config.hpp"
 #include "../util/logger.hpp"
 #include "../util/scoped_timer.hpp"
@@ -17,48 +16,29 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
     const auto& problem = result.problem;
     StateConstraints invariants;
 
-    // Phase A: RPG bound injection (with syntactic tightening)
+    // Phase A: Consume pre-computed bounds and conservation laws from ActionPruningPass
     if (config.local_reasoning.rpg_bounds) {
-        // Use the fixpoint RPG from GoalRelevancePass if available,
-        // otherwise build a quick one.
-        NumericRelaxedPlanningGraph* rpg_ptr = result.fixpoint_rpg.get();
-        std::unique_ptr<NumericRelaxedPlanningGraph> local_rpg;
-        if (!rpg_ptr) {
-            local_rpg = std::make_unique<NumericRelaxedPlanningGraph>(problem);
-            local_rpg->build();
-            rpg_ptr = local_rpg.get();
+        invariants.conservations = result.conservation_laws;
+
+        for (const auto& [eid, interval] : result.tightened_bounds) {
+            if (!problem.is_numeric_type(eid)) continue;
+            if (std::isfinite(interval.lower))
+                invariants.bounds.push_back({eid, interval.lower, true});
+            if (std::isfinite(interval.upper))
+                invariants.bounds.push_back({eid, interval.upper, false});
         }
-        if (rpg_ptr) {
-            // Extract RPG bounds and tighten -inf/+inf entries via
-            // precondition analysis. GoalRelevancePass already does this
-            // for its achiever analysis; here we produce the final
-            // BoundConstraints for solver injection.
-            auto bounds_map = rpg_ptr->get_state_variable_bounds();
-            int n_tightened = tighten_bounds_syntactically(bounds_map, problem);
 
-            // Discover conservation laws and derive additional bounds.
-            auto conservations = discover_conservation_laws(problem);
-            derive_bounds_from_conservations(bounds_map, conservations);
-            invariants.conservations = std::move(conservations);
+        if (result.fixpoint_rpg) {
+            invariants.domains = collect_object_domains(*result.fixpoint_rpg);
+        }
 
-            for (const auto& [eid, interval] : bounds_map) {
-                if (!problem.is_numeric_type(eid)) continue;
-                if (std::isfinite(interval.lower))
-                    invariants.bounds.push_back({eid, interval.lower, true});
-                if (std::isfinite(interval.upper))
-                    invariants.bounds.push_back({eid, interval.upper, false});
-            }
-
-            invariants.domains = collect_object_domains(*rpg_ptr);
-            Logger::instance().component(VerbosityLevel::INFO, "InvOracle", {
-                {"rpg_bounds", std::to_string(invariants.bounds.size())},
-                {"bounds_tightened", std::to_string(n_tightened)},
-                {"conservation_laws", std::to_string(invariants.conservations.size())},
-                {"domain_constraints", std::to_string(invariants.domains.size())}
-            });
-            for (const auto& cc : invariants.conservations) {
-                Logger::instance().info("  conservation: " + cc.label);
-            }
+        Logger::instance().component(VerbosityLevel::INFO, "InvOracle", {
+            {"rpg_bounds", std::to_string(invariants.bounds.size())},
+            {"conservation_laws", std::to_string(invariants.conservations.size())},
+            {"domain_constraints", std::to_string(invariants.domains.size())}
+        });
+        for (const auto& cc : invariants.conservations) {
+            Logger::instance().info("  conservation: " + cc.label);
         }
     }
 

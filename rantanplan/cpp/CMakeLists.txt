@@ -154,12 +154,11 @@ add_executable(rantanplan
     src/analysis/semantic_interference_analysis.cpp
     src/analysis/numeric_constraint_analyzer.cpp
     src/passes/pipeline.cpp
-    src/passes/numeric_rpg_pass.cpp
-    src/passes/goal_relevance_pass.cpp
+    src/passes/action_pruning_pass.cpp
     src/passes/invariant_oracle_pass.cpp
     src/passes/bound_tightening.cpp
     src/passes/h2_mutex_checker.cpp
-    src/passes/symmetry_pass.cpp
+    src/passes/symmetry_analysis_pass.cpp
     src/passes/grounding_pass.cpp
     src/passes/cwa_initial_state_pass.cpp
     src/passes/strategy_resolution_pass.cpp

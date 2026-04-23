@@ -23,14 +23,13 @@
 #include "util/logger.hpp"
 #include "planners/propagators/modules/logging_module.hpp"
 #include "passes/pipeline.hpp"
-#include "passes/numeric_rpg_pass.hpp"
-#include "passes/symmetry_pass.hpp"
+#include "passes/action_pruning_pass.hpp"
+#include "passes/symmetry_analysis_pass.hpp"
 #include "passes/grounding_pass.hpp"
 #include "passes/cwa_initial_state_pass.hpp"
 #include "passes/strategy_resolution_pass.hpp"
 #include "passes/interference_pass.hpp"
 #include "passes/static_fluent_pass.hpp"
-#include "passes/goal_relevance_pass.hpp"
 #include "passes/invariant_oracle_pass.hpp"
 #include "analysis/numeric_relaxed_planning_graph.hpp"
 #include "analysis/numeric_constraint_analyzer.hpp"
@@ -142,7 +141,7 @@ PlanGenerationResult solve_planning_problem(rantanplan::PipelineResult& pipeline
     planner->set_arithmetic_profile(pipeline_result.arithmetic_profile);
     rantanplan::StrategyFactory::configure_planner(*planner, spec, pipeline_result);
 
-    // Pass pre-built achiever analysis to PDLA planners (from GoalRelevancePass)
+    // Pass pre-built achiever analysis to PDLA planners (from ActionPruningPass)
     if (pipeline_result.achievers && rantanplan::uses_pdla(spec)) {
         auto* pdla_planner = dynamic_cast<rantanplan::PDLAPlanner*>(planner.get());
         if (pdla_planner) {
@@ -263,70 +262,78 @@ int main(int argc, char* argv[]) {
     }
 
     // === PREPROCESSING PIPELINE ===
+    //
+    // Five phases, each with clear responsibilities and data dependencies:
+    //
+    //   SETUP       → resolve strategy config (needed by all downstream passes)
+    //   CANONICALIZE → lifted problem → clean ground problem
+    //   PRUNE       → remove unreachable/irrelevant actions via RPG + achievers
+    //   DISCOVER    → find state invariants (mutex groups, bounds, conservation laws)
+    //   PREPARE     → build analysis objects the solver consumes directly
+    //
+    // Data flow between phases:
+    //
+    //   SETUP    produces: resolved_spec
+    //   CANON    produces: grounded problem with complete initial state, simplified expressions
+    //   PRUNE    produces: pruned problem, fixpoint_rpg, tightened_bounds,
+    //                      conservation_laws, achievers, sdac_cost_lower_bounds
+    //   DISCOVER consumes tightened_bounds + conservation_laws from PRUNE (no re-derivation),
+    //            reads object domains from fixpoint_rpg, produces state_constraints
+    //   PREPARE  produces: symmetry_data (using original_problem for detection),
+    //                      interference analyzer
+    //
+    // Ordering constraints:
+    //   - Grounding before CWA (CWA needs all grounded fluents visible)
+    //   - CWA before StaticFluent (needs complete initial state to identify constants)
+    //   - StaticFluent before ActionPruning (simpler expressions → tighter RPG bounds)
+    //   - ActionPruning before InvariantOracle (produces bounds + conservation laws it consumes)
+    //   - SymmetryAnalysis after all pruning (runs on smallest action set)
+    //   - Interference last (needs final problem + resolved spec)
+
     rantanplan::StrategyResolutionPass strategy_resolution_pass;
-    rantanplan::NumericRPGPass numeric_rpg_pass;
-    rantanplan::SymmetryDetectionPass symmetry_detection_pass;
-    rantanplan::SymmetryCompletionPass symmetry_completion_pass;
     rantanplan::GroundingPass grounding_pass;
     rantanplan::CWAInitialStatePass cwa_pass;
     rantanplan::StaticFluentPass static_fluent_pass;
+    rantanplan::ActionPruningPass action_pruning_pass;
+    rantanplan::InvariantOraclePass invariant_oracle_pass;
+    rantanplan::SymmetryAnalysisPass symmetry_analysis_pass;
+    rantanplan::InterferencePass interference_pass;
+
     std::vector<const rantanplan::Pass*> passes;
 
-    // Strategy resolution runs first — stores the finalized spec in PipelineResult.
+    // --- SETUP ---
     passes.push_back(&strategy_resolution_pass);
 
-    // Symmetry detection (SMT-based) runs BEFORE grounding — it only needs
-    // initial state + goals and is the expensive part of symmetry analysis.
-    if (config.symmetry.enable_symmetries) {
-        passes.push_back(&symmetry_detection_pass);
-    }
-
+    // --- CANONICALIZE ---
     if (config.global.reachability_grounding) {
         passes.push_back(&grounding_pass);
     }
-
-    // CWA pass ensures all grounded fluents have explicit initial assignments.
-    // Must run BEFORE the RPG pass so that NumericRPG's initialize_layer_0()
-    // sees a fully-defined initial state (implicit-false booleans and
-    // implicit-zero numerics are filled in here).
-    // No-op when Python/UP already provides complete initial state.
     passes.push_back(&cwa_pass);
-
-    // Static fluent simplification: replaces fluents that no effect writes to
-    // with their constant initial-state values and folds constant expressions.
-    // Runs after CWA (needs complete initial state) and before RPG (simpler
-    // expressions → tighter bounds, fewer variables).
     passes.push_back(&static_fluent_pass);
 
-    if (config.rpg.enabled) {
-        passes.push_back(&numeric_rpg_pass);
-    }
+    // --- PRUNE ---
+    passes.push_back(&action_pruning_pass);
 
-    // Symmetry completion runs AFTER grounding + CWA to compute variable
-    // pairs (needs complete initial state) and action pairs (needs grounded actions).
-    if (config.symmetry.enable_symmetries) {
-        passes.push_back(&symmetry_completion_pass);
-    }
-
-    // Goal-relevance pass: uses semantic achiever analysis to remove actions
-    // that cannot contribute to any goal condition (even transitively).
-    // Runs after RPG (needs reachability-pruned problem) and before interference
-    // (fewer actions = smaller interference graph).
-    // Internally checks uses_pdla() — no-op for other strategies.
-    rantanplan::GoalRelevancePass goal_relevance_pass;
-    passes.push_back(&goal_relevance_pass);
-
-    // Invariant oracle: discovers state invariants (mutex groups, RPG bounds)
-    // via syntactic analysis. Runs after GoalRelevance (needs fixpoint_rpg for
-    // RPG bounds) and before interference.
-    rantanplan::InvariantOraclePass invariant_oracle_pass;
+    // --- DISCOVER ---
     passes.push_back(&invariant_oracle_pass);
 
-    // Interference analysis runs last — needs final problem + resolved spec.
-    rantanplan::InterferencePass interference_pass;
+    // --- PREPARE ---
+    if (config.symmetry.enable_symmetries) {
+        passes.push_back(&symmetry_analysis_pass);
+    }
     passes.push_back(&interference_pass);
 
-    auto pipeline_result = rantanplan::run_pipeline(std::move(planning_problem), passes);
+    // Snapshot the original (pre-grounding) problem for symmetry detection.
+    // Detection checks initial-state + goals equivalence under object swap;
+    // this is cheaper on the lifted problem (smaller Z3 formula) and must
+    // happen before StaticFluent removes distinguishing static assignments.
+    rantanplan::PipelineResult initial_result;
+    if (config.symmetry.enable_symmetries) {
+        initial_result.original_problem = planning_problem;  // cheap copy (shared ExprPool)
+    }
+    initial_result.problem = std::move(planning_problem);
+
+    auto pipeline_result = rantanplan::run_pipeline(std::move(initial_result), passes);
     config.planner.start_timestep = pipeline_result.lower_bound;
 
     // Analyze numeric constraint structure for Z3 solver tuning
