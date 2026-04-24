@@ -393,6 +393,15 @@ bool NumericRelaxedPlanningGraph::build() {
             {"num", std::to_string(new_layer.numeric_bounds.size())}
         });
 
+        // When goals first become interval-achievable, lower the widening threshold:
+        // the first G layers are "ramp-up" where actions are still becoming applicable
+        // and some fluents legitimately don't expand yet. A fluent that expanded in
+        // all post-ramp-up layers (max_layers - G) is divergent.
+        if (first_goals_layer_ < 0 && are_goals_achievable_at_layer_interval(layer + 1)) {
+            first_goals_layer_ = layer + 1;
+            widening_threshold_ = std::min(widening_threshold_, max_layers_ - first_goals_layer_);
+        }
+
         // Check for fixpoint
         if (is_fixpoint_reached()) {
             Logger::instance().verbose("Fixpoint reached - terminating layer expansion");

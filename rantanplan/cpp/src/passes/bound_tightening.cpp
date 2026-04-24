@@ -241,8 +241,8 @@ int tighten_bounds_syntactically(
     for (auto& [eid, interval] : bounds) {
         if (!problem.is_numeric_type(eid)) continue;
 
-        // Lower bound: -inf -> 0 if syntactically verified.
-        if (!std::isfinite(interval.lower)) {
+        // Lower bound: tighten to 0 if syntactically verified and tighter than RPG.
+        if (interval.lower < 0.0) {
             double init = 0.0;
             auto it = initial_values.find(eid);
             if (it != initial_values.end()) init = it->second;
@@ -253,13 +253,11 @@ int tighten_bounds_syntactically(
             }
         }
 
-        // Upper bound: +inf -> C if syntactically verified.
-        if (!std::isfinite(interval.upper)) {
-            double c = verify_upper_bound(eid, problem);
-            if (std::isfinite(c)) {
-                interval.upper = c;
-                tightened++;
-            }
+        // Upper bound: tighten to C if syntactically verified and tighter than RPG.
+        double c = verify_upper_bound(eid, problem);
+        if (std::isfinite(c) && c < interval.upper) {
+            interval.upper = c;
+            tightened++;
         }
     }
 

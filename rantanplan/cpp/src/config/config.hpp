@@ -46,7 +46,7 @@ public:
         int goal_relevance_max_iterations = 10;
         /// Directional widening threshold: after this many consecutive expansions
         /// of the same side (lower/upper) of a numeric fluent's bounds, snap to +-inf.
-        int widening_threshold = 500;
+        int widening_threshold = 100;
     } rpg;
     
     struct Planner {

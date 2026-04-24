@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iomanip>
 #include <set>
+#include <sstream>
 
 namespace rantanplan {
 
@@ -190,6 +192,19 @@ void ActionPruningPass::apply(PipelineResult& result) const {
     result.achievers = std::move(final_achievers);
     result.tightened_bounds = std::move(final_bounds);
     result.conservation_laws = std::move(final_conservations);
+
+    // Log per-fluent bounds at verbose level
+    if (config.is_verbose() && !result.tightened_bounds.empty()) {
+        const auto& pool = result.problem.pool();
+        for (const auto& [eid, interval] : result.tightened_bounds) {
+            if (!result.problem.is_numeric_type(eid)) continue;
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(3);
+            oss << "[NumericBounds] " << pool.to_string(eid)
+                << " = [" << interval.lower << ", " << interval.upper << "]";
+            Logger::instance().verbose(oss.str());
+        }
+    }
 
     // Record stats
     size_t final_actions = result.problem.actions().size();

@@ -33,8 +33,11 @@
  *   for cases where joint multi-variable constraints need exact reasoning.
  *
  * - Directional widening: per-fluent, per-side expansion counters. After
- *   widening_threshold (default 500, configurable via --widening-threshold)
- *   consecutive expansions, the side snaps to +-inf.
+ *   widening_threshold (default 100, configurable via --widening-threshold)
+ *   expansions, the side snaps to +-inf. The threshold is further lowered
+ *   to min(threshold, max_layers - first_goal_layer) when goals become
+ *   interval-achievable, giving leeway for the initial ramp-up layers
+ *   where not all actions are yet applicable.
  *   Frozen sides (from lifted effect analysis) are exempt. Guarantees
  *   termination for both linear and non-linear effects.
  *
@@ -306,6 +309,7 @@ private:
     int widening_threshold_;
     int max_layers_;
     bool stop_when_all_reachable_;  ///< Stop when all actions reachable + goals achieved
+    int first_goals_layer_ = -1;   ///< First layer where goals are interval-achievable (-1 = not yet)
 
     // ========================================================================
     // MEMBER VARIABLES - Statistics
@@ -524,6 +528,7 @@ private:
      * @brief Build fluent_schema_map_ for ground fluent ID -> schema ID mapping
      */
     void build_fluent_schema_map();
+
 
     // ========================================================================
     // PRIVATE METHODS - Helper Methods for Effects
