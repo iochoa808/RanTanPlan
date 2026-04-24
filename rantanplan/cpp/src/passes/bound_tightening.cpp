@@ -108,24 +108,40 @@ static double find_ub_guard(ExprID precond_id, ExprID fluent_id,
     ExprID rhs = pool.argument(precond_id, 1);
 
     if (pool.is_less_equal(precond_id) || pool.is_less_than(precond_id)) {
+        // f + delta <= C
         if (is_plus_of(lhs, fluent_id, delta_id, pool)) {
             double c = extract_constant(rhs, pool);
             if (std::isfinite(c)) return c;
         }
+        // delta <= C - f
         if (lhs == delta_id) {
             double c = is_minus_capacity(rhs, fluent_id, pool);
             if (std::isfinite(c)) return c;
         }
+        // f <= R (constant) → f + delta <= R + delta
+        if (lhs == fluent_id) {
+            double r = extract_constant(rhs, pool);
+            double d = extract_constant(delta_id, pool);
+            if (std::isfinite(r) && std::isfinite(d)) return r + d;
+        }
     }
 
     if (pool.is_greater_equal(precond_id) || pool.is_greater_than(precond_id)) {
+        // C >= f + delta
         if (is_plus_of(rhs, fluent_id, delta_id, pool)) {
             double c = extract_constant(lhs, pool);
             if (std::isfinite(c)) return c;
         }
+        // C - f >= delta
         if (rhs == delta_id) {
             double c = is_minus_capacity(lhs, fluent_id, pool);
             if (std::isfinite(c)) return c;
+        }
+        // R (constant) >= f → f + delta <= R + delta
+        if (rhs == fluent_id) {
+            double r = extract_constant(lhs, pool);
+            double d = extract_constant(delta_id, pool);
+            if (std::isfinite(r) && std::isfinite(d)) return r + d;
         }
     }
 
@@ -222,9 +238,9 @@ static double verify_upper_bound(ExprID fluent_id, const Problem& problem) {
         }
     }
 
-    if (bound == -INFINITY) return INFINITY;
-
-    // Verify initial value <= bound.
+    // The upper bound is the max of the initial value and the highest value
+    // reachable via effects. When bound == -INFINITY (no increase/assign effects,
+    // only decreases), the fluent can never exceed its initial value.
     double init = 0.0;
     for (const auto& assignment : problem.initial_state()) {
         if (assignment.fluent_id() == fluent_id) {
@@ -233,9 +249,8 @@ static double verify_upper_bound(ExprID fluent_id, const Problem& problem) {
             break;
         }
     }
-    if (init > bound) return INFINITY;
 
-    return bound;
+    return std::max(bound, init);
 }
 
 // ============================================================================
