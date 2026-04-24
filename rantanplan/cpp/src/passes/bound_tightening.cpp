@@ -15,7 +15,19 @@ static double extract_constant(ExprID id, const ExprPool& pool) {
     return std::nan("");
 }
 
-// Search precondition AND-tree for `fluent >= delta` or `delta <= fluent`.
+// Check if expr is (- a b) with a == fluent_id and b == delta_id.
+static bool is_minus_of(ExprID expr, ExprID fluent_id, ExprID delta_id,
+                         const ExprPool& pool) {
+    if (pool.kind(expr) != ExprKind::FUNCTION_APPLICATION) return false;
+    if (!pool.is_minus(expr)) return false;
+    if (pool.argument_count(expr) != 2) return false;
+    return pool.argument(expr, 0) == fluent_id &&
+           pool.argument(expr, 1) == delta_id;
+}
+
+// Search precondition AND-tree for guards equivalent to `fluent >= delta`:
+//   - Direct:   (>= fluent delta) or (<= delta fluent)
+//   - Subtract: (>= (- fluent delta) C) where C >= 0
 static bool precondition_has_ge_guard(ExprID precond_id, ExprID fluent_id,
                                       ExprID delta_id, const ExprPool& pool) {
     if (!precond_id.valid()) return false;
@@ -34,10 +46,22 @@ static bool precondition_has_ge_guard(ExprID precond_id, ExprID fluent_id,
     ExprID rhs = pool.argument(precond_id, 1);
 
     if (pool.is_greater_equal(precond_id) || pool.is_greater_than(precond_id)) {
+        // (>= fluent delta)
         if (lhs == fluent_id && rhs == delta_id) return true;
+        // (>= (- fluent delta) C) where C >= 0
+        if (is_minus_of(lhs, fluent_id, delta_id, pool)) {
+            double c = extract_constant(rhs, pool);
+            if (std::isfinite(c) && c >= 0.0) return true;
+        }
     }
     if (pool.is_less_equal(precond_id) || pool.is_less_than(precond_id)) {
+        // (<= delta fluent)
         if (lhs == delta_id && rhs == fluent_id) return true;
+        // (<= C (- fluent delta)) where C >= 0
+        if (is_minus_of(rhs, fluent_id, delta_id, pool)) {
+            double c = extract_constant(lhs, pool);
+            if (std::isfinite(c) && c >= 0.0) return true;
+        }
     }
 
     return false;
