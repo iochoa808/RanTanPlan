@@ -49,6 +49,13 @@ public:
     // Build the analysis from a problem
     void analyze(const Problem& problem);
 
+    /// Incrementally update after action pruning. Compares old bounds
+    /// (stored internally) with new bounds to determine which achiever
+    /// pairs need Z3 re-verification. Pairs that were UNSAT before are
+    /// skipped (bounds only tighten). Pairs whose relevant fluents'
+    /// bounds didn't change are adopted directly.
+    void update(const Problem& new_problem, RPGData new_rpg_data);
+
     /**
      * @brief Compute the set of goal-relevant actions via transitive achiever closure.
      *
@@ -129,6 +136,17 @@ private:
     // Statistics tracking
     mutable size_t z3_query_count_ = 0;
 
+    // Incremental analysis state.
+    // Per-achiever relevant fluent cache: condition → action_label → fluent ExprIDs
+    // in the SMT query. Computed on first run, reused on updates. Stable because
+    // all keys are ExprIDs (shared pool) or labels (name+params).
+    std::unordered_map<ExprID,
+        std::unordered_map<std::string, std::unordered_set<ExprID>>>
+        achiever_relevant_fluents_;
+    // Fluents whose bounds changed since the previous analysis.
+    // Empty on first run; populated by update() before re-analyzing.
+    std::unordered_set<ExprID> changed_bound_fluents_;
+
     // Common initialization logic shared by both constructors
     void initialize_from_rpg_data(const Problem& problem, RPGData rpg_data);
 
@@ -139,6 +157,9 @@ private:
     void analyze_semantic_achievers();
     std::unordered_set<ExprID> collect_fluents_in_expression(ExprID eid);
     std::unordered_set<ExprID> get_action_modified_fluents(const Action& action);
+    // Collect ALL fluents referenced by the SMT query for (action, condition).
+    std::unordered_set<ExprID> collect_query_relevant_fluents(
+        const Action& action, ExprID condition_eid);
     bool fluent_sets_intersect(const std::unordered_set<ExprID>& set1, const std::unordered_set<ExprID>& set2);
     // SMT solver management methods for push/pop approach
     void initialize_persistent_solver();

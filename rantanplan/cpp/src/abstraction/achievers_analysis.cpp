@@ -101,6 +101,9 @@ void AchieversAnalysis::clear() {
     // Invalidate cache
     all_conditions_cached_ = false;
     all_conditions_cache_.clear();
+
+    // Note: achiever_relevant_fluents_ and changed_bound_fluents_ are NOT
+    // cleared here — they persist across analyze() calls for incremental reuse.
 }
 
 void AchieversAnalysis::analyze(const Problem& problem) {
@@ -188,6 +191,10 @@ void AchieversAnalysis::analyze_semantic_achievers() {
     auto& stats = Stats::instance();
     z3_query_count_ = 0;
 
+    bool incremental = !achiever_relevant_fluents_.empty();
+    size_t cache_skip_count = 0;
+    size_t cache_adopt_count = 0;
+
     // Get all conditions from preconditions and goals (both Boolean and numeric)
     std::unordered_set<ExprID> all_conditions;
 
@@ -205,7 +212,8 @@ void AchieversAnalysis::analyze_semantic_achievers() {
 
     Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
         {"conditions", std::to_string(all_conditions.size())},
-        {"actions", std::to_string(problem_->action_count())}
+        {"actions", std::to_string(problem_->action_count())},
+        {"incremental", incremental ? "yes" : "no"}
     });
 
     // For each condition, check which actions can achieve it semantically
@@ -227,21 +235,86 @@ void AchieversAnalysis::analyze_semantic_achievers() {
                 continue;
             }
 
-            // Use SMT to check if this action can achieve the condition
+            // --- Incremental cache logic ---
+            if (incremental) {
+                auto cond_it = achiever_relevant_fluents_.find(condition_eid);
+                bool was_achiever = false;
+                if (cond_it != achiever_relevant_fluents_.end()) {
+                    auto label_it = cond_it->second.find(action.label());
+                    was_achiever = (label_it != cond_it->second.end());
+
+                    if (was_achiever) {
+                        // Check if any relevant fluent's bounds changed
+                        bool needs_reverify = false;
+                        for (ExprID f : label_it->second) {
+                            if (changed_bound_fluents_.count(f)) {
+                                needs_reverify = true;
+                                break;
+                            }
+                        }
+
+                        if (!needs_reverify) {
+                            // Same bounds for all relevant fluents → adopt
+                            condition_to_achievers_[condition_eid].insert(action);
+                            action_to_achieved_conditions_[action].insert(condition_eid);
+                            ++cache_adopt_count;
+                            continue;
+                        }
+
+                        // Bounds changed → re-verify with Z3 (falls through)
+                    }
+                }
+
+                if (!was_achiever) {
+                    // Was UNSAT with wider bounds → still UNSAT
+                    ++cache_skip_count;
+                    continue;
+                }
+            }
+
+            // Z3 check (first run, or re-verification of previous achiever)
             if (check_action_achieves_condition_with_pushpop(action, condition_eid)) {
                 condition_to_achievers_[condition_eid].insert(action);
                 action_to_achieved_conditions_[action].insert(condition_eid);
+                // Store relevant fluents for future incremental use
+                achiever_relevant_fluents_[condition_eid][action.label()] =
+                    collect_query_relevant_fluents(action, condition_eid);
+            } else if (incremental) {
+                // Was achiever but now UNSAT → remove from cache
+                achiever_relevant_fluents_[condition_eid].erase(action.label());
+            }
+        }
+    }
+
+    // Clean up empty entries in the relevant fluents cache
+    if (incremental) {
+        for (auto it = achiever_relevant_fluents_.begin();
+             it != achiever_relevant_fluents_.end(); ) {
+            if (it->second.empty()) {
+                it = achiever_relevant_fluents_.erase(it);
+            } else {
+                ++it;
             }
         }
     }
 
     // Record final statistics
     stats.set("achievers_analysis.z3_queries_count", z3_query_count_);
+    stats.set("achievers_analysis.cache_skip_count", static_cast<double>(cache_skip_count));
+    stats.set("achievers_analysis.cache_adopt_count", static_cast<double>(cache_adopt_count));
     stats.set("achievers_analysis.total_conditions", condition_to_achievers_.size());
     stats.set("achievers_analysis.total_achievable_conditions",
               std::count_if(condition_to_achievers_.begin(), condition_to_achievers_.end(),
                            [](const auto& pair) { return !pair.second.empty(); }));
     stats.set("achievers_analysis.total_actions_with_achievers", action_to_achieved_conditions_.size());
+
+    if (incremental) {
+        Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+            {"cache_skips", std::to_string(cache_skip_count)},
+            {"cache_adopts", std::to_string(cache_adopt_count)},
+            {"z3_queries", std::to_string(z3_query_count_)}
+        });
+    }
 }
 
 const std::unordered_set<ExprID>& AchieversAnalysis::get_achieved_conditions(const Action& action) const {
@@ -444,6 +517,106 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
     persistent_solver_->pop();
 
     return result == z3::sat;
+}
+
+std::unordered_set<ExprID> AchieversAnalysis::collect_query_relevant_fluents(
+        const Action& action, ExprID condition_eid) {
+    std::unordered_set<ExprID> relevant;
+
+    // Fluents in the condition expression
+    auto cond_fluents = collect_fluents_in_expression(condition_eid);
+    relevant.insert(cond_fluents.begin(), cond_fluents.end());
+
+    // Fluents in action effects: assigned fluent + value expression + conditional effect condition
+    for (const auto& effect_wrapper : action.effects()) {
+        const EffectExpression& effect = effect_wrapper.effect_expression();
+        if (effect.fluent_id().valid()) {
+            relevant.insert(effect.fluent_id());
+        }
+        auto val_fluents = collect_fluents_in_expression(effect.value_id());
+        relevant.insert(val_fluents.begin(), val_fluents.end());
+        if (effect.is_conditional()) {
+            auto ce_fluents = collect_fluents_in_expression(effect.condition_id());
+            relevant.insert(ce_fluents.begin(), ce_fluents.end());
+        }
+    }
+
+    // Fluents in action precondition
+    if (action.has_precondition()) {
+        auto prec_fluents = collect_fluents_in_expression(action.precondition_id());
+        relevant.insert(prec_fluents.begin(), prec_fluents.end());
+    }
+
+    return relevant;
+}
+
+void AchieversAnalysis::update(const Problem& new_problem, RPGData new_rpg_data) {
+    auto start_total = std::chrono::high_resolution_clock::now();
+
+    // 1. Compute which fluent bounds changed
+    changed_bound_fluents_.clear();
+    for (const auto& [eid, new_iv] : new_rpg_data.state_variable_bounds) {
+        auto it = state_variable_bounds_.find(eid);
+        if (it == state_variable_bounds_.end() || it->second != new_iv) {
+            changed_bound_fluents_.insert(eid);
+        }
+    }
+    for (const auto& [eid, old_iv] : state_variable_bounds_) {
+        if (!new_rpg_data.state_variable_bounds.count(eid)) {
+            changed_bound_fluents_.insert(eid);
+        }
+    }
+
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"mode", "incremental"},
+        {"changed_bounds", std::to_string(changed_bound_fluents_.size())},
+        {"cached_achiever_conditions", std::to_string(achiever_relevant_fluents_.size())}
+    });
+
+    // 2. Update stored state
+    problem_ = &new_problem;
+    state_variable_bounds_ = std::move(new_rpg_data.state_variable_bounds);
+    action_id_to_first_layer_ = std::move(new_rpg_data.action_first_layers);
+    arpg_num_layers_ = new_rpg_data.layer_count;
+
+    // 3. Recreate SMT infrastructure (new bounds → new solver)
+    //    Destroy in reverse dependency order to avoid use-after-free:
+    //    solver depends on context, visitor depends on context + factory.
+    persistent_solver_.reset();
+    visitor_.reset();
+    variable_factory_.reset();
+    ctx_.reset();
+    ctx_ = std::make_unique<z3::context>();
+    variable_factory_ = std::make_unique<Z3VariableFactory>(*ctx_);
+    variable_factory_->set_problem(problem_);
+    visitor_ = std::make_unique<GroundedEncodingVisitor>(*ctx_, problem_, variable_factory_.get());
+    persistent_solver_ = std::make_unique<z3::solver>(*ctx_);
+    initialize_persistent_solver();
+
+    // 4. Re-analyze: analyze() rebuilds precondition/condition maps (cheap),
+    //    then analyze_semantic_achievers() takes the incremental path because
+    //    achiever_relevant_fluents_ is populated.
+    auto start_analysis = std::chrono::high_resolution_clock::now();
+    analyze(new_problem);
+    auto end_analysis = std::chrono::high_resolution_clock::now();
+
+    double analysis_time = std::chrono::duration<double>(end_analysis - start_analysis).count();
+
+    // 5. Clear transient state
+    changed_bound_fluents_.clear();
+
+    auto end_total = std::chrono::high_resolution_clock::now();
+    double total_time = std::chrono::duration<double>(end_total - start_total).count();
+
+    auto& stats = Stats::instance();
+    stats.set("achievers_analysis.update_time_seconds", total_time);
+    stats.set("achievers_analysis.semantic_analysis_time_seconds", analysis_time);
+
+    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
+        {"update_semantic", std::to_string(analysis_time) + "s"},
+        {"update_total", std::to_string(total_time) + "s"},
+        {"mem", std::to_string(static_cast<int>(MemoryTracker::instance().get_current_memory_mb())) + "MB"}
+    });
 }
 
 void AchieversAnalysis::print_analysis() const {
