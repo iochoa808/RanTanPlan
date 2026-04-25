@@ -39,6 +39,7 @@ void ActionPruningPass::apply(PipelineResult& result) const {
 
     size_t initial_actions = result.problem.actions().size();
     std::unique_ptr<AchieversAnalysis> final_achievers;
+    std::unique_ptr<AchieversAnalysis> achievers;  // persists across iterations for incremental reuse
     std::unordered_map<ExprID, Interval> final_bounds;
     std::vector<ConservationConstraint> final_conservations;
     int iteration = 0;
@@ -96,8 +97,13 @@ void ActionPruningPass::apply(PipelineResult& result) const {
             // Capture bounds BEFORE moving rpg_data into AchieversAnalysis
             auto bounds_snapshot = rpg_data.state_variable_bounds;
 
-            auto achievers = std::make_unique<AchieversAnalysis>(
-                result.problem, std::move(rpg_data));
+            // First iteration: construct. Subsequent: incremental update.
+            if (!achievers) {
+                achievers = std::make_unique<AchieversAnalysis>(
+                    result.problem, std::move(rpg_data));
+            } else {
+                achievers->update(result.problem, std::move(rpg_data));
+            }
 
             auto relevant_indices = achievers->compute_goal_relevant_action_indices(
                 result.problem, include_cost_fluents);
@@ -132,7 +138,7 @@ void ActionPruningPass::apply(PipelineResult& result) const {
             }
 
             result.problem = result.problem.without_actions(removed_indices);
-            final_achievers = std::move(achievers);
+            // achievers survives for incremental update on next iteration
         } else {
             // No backward pruning — single iteration, capture final data
             final_bounds = std::move(rpg_data.state_variable_bounds);
@@ -141,7 +147,7 @@ void ActionPruningPass::apply(PipelineResult& result) const {
         }
     }
 
-    // If we hit max_iterations with goal_relevance, rebuild on final problem
+    // If we hit max_iterations with goal_relevance, do one final update
     if (iteration == max_iter && need_goal_relevance) {
         auto rpg = std::make_unique<NumericRelaxedPlanningGraph>(result.problem);
         rpg->set_stop_when_all_reachable(false);
@@ -169,8 +175,13 @@ void ActionPruningPass::apply(PipelineResult& result) const {
         final_bounds = rpg_data.state_variable_bounds;
         final_conservations = std::move(conservations);
 
-        final_achievers = std::make_unique<AchieversAnalysis>(
-            result.problem, std::move(rpg_data));
+        if (achievers) {
+            achievers->update(result.problem, std::move(rpg_data));
+            final_achievers = std::move(achievers);
+        } else {
+            final_achievers = std::make_unique<AchieversAnalysis>(
+                result.problem, std::move(rpg_data));
+        }
     }
 
     // Compute SDAC cost bounds on the FINAL problem (fixes alignment bug:
