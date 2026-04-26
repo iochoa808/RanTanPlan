@@ -49,8 +49,6 @@ void AchieversAnalysis::initialize_from_rpg_data(const Problem& problem, RPGData
     auto& stats = Stats::instance();
     auto start_total = std::chrono::high_resolution_clock::now();
 
-    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {{"status", "starting"}});
-
     // Initialize SMT infrastructure
     ctx_ = std::make_unique<z3::context>();
     variable_factory_ = std::make_unique<Z3VariableFactory>(*ctx_);
@@ -405,10 +403,6 @@ void AchieversAnalysis::initialize_persistent_solver() {
     add_bounds_constraints_to_solver();
     auto end = std::chrono::high_resolution_clock::now();
     double init_time = std::chrono::duration<double>(end - start).count();
-
-    Logger::instance().component(VerbosityLevel::INFO, "Achievers", {
-        {"solver init", std::to_string(init_time) + "s"}
-    });
 
     auto& stats = Stats::instance();
     stats.set("achievers_analysis.solver_init_time_seconds", init_time);

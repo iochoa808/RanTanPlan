@@ -27,6 +27,28 @@ namespace rantanplan {
  * For each action-condition pair, checks if there exists a state where executing the
  * action transitions the condition from false to true.
  *
+ * Incremental updates: across iterations of ActionPruningPass, call update()
+ * instead of re-constructing. The analysis caches per-achiever "relevant
+ * fluents" (every fluent appearing in the SMT query for that pair) and the
+ * previous RPG bounds. On update():
+ *   - Pairs that were UNSAT before are skipped (tighter bounds keep UNSAT).
+ *   - Pairs whose relevant fluents are not in the changed-bounds set are
+ *     adopted directly (the SMT solver's constraints over those fluents are
+ *     identical, so the result must be the same).
+ *   - Only the remaining pairs (previously SAT, with at least one relevant
+ *     fluent whose bounds tightened) require a fresh Z3 query.
+ * Action identity across Problem::without_actions is by `action.label()`
+ * (name + parameters); IDs are re-indexed and unsafe.
+ *
+ * Test coverage:
+ *   pddl/test/incremental-cascade/   - 2-step cascade: iter 1 removes a
+ *     "waste" action, iter 2's update flips an achiever SAT->UNSAT via a
+ *     value-expression-driven bound dependency, iter 3 reaches fixpoint.
+ *   pddl/test/incremental-cascade-3/ - 3-step cascade: a multi-effect
+ *     "trigger" action whose Boolean side keeps a chain alive in iter 2
+ *     while its numeric side defers a second bound tightening to iter 3,
+ *     producing Z3 re-verifications in BOTH iter 2 and iter 3.
+ *
  * TODO: It is quite expensive for big problems. Consider moving the Boolean checks to syntactic checks
  * Also, can we group checks?
  */

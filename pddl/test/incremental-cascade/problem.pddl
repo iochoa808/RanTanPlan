@@ -1,0 +1,5 @@
+(define (problem incremental-cascade-1)
+  (:domain incremental-cascade)
+  (:init (= (x) 0) (= (y) 0))
+  (:goal (>= (y) 50))
+)

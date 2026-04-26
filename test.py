@@ -34,6 +34,8 @@ QUICK_TEST_DIRS = [
     "pddl/test/sdac-simple",
     "pddl/test/sdac-zero-bound",
     "pddl/test/worksworld",
+    "pddl/test/incremental-cascade",    # 2-step cascade (1 Z3 reverify in iter 2)
+    "pddl/test/incremental-cascade-3",  # 3-step cascade (Z3 reverify in iter 2 AND iter 3)
 ]
 
 # Strategies tested in --quick mode. Covers each major code path without

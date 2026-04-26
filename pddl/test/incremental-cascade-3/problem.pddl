@@ -1,0 +1,5 @@
+(define (problem incremental-cascade-3-1)
+  (:domain incremental-cascade-3)
+  (:init (= (x) 0) (= (y) 0) (= (z) 0) (= (h) 0))
+  (:goal (done))
+)
