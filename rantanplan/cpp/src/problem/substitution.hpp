@@ -12,6 +12,12 @@ namespace rantanplan {
 /// Example: {"from" -> ExprID(city0_constant), "to" -> ExprID(city1_constant)}
 using Substitution = std::unordered_map<std::string, ExprID>;
 
+/// Recursively walk an ExprID tree and replace every VARIABLE node whose name
+/// appears in `var_subst` with the corresponding ExprID. Used during forall-effect
+/// expansion to bind quantified variables (VARIABLE nodes) to concrete constants.
+/// Mirrors substitute() but targets VARIABLE nodes instead of PARAMETER nodes.
+ExprID substitute_vars(ExprPool& pool, ExprID expr, const Substitution& var_subst);
+
 /// Recursively walk an ExprID tree and replace every PARAMETER node whose name
 /// appears in `subst` with the corresponding ExprID. The result is interned
 /// into the pool, so structurally identical substitutions share the same ExprID.

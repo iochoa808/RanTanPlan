@@ -108,20 +108,28 @@ bool FactIndex::decompose_state_variable(ExprID eid,
     for (size_t i = 0; i < num_args; ++i) {
         ExprID arg_id = pool.argument(eid, i);
 
-        // Arguments should be CONSTANT nodes with a string payload (object name).
-        if (!pool.is_constant(arg_id) || !pool.payload_is_string(arg_id)) {
-            // Could be a PARAMETER node (lifted) — that's not a ground fact.
+        if (!pool.is_constant(arg_id)) {
+            // PARAMETER node (lifted) — that's not a ground fact.
             return false;
         }
 
-        const std::string& obj_name = pool.payload_string(arg_id);
-        const Object* obj = problem_.find_object(obj_name);
-        if (!obj) return false;
+        if (pool.payload_is_string(arg_id)) {
+            const std::string& obj_name = pool.payload_string(arg_id);
+            const Object* obj = problem_.find_object(obj_name);
+            if (!obj) return false;
 
-        // Find object index by scanning (objects are stored by index).
-        // Problem::find_object returns a pointer; derive index from address.
-        size_t obj_index = static_cast<size_t>(obj - &problem_.objects()[0]);
-        out_object_indices.push_back(static_cast<int>(obj_index));
+            // Find object index by scanning (objects are stored by index).
+            // Problem::find_object returns a pointer; derive index from address.
+            size_t obj_index = static_cast<size_t>(obj - &problem_.objects()[0]);
+            out_object_indices.push_back(static_cast<int>(obj_index));
+        } else if (pool.payload_is_int(arg_id)) {
+            // Integer-typed element (e.g. membership predicate for set-of-int).
+            // The integer value is used directly as the "index", consistent with
+            // BindingMatcher::get_type_compatible_objects for bounded-int params.
+            out_object_indices.push_back(static_cast<int>(pool.payload_int(arg_id)));
+        } else {
+            return false;
+        }
     }
 
     return true;

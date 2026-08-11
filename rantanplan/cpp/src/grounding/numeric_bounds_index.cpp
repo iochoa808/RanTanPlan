@@ -129,6 +129,12 @@ bool NumericBoundsIndex::update_bounds(int fluent_schema_id,
         // First time seeing this fluent. Default is [0, 0].
         Interval def(0.0);
         Interval merged = def.convex_union(new_interval);
+        // Clamp to declared type bounds if applicable.
+        auto type_it = type_bounds_per_schema_.find(fluent_schema_id);
+        if (type_it != type_bounds_per_schema_.end()) {
+            merged.lower = std::max(merged.lower, type_it->second.lower);
+            merged.upper = std::min(merged.upper, type_it->second.upper);
+        }
         bounds_.emplace(key, merged);
         if (merged.lower < def.lower) lower_expansion_count_[key]++;
         if (merged.upper > def.upper) upper_expansion_count_[key]++;
@@ -136,6 +142,12 @@ bool NumericBoundsIndex::update_bounds(int fluent_schema_id,
     }
 
     Interval merged = it->second.convex_union(new_interval);
+    // Clamp to declared type bounds if applicable.
+    auto type_it2 = type_bounds_per_schema_.find(fluent_schema_id);
+    if (type_it2 != type_bounds_per_schema_.end()) {
+        merged.lower = std::max(merged.lower, type_it2->second.lower);
+        merged.upper = std::min(merged.upper, type_it2->second.upper);
+    }
     if (merged == it->second) {
         return false;  // No change.
     }
@@ -207,16 +219,23 @@ bool NumericBoundsIndex::decompose_numeric_state_variable(
     for (size_t i = 0; i < num_args; ++i) {
         ExprID arg_id = pool.argument(eid, i);
 
-        if (!pool.is_constant(arg_id) || !pool.payload_is_string(arg_id)) {
+        if (!pool.is_constant(arg_id)) {
             return false;  // Not ground (has PARAMETER node).
         }
 
-        const std::string& obj_name = pool.payload_string(arg_id);
-        const Object* obj = problem_.find_object(obj_name);
-        if (!obj) return false;
-
-        size_t obj_index = static_cast<size_t>(obj - &problem_.objects()[0]);
-        out_obj_indices.push_back(static_cast<int>(obj_index));
+        if (pool.payload_is_string(arg_id)) {
+            // Object-indexed argument: map object name to index.
+            const std::string& obj_name = pool.payload_string(arg_id);
+            const Object* obj = problem_.find_object(obj_name);
+            if (!obj) return false;
+            size_t obj_index = static_cast<size_t>(obj - &problem_.objects()[0]);
+            out_obj_indices.push_back(static_cast<int>(obj_index));
+        } else if (pool.payload_is_int(arg_id)) {
+            // Integer-indexed argument (e.g. array cell index): use value directly.
+            out_obj_indices.push_back(static_cast<int>(pool.payload_int(arg_id)));
+        } else {
+            return false;  // Unsupported argument type (bool/double constant).
+        }
     }
 
     return true;
@@ -348,6 +367,40 @@ void NumericBoundsIndex::precompute_freezes() {
         //         Logger::instance().verbose("  " + fluent.name() + ": " + sides + " frozen");
         //     }
         // }
+    }
+}
+
+void NumericBoundsIndex::seed_from_type_bounds() {
+    for (const auto& fluent : problem_.fluents()) {
+        if (!fluent.is_function()) continue;
+        if (!fluent.value_type()) continue;
+
+        const Type* bt = fluent.value_type()->bounded_int_ancestor();
+        if (!bt) continue;
+
+        const double lo = static_cast<double>(bt->lower_bound());
+        const double hi = static_cast<double>(bt->upper_bound());
+        const int sid = fluent.id();
+
+        type_bounds_per_schema_.emplace(sid, Interval(lo, hi));
+
+        // Freeze both sides: maybe_widen() will never push past lo or hi.
+        freeze_lower_.insert(sid);
+        freeze_upper_.insert(sid);
+    }
+
+    // Clamp all existing bounds_ entries for bounded-type schemas to [lo, hi].
+    for (auto& [key, iv] : bounds_) {
+        auto type_it = type_bounds_per_schema_.find(key.schema_id);
+        if (type_it == type_bounds_per_schema_.end()) continue;
+        iv.lower = std::max(iv.lower, type_it->second.lower);
+        iv.upper = std::min(iv.upper, type_it->second.upper);
+    }
+
+    if (!type_bounds_per_schema_.empty()) {
+        Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
+            {"type bounds seeded", std::to_string(type_bounds_per_schema_.size()) + " schemas"}
+        });
     }
 }
 

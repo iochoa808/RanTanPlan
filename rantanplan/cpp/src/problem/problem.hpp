@@ -152,6 +152,10 @@ public:
     // When true, encoders use Int-sorted Z3 variables instead of Real.
     bool all_integer() const { return all_integer_; }
     void set_all_integer(bool v) { all_integer_ = v; }
+
+    // [XTS] True iff any grounded fluent is array or set types. Set by main.cpp
+    bool has_arrays() const { return has_array_or_set_fluents_; }
+    void set_has_arrays(bool v) { has_array_or_set_fluents_ = v; }
     
     // Type access
     const std::vector<Type>& types() const { return *types_; }
@@ -227,6 +231,7 @@ private:
     // Metric
     MetricKind metric_kind_ = MetricKind::NONE;
     bool all_integer_ = false;
+    bool has_array_or_set_fluents_ = false;  // [XTS] see has_arrays()
 
     // Expression interning pool
     std::shared_ptr<ExprPool> pool_ = std::make_shared<ExprPool>();

@@ -190,7 +190,13 @@ Problem load_problem_from_protobuf(const ::Problem& pb_problem) {
     for (const auto& pb_type : pb_problem.types()) {
         problem.types_->emplace_back(pb_type.type_name());
         problem.types_->back().set_parent_name(pb_type.parent_type());
+        // [XTS] Store element type and size so array_element_type_name() /
+        // array_size() / set_element_type_name() work without string parsing.
+        if (!pb_type.element_type().empty()) {
+            problem.types_->back().set_element_info(pb_type.element_type(), static_cast<int64_t>(pb_type.size()));
+        }
     }
+
     for (auto& type : *problem.types_) {
         problem.type_name_to_ptr_[type.name()] = &type;
     }
@@ -286,7 +292,12 @@ pb::Plan plan_to_protobuf(const Plan& plan) {
 
         for (const Parameter& param : action->parameters()) {
             pb::Atom* pb_param = pb_action_instance->add_parameters();
-            pb_param->set_symbol(param.name());
+            const Type* ptype = param.type();
+            if (ptype && ptype->bounded_int_ancestor()) {
+                pb_param->set_int_(std::stoll(param.name()));
+            } else {
+                pb_param->set_symbol(param.name());
+            }
         }
     }
 

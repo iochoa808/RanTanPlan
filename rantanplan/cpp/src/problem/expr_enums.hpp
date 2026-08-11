@@ -34,6 +34,16 @@ enum class ExprOperator {
     // Logical operators
     AND, OR, NOT, IMPLIES, IFF,
 
+    // Set operators
+    SET_MEMBER, SET_ADD, SET_REMOVE, SET_UNION, SET_INTERSECT, SET_DIFFERENCE, SET_CONSTANT,
+    SET_CARDINALITY, SET_SUBSETEQ, SET_DISJOINT,
+
+    // Array operators
+    ARRAY_READ, ARRAY_WRITE, ARRAY_CONSTANT,
+
+    // Count operator (number of true boolean args)
+    COUNT,
+
     // Unknown operator
     UNKNOWN
 };
@@ -62,6 +72,26 @@ inline ExprOperator string_to_expr_operator(const std::string& op_string) {
     if (op_string == "up:not") return ExprOperator::NOT;
     if (op_string == "up:implies") return ExprOperator::IMPLIES;
     if (op_string == "up:iff") return ExprOperator::IFF;
+
+    // Set operators (UP format)
+    if (op_string == "up:set_member") return ExprOperator::SET_MEMBER;
+    if (op_string == "up:set_add")    return ExprOperator::SET_ADD;
+    if (op_string == "up:set_remove") return ExprOperator::SET_REMOVE;
+    if (op_string == "up:set_union")  return ExprOperator::SET_UNION;
+    if (op_string == "up:set_intersect") return ExprOperator::SET_INTERSECT;
+    if (op_string == "up:set_difference") return ExprOperator::SET_DIFFERENCE;
+    if (op_string == "up:set_constant")   return ExprOperator::SET_CONSTANT;
+    if (op_string == "up:set_subseteq")      return ExprOperator::SET_SUBSETEQ;
+    if (op_string == "up:set_disjoint")      return ExprOperator::SET_DISJOINT;
+    if (op_string == "up:set_cardinality")   return ExprOperator::SET_CARDINALITY;
+
+    // Array operators (UP format)
+    if (op_string == "up:array_read")     return ExprOperator::ARRAY_READ;
+    if (op_string == "up:array_write")    return ExprOperator::ARRAY_WRITE;
+    if (op_string == "up:array_constant") return ExprOperator::ARRAY_CONSTANT;
+
+    // Count operator (UP format)
+    if (op_string == "up:count")             return ExprOperator::COUNT;
 
     // Standard notation
     if (op_string == "+") return ExprOperator::PLUS;
@@ -106,6 +136,20 @@ inline std::string expr_operator_to_string(ExprOperator op) {
         case ExprOperator::NOT: return "not";
         case ExprOperator::IMPLIES: return "=>";
         case ExprOperator::IFF: return "=";
+        case ExprOperator::SET_MEMBER:     return "up:set_member";
+        case ExprOperator::SET_ADD:        return "up:set_add";
+        case ExprOperator::SET_REMOVE:     return "up:set_remove";
+        case ExprOperator::SET_UNION:      return "up:set_union";
+        case ExprOperator::SET_INTERSECT:  return "up:set_intersect";
+        case ExprOperator::SET_DIFFERENCE: return "up:set_difference";
+        case ExprOperator::SET_CONSTANT:   return "up:set_constant";
+        case ExprOperator::SET_CARDINALITY: return "up:set_cardinality";
+        case ExprOperator::SET_SUBSETEQ:    return "up:set_subseteq";
+        case ExprOperator::SET_DISJOINT:    return "up:set_disjoint";
+        case ExprOperator::COUNT:           return "up:count";
+        case ExprOperator::ARRAY_READ:      return "up:array_read";
+        case ExprOperator::ARRAY_WRITE:     return "up:array_write";
+        case ExprOperator::ARRAY_CONSTANT:  return "up:array_constant";
         default: return "";
     }
 }

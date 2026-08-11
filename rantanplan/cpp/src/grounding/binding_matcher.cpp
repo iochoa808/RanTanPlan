@@ -545,6 +545,14 @@ std::vector<PartialBinding> BindingMatcher::fill_unbound_parameters(
 bool BindingMatcher::is_type_compatible(const Action& action,
                                          int param_idx, int obj_idx) const {
     const Type* ptype = action.parameter(param_idx).type();
+
+    // For bounded-int parameters, check range
+    const Type* bounded = ptype ? ptype->bounded_int_ancestor() : nullptr;
+    if (bounded) {
+        return obj_idx >= static_cast<int>(bounded->lower_bound()) &&
+               obj_idx <= static_cast<int>(bounded->upper_bound());
+    }
+
     const Type* otype = problem_.object(obj_idx).type();
 
     if (!ptype || !otype) return true;  // untyped ⇒ always compatible
@@ -558,9 +566,20 @@ std::vector<std::vector<int>> BindingMatcher::get_type_compatible_objects(
     std::vector<std::vector<int>> compat(action.parameter_count());
 
     for (size_t p = 0; p < action.parameter_count(); ++p) {
-        for (size_t o = 0; o < problem_.object_count(); ++o) {
-            if (is_type_compatible(action, static_cast<int>(p), static_cast<int>(o))) {
-                compat[p].push_back(static_cast<int>(o));
+        const Type* ptype = action.parameter(p).type();
+        const Type* bounded = ptype ? ptype->bounded_int_ancestor() : nullptr;
+
+        if (bounded) {
+            // Enumerate integer values [lo, hi] for bounded-int parameters.
+            for (int64_t v = bounded->lower_bound(); v <= bounded->upper_bound(); ++v) {
+                compat[p].push_back(static_cast<int>(v));
+            }
+        } else {
+            // Enumerate type-compatible objects (existing behaviour).
+            for (size_t o = 0; o < problem_.object_count(); ++o) {
+                if (is_type_compatible(action, static_cast<int>(p), static_cast<int>(o))) {
+                    compat[p].push_back(static_cast<int>(o));
+                }
             }
         }
     }

@@ -95,6 +95,10 @@ size_t ReachabilityGrounder::collect_add_effects(const Action& ground_action,
                 } else {
                     valid = false;
                 }
+            } else if (pool.is_constant(arg) && pool.payload_is_int(arg)) {
+                // Bounded-int argument (there is no Object for it), the integer value
+                // itself plays the role of the "object index".
+                obj_indices.push_back(static_cast<int>(pool.payload_int(arg)));
             } else {
                 valid = false;
             }
@@ -352,6 +356,7 @@ GroundingResult ReachabilityGrounder::ground() {
         numeric_bounds = std::make_unique<NumericBoundsIndex>(lifted_problem_);
         numeric_bounds->initialize_from_initial_state();
         numeric_bounds->precompute_freezes();
+        numeric_bounds->seed_from_type_bounds();
         Logger::instance().component(VerbosityLevel::INFO, "Grounding", {
             {"numeric bounds", "enabled"}
         });

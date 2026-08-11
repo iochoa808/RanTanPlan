@@ -51,6 +51,13 @@ public:
     /// effect structure.  Frozen sides are never widened by maybe_widen().
     void precompute_freezes();
 
+    /// Seed bounds from declared bounded-integer fluent value types.
+    /// Clamps initial-state bounds to [lo, hi], registers type intervals for
+    /// update_bounds() clamping, and freezes both sides so maybe_widen() never
+    /// exceeds the declared range.
+    /// Call after initialize_from_initial_state() and precompute_freezes().
+    void seed_from_type_bounds();
+
     /// Decompose a ground STATE_VARIABLE ExprID for a numeric fluent into
     /// (schema_id, obj_indices). Returns false if not a numeric fluent or
     /// if decomposition fails.
@@ -93,6 +100,10 @@ private:
     /// Populated by precompute_freezes().
     std::unordered_set<int> freeze_upper_;
     std::unordered_set<int> freeze_lower_;
+
+    /// Per-schema type bounds from bounded-int value-type declarations.
+    /// update_bounds() clamps merged intervals to these when present.
+    std::unordered_map<int, Interval> type_bounds_per_schema_;
 };
 
 } // namespace rantanplan
