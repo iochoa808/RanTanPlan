@@ -64,6 +64,45 @@ void InvariantOraclePass::apply(PipelineResult& result) const {
         std::vector<const MutexCandidate*> tier1_failed;
         for (const auto& candidate : candidates) {
             if (syntactic_mutex_check(candidate, problem)) {
+                // Base case of the induction.  syntactic_mutex_check proves only
+                // the inductive step (no action can raise the number of true
+                // members above one); "the count never rises above one" implies
+                // at-most-one only if it started there.  Actions that only delete
+                // members satisfy the step for free (adds_count == 0), so a group
+                // can clear Tier 1 while already being false in s0.
+                //
+                // An accepted mutex becomes an atmost(...,1) assertion at *every*
+                // timestep (see GroundedEncoder::encode_state_constraints), so a
+                // group that s0 violates contradicts the initial-state axioms: the
+                // formula is UNSAT at every horizon and the planner reports a false
+                // UNSOLVABLE on a problem with a one-step plan.
+                //
+                // Not hypothetical — this is what breaks without the check.  The UP
+                // `iasciu` pipeline's INTEGERS_REMOVING lowers a bounded-int array
+                // (e.g. dst - ArrayType(3, IntType(0,9))) into one boolean fluent per
+                // (index, value) pair, dst(n0, v).  Those are precisely the arity->=2
+                // booleans generate_mutex_candidates groups on, and several hold in s0
+                // at once, so dst(n0, ...) was being accepted as at-most-one and made
+                // whole_sv_assign & co. unsolvable: 18 XTS unit tests (test_PDDL-XTS.py
+                // 262/284 -> 280/284, all in the py->up->rtp pipeline).
+                //
+                // Note this is invisible from the native/PDDL path: tier1_amo is 0 on
+                // all of pddl/test, xts/benchmarks/domains and every *.pddl unit
+                // instance, because only the UP compilers produce fluents of this
+                // shape.  A .pddl-only A/B will show this check as dead code.
+                int init_count = 0;
+                for (ExprID m : candidate.members) {
+                    if (initially_true.count(m)) init_count++;
+                }
+                if (init_count > 1) {
+                    // Fall through to Tier 1.5 rather than dropping the candidate.
+                    // That is not a second chance to be wrongly accepted: h² seeds
+                    // co-reachability from the pairs true in s0, so these members
+                    // are never reported mutex and the group is rejected there too.
+                    tier1_failed.push_back(&candidate);
+                    continue;
+                }
+
                 MutexConstraint inv;
                 inv.members = candidate.members;
                 inv.label = candidate.predicate + "(" + candidate.entity + ", ...)";
@@ -410,6 +449,12 @@ bool InvariantOraclePass::syntactic_mutex_check(
     const auto& members = candidate.members;
     std::unordered_set<ExprID> member_set(members.begin(), members.end());
 
+    // NOTE: this is the INDUCTIVE STEP ONLY — it proves that no action can raise
+    // the number of true members above one: at-most-one is preserved by
+    // the transition relation.  It says nothing about the initial state, so a
+    // `true` result alone does not establish the invariant.  The caller must also
+    // confirm at most one member holds in s0 (see the base-case check in apply()).
+    //
     // For each action that modifies any member of the group:
     // 1. It must not have conditional effects on any member.
     // 2. If it sets a member to TRUE, it must set exactly one other member to FALSE.

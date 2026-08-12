@@ -173,7 +173,7 @@ private:
     void initialize_from_rpg_data(const Problem& problem, RPGData rpg_data);
 
     // Helper methods
-    void extract_cnf_literals(ExprID eid, std::vector<ExprID>& literals);
+    void extract_cnf_literals(ExprID eid, std::vector<ExprID>& literals) const;
     void process_action_preconditions(const Action& action);
     void process_goal_conditions(const Goal& goal);
     void analyze_semantic_achievers();

@@ -9,6 +9,7 @@
 #include <z3++.h>
 
 #include <vector>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -274,6 +275,12 @@ private:
     std::unordered_set<int> numeric_fluent_ids_;
     std::unordered_set<int> object_fluent_ids_;
 
+    // Initial array element map: fluent_name -> {(row,col,...) -> object_ExprID}
+    // Built once from the initial state ARRAY_CONSTANT assignments; used by
+    // propagate_object_effects to resolve ARRAY_READ chains whose base is the
+    // initial (unmodified) array value.
+    std::unordered_map<std::string, std::map<std::vector<int64_t>, ExprID>> array_init_;
+
     // ========================================================================
     // MEMBER VARIABLES - Z3 Infrastructure
     // ========================================================================
@@ -347,6 +354,14 @@ private:
      * @brief Initialize layer 0 from fully-defined initial state
      */
     void initialize_layer_0();
+
+    /**
+     * @brief Build the initial array element map from ARRAY_CONSTANT assignments.
+     *
+     * Lets propagate_object_effects resolve an effect value that reads from an
+     * array no action has written yet, e.g. assign(robot_at, card_at[1][0]).
+     */
+    void build_array_init();
 
     // ========================================================================
     // PRIVATE METHODS - Main Algorithm

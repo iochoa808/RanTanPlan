@@ -73,6 +73,14 @@ public:
     // State constraints (mutexes, bounds) from InvariantOraclePass
     virtual std::shared_ptr<z3::expr> encode_state_constraints(int t) = 0;
 
+    /// [XTS] Declared type-range constraints only (bounded-int scalar fluents and
+    /// bounded-int array cells). Planners assert this at the goal horizon h, which
+    /// add_timestep_constraints never covers (it runs t < h). Kept separate from
+    /// encode_state_constraints so the goal state is NOT additionally constrained
+    /// by mutex/domain/conservation invariants, preserving the pre-XTS encoding
+    /// for problems without bounded types (where this returns nullptr).
+    virtual std::shared_ptr<z3::expr> encode_type_bounds(int /*t*/) { return nullptr; }
+
     /// Receive state constraints from the pipeline result.
     void set_state_constraints(StateConstraints sc) { state_constraints_ = std::move(sc); }
 

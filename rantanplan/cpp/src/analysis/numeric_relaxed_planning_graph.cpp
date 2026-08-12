@@ -1,5 +1,7 @@
 #include "numeric_relaxed_planning_graph.hpp"
 #include "../config/config.hpp"
+#include "../problem/substitution.hpp"
+#include "../util/ipar_names.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/scoped_timer.hpp"
 #include "../util/logger.hpp"
@@ -7,8 +9,10 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <map>
 #include <sstream>
 #include <limits>
+#include <functional>
 
 namespace rantanplan {
 
@@ -138,6 +142,9 @@ NumericRelaxedPlanningGraph::NumericRelaxedPlanningGraph(const Problem& problem)
     // Silence Z3 output from RPG's internal queries
     ctx_.set("verbose", 0);
 
+    // Set problem pointer so resolve_elem_sort can look up type info for array fluents
+    variable_factory_.set_problem(&problem_);
+
     // Build EPC index for efficient effect lookup
     build_epc_index();
 
@@ -217,12 +224,69 @@ void NumericRelaxedPlanningGraph::build_epc_index() {
         epc_index_[eid] = std::vector<std::pair<const Action*, const EffectExpression*>>();
     }
 
-    // Add action effects to the fluents that can be modified
+    // [XTS] Build lookup: "base[i0][i1]..." name -> ExprID for IPAR cell SVs.
+    // IPAR cell SVs are arity-0 STATE_VARIABLEs whose name follows the shared
+    // parse_ipar_cell_name convention (any dimension count)
+    const auto& pool = problem_.pool();
+    std::unordered_map<std::string, ExprID> ipar_cell_sv_by_name;
+    for (ExprID eid : problem_.grounded_fluents()) {
+        if (!pool.is_state_variable(eid)) continue;
+        if (pool.argument_count(eid) != 0) continue;
+        ExprID h = pool.head_symbol_id(eid);
+        if (!pool.payload_is_string(h)) continue;
+        const std::string& nm = pool.payload_string(h);
+        if (parse_ipar_cell_name(nm)) ipar_cell_sv_by_name[nm] = eid;
+    }
+
+    // Add action effects to the fluents that can be modified.
     for (const Action& action : problem_.actions()) {
         for (const Effect& effect : action.effects()) {
             const EffectExpression& eff_expr = effect.effect_expression();
+            // Skip effects with CONST(false) conditions: they will never fire
+            if (eff_expr.is_conditional() && pool.is_false_constant(eff_expr.condition_id()))
+                continue;
             ExprID fluent_eid = eff_expr.fluent_id();
             epc_index_[fluent_eid].emplace_back(&action, &eff_expr);
+
+            // [XTS] N-D array cell write with all-constant indices -> also register
+            // for the matching IPAR cell SV. Peel the ARRAY_READ chain (outermost
+            // index sits on the ARRAY_WRITE node) down to the root SV, collecting
+            // indices outermost-first: ARRAY_WRITE(ARRAY_READ(sv,i),j) → "sv[i][j]".
+            if (pool.is_function_application(fluent_eid) &&
+                pool.op(fluent_eid) == ExprOperator::ARRAY_WRITE &&
+                pool.argument_count(fluent_eid) >= 2) {
+                std::vector<int64_t> rev_idxs;
+                bool all_const = true;
+                ExprID idx_arg = pool.argument(fluent_eid, 1);
+                if (pool.is_constant(idx_arg) && pool.payload_is_int(idx_arg)) {
+                    rev_idxs.push_back(pool.payload_int(idx_arg));
+                } else {
+                    all_const = false;
+                }
+                ExprID base_arg = pool.argument(fluent_eid, 0);
+                while (all_const && pool.is_function_application(base_arg) &&
+                       pool.op(base_arg) == ExprOperator::ARRAY_READ &&
+                       pool.argument_count(base_arg) >= 2) {
+                    ExprID inner_idx = pool.argument(base_arg, 1);
+                    if (pool.is_constant(inner_idx) && pool.payload_is_int(inner_idx)) {
+                        rev_idxs.push_back(pool.payload_int(inner_idx));
+                    } else {
+                        all_const = false;
+                    }
+                    base_arg = pool.argument(base_arg, 0);
+                }
+                if (all_const && pool.is_state_variable(base_arg)) {
+                    ExprID bh = pool.head_symbol_id(base_arg);
+                    if (pool.payload_is_string(bh)) {
+                        std::vector<int64_t> idxs(rev_idxs.rbegin(), rev_idxs.rend());
+                        auto it = ipar_cell_sv_by_name.find(
+                            make_ipar_cell_name(pool.payload_string(bh), idxs));
+                        if (it != ipar_cell_sv_by_name.end()) {
+                            epc_index_[it->second].emplace_back(&action, &eff_expr);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -250,6 +314,90 @@ void NumericRelaxedPlanningGraph::classify_fluents() {
             object_fluent_ids_.insert(fluent_id);
         }
         fluent_id++;
+    }
+}
+
+// ============================================================================
+// Helpers for array-read-dependent boolean fluent initialization
+// ============================================================================
+
+// Recursively populate `out` with leaf elements of an ARRAY_CONSTANT subtree.
+// `idx` accumulates the multi-dimensional index in row-major order (outer → inner).
+static void extract_array_elems(
+    ExprID node,
+    const ExprPool& pool,
+    std::vector<int64_t>& idx,
+    std::map<std::vector<int64_t>, ExprID>& out)
+{
+    if (pool.is_function_application(node) &&
+        pool.op(node) == ExprOperator::ARRAY_CONSTANT) {
+        size_t n = pool.argument_count(node);
+        for (size_t i = 0; i < n; ++i) {
+            idx.push_back(static_cast<int64_t>(i));
+            extract_array_elems(pool.argument(node, i), pool, idx, out);
+            idx.pop_back();
+        }
+    } else {
+        out[idx] = node;  // leaf object constant
+    }
+}
+
+// Attempt to resolve a (possibly nested) ARRAY_READ chain to an object constant
+// using the initial array element map.  Returns EXPR_NULL on failure (non-constant
+// index, unknown fluent, or out-of-range position).
+static ExprID resolve_array_read(
+    ExprID eid,
+    const ExprPool& pool,
+    const std::unordered_map<std::string, std::map<std::vector<int64_t>, ExprID>>& array_init)
+{
+    // Not an array read — return the expression as-is (already an object constant).
+    if (!pool.is_function_application(eid) || pool.op(eid) != ExprOperator::ARRAY_READ)
+        return eid;
+
+    // Unwind the ARRAY_READ chain outermost-first, collecting concrete indices.
+    std::vector<int64_t> indices;
+    ExprID cur = eid;
+    while (pool.is_function_application(cur) && pool.op(cur) == ExprOperator::ARRAY_READ) {
+        if (pool.argument_count(cur) < 2) return EXPR_NULL;
+        ExprID idx_eid = pool.argument(cur, 1);
+        int64_t v = 0;
+        if      (pool.payload_is_int(idx_eid))    v = pool.payload_int(idx_eid);
+        else if (pool.payload_is_double(idx_eid)) v = static_cast<int64_t>(pool.payload_double(idx_eid));
+        else return EXPR_NULL;  // non-constant index
+        indices.push_back(v);
+        cur = pool.argument(cur, 0);
+    }
+
+    // `cur` must now be the array state variable.
+    if (!pool.is_state_variable(cur)) return EXPR_NULL;
+    ExprID head = pool.head_symbol_id(cur);
+    if (!pool.payload_is_string(head)) return EXPR_NULL;
+    const std::string& fname = pool.payload_string(head);
+
+    // indices is outermost-first; reverse to get innermost-first (row, col, ...).
+    std::reverse(indices.begin(), indices.end());
+
+    auto fname_it = array_init.find(fname);
+    if (fname_it == array_init.end()) return EXPR_NULL;
+    auto idx_it = fname_it->second.find(indices);
+    if (idx_it == fname_it->second.end()) return EXPR_NULL;
+
+    return idx_it->second;
+}
+
+void NumericRelaxedPlanningGraph::build_array_init() {
+    const auto& pool = problem_.pool();
+    array_init_.clear();
+    for (const auto& assign : problem_.initial_state()) {
+        ExprID fluent_eid = assign.fluent_id();
+        ExprID val_eid    = assign.value_id();
+        if (!val_eid.valid() || !pool.is_function_application(val_eid)) continue;
+        if (pool.op(val_eid) != ExprOperator::ARRAY_CONSTANT) continue;
+        if (!pool.is_state_variable(fluent_eid)) continue;
+        ExprID head = pool.head_symbol_id(fluent_eid);
+        if (!pool.payload_is_string(head)) continue;
+        std::vector<int64_t> idx;
+        extract_array_elems(val_eid, pool, idx, array_init_[pool.payload_string(head)]);
     }
 }
 
@@ -310,6 +458,10 @@ void NumericRelaxedPlanningGraph::initialize_layer_0() {
             }
         }
     }
+
+    // Build the initial array element map once (used by object propagation to
+    // resolve effect values that read from an unmodified array).
+    build_array_init();
 
     // Store layer 0
     layer_states_.push_back(std::move(initial_layer));
@@ -653,10 +805,29 @@ void NumericRelaxedPlanningGraph::propagate_object_effects(
                         next_state.object_value_sets[fluent_id].insert(v);
                     }
                 }
+            } else if (pool.is_function_application(val_eid) &&
+                       pool.op(val_eid) == ExprOperator::ARRAY_READ) {
+                // Effect value is an ARRAY_READ chain (e.g., assign(robot_at, read(read(card_at,r),c))).
+                // Try to resolve it against the initial array content; if unsuccessful (non-constant
+                // index or runtime-dependent array), add all objects of the fluent's type as a safe
+                // over-approximation so we never prune a genuinely applicable action.
+                ExprID resolved = resolve_array_read(val_eid, pool, array_init_);
+                if (resolved.valid()) {
+                    int obj_idx = problem_.object_constant_index(resolved);
+                    if (obj_idx >= 0) {
+                        next_state.object_value_sets[fluent_id].insert(obj_idx);
+                    }
+                } else {
+                    // Conservative: add every object constant of this fluent's declared type.
+                    for (int i = 0; i < static_cast<int>(problem_.objects().size()); ++i) {
+                        next_state.object_value_sets[fluent_id].insert(i);
+                    }
+                }
             } else {
-                throw std::runtime_error(
-                    "Object fluent effect has unresolvable value expression: " +
-                    pool.to_string(val_eid) + " -> " + pool.to_string(fluent_eid));
+                // Unrecognised value shape — add all objects conservatively rather than crashing.
+                for (int i = 0; i < static_cast<int>(problem_.objects().size()); ++i) {
+                    next_state.object_value_sets[fluent_id].insert(i);
+                }
             }
         }
     }
@@ -802,11 +973,20 @@ Interval NumericRelaxedPlanningGraph::evaluate_interval(ExprID eid, int layer) c
         ExprOperator op = pool.op(eid);
         size_t nargs = pool.argument_count(eid);
 
+        // N-ary PLUS: sum all operand intervals (handles 1, 2, or N arguments).
+        // Set-cardinality expressions compile to PLUS(ITE(...), ITE(...), ...)
+        // which may have more than two operands; the binary-only path missed them.
+        if (op == ExprOperator::PLUS && nargs >= 1) {
+            Interval result(0.0);
+            for (size_t i = 0; i < nargs; ++i)
+                result = result + evaluate_interval(pool.argument(eid, i), layer);
+            return result;
+        }
+
         if (nargs == 2) {
             Interval lhs = evaluate_interval(pool.argument(eid, 0), layer);
             Interval rhs = evaluate_interval(pool.argument(eid, 1), layer);
             switch (op) {
-                case ExprOperator::PLUS:     return lhs + rhs;
                 case ExprOperator::MINUS:    return lhs - rhs;
                 case ExprOperator::MULTIPLY: return lhs * rhs;
                 case ExprOperator::DIVIDE:   return lhs / rhs;
@@ -817,6 +997,10 @@ Interval NumericRelaxedPlanningGraph::evaluate_interval(ExprID eid, int layer) c
         if (nargs == 1 && op == ExprOperator::MINUS) {
             Interval arg = evaluate_interval(pool.argument(eid, 0), layer);
             return Interval(0.0) - arg;
+        }
+        // COUNT(bool1, ..., boolN): count of true booleans, bounded by [0, N].
+        if (op == ExprOperator::COUNT) {
+            return Interval(0.0, static_cast<double>(nargs));
         }
     }
 
@@ -1344,6 +1528,115 @@ NumericRelaxedPlanningGraph::evaluate_formula_interval(ExprID eid, int layer) co
                 (ra == FormulaResult::ALWAYS_FALSE && rb == FormulaResult::ALWAYS_TRUE))
                 return FormulaResult::ALWAYS_FALSE;
             return FormulaResult::UNKNOWN;
+        }
+
+        // Forall/exists: FUNCTION_APPLICATION with op=UNKNOWN, head "up:forall"/"up:exists"
+        if (op == ExprOperator::UNKNOWN) {
+            ExprID head = pool.head_symbol_id(eid);
+            if (!pool.payload_is_string(head))
+                return FormulaResult::UNKNOWN;
+            const std::string head_sym = pool.payload_string(head);
+            const bool is_forall = (head_sym == "up:forall");
+            const bool is_exists = (head_sym == "up:exists");
+            if (!is_forall && !is_exists)
+                return FormulaResult::UNKNOWN;
+
+            std::vector<ExprID> args;
+            for (ExprID a : pool.arguments(eid)) args.push_back(a);
+            if (args.size() < 2) return FormulaResult::UNKNOWN;
+            ExprID body_id = args.back();
+            std::vector<ExprID> range_vars(args.begin(), args.end() - 1);
+
+            int int_type_id = -1;
+            const Type* int_type = problem_.find_type("up:int");
+            if (int_type) {
+                const auto& types = problem_.types();
+                for (size_t i = 0; i < types.size(); ++i)
+                    if (&types[i] == int_type) { int_type_id = static_cast<int>(i); break; }
+            }
+
+            ExprPool& mpool = *problem_.pool_ptr();
+            Substitution var_subst;
+            FormulaResult result = is_forall ? FormulaResult::ALWAYS_TRUE
+                                             : FormulaResult::ALWAYS_FALSE;
+            bool short_circuited = false;
+
+            std::function<void(size_t)> expand = [&](size_t vi) {
+                if (short_circuited) return;
+                if (vi == range_vars.size()) {
+                    ExprID subst_body = substitute_vars(mpool, body_id, var_subst);
+                    FormulaResult r = evaluate_formula_interval(subst_body, layer);
+                    if (is_forall) {
+                        if (r == FormulaResult::ALWAYS_FALSE) {
+                            result = FormulaResult::ALWAYS_FALSE;
+                            short_circuited = true;
+                        } else if (r != FormulaResult::ALWAYS_TRUE) {
+                            result = FormulaResult::UNKNOWN;
+                        }
+                    } else {
+                        if (r == FormulaResult::ALWAYS_TRUE) {
+                            result = FormulaResult::ALWAYS_TRUE;
+                            short_circuited = true;
+                        } else if (r != FormulaResult::ALWAYS_FALSE) {
+                            result = FormulaResult::UNKNOWN;
+                        }
+                    }
+                    return;
+                }
+                ExprID rv = range_vars[vi];
+
+                if (pool.is_variable(rv)) {
+                    // UP object-typed quantifier variable (e.g. from INTEGERS_REMOVING /
+                    // USERTYPE_FLUENTS_REMOVING).  The variable node carries the type in
+                    // its type_id; enumerate all objects of that type.
+                    const std::string var_name = pool.payload_string(rv);
+                    int rv_type_id = pool.type_id(rv);
+                    const Type* obj_type =
+                        (rv_type_id >= 0 &&
+                         rv_type_id < static_cast<int>(problem_.types().size()))
+                        ? &problem_.types()[rv_type_id] : nullptr;
+                    if (!obj_type) { result = FormulaResult::UNKNOWN; return; }
+                    for (int obj_idx : problem_.objects_of_type(obj_type)) {
+                        if (short_circuited) break;
+                        ExprNode cn;
+                        cn.kind    = static_cast<int>(ExprKind::CONSTANT);
+                        cn.payload = problem_.objects()[obj_idx].name();
+                        cn.type_id = rv_type_id;
+                        ExprID new_const = mpool.intern(std::move(cn));
+                        var_subst[var_name] = new_const;
+                        expand(vi + 1);
+                    }
+                    var_subst.erase(var_name);
+                } else {
+                    // XTS bounded-integer range variable triple (var, lo, hi).
+                    ExprID var_expr = pool.argument(rv, 0);
+                    ExprID lo_id   = pool.argument(rv, 1);
+                    ExprID hi_id   = pool.argument(rv, 2);
+                    const std::string var_name = pool.payload_string(var_expr);
+
+                    auto read_bound = [&](ExprID bid) -> int64_t {
+                        if (pool.payload_is_int(bid))    return pool.payload_int(bid);
+                        if (pool.payload_is_double(bid)) return static_cast<int64_t>(pool.payload_double(bid));
+                        return 0;
+                    };
+                    int64_t lo = read_bound(lo_id);
+                    int64_t hi = read_bound(hi_id);
+
+                    for (int64_t v = lo; v <= hi && !short_circuited; ++v) {
+                        ExprNode cn;
+                        cn.kind    = static_cast<int>(ExprKind::CONSTANT);
+                        cn.payload = v;
+                        cn.type_id = int_type_id;
+                        ExprID new_const = mpool.intern(std::move(cn));
+                        var_subst[var_name] = new_const;
+                        expand(vi + 1);
+                    }
+                    var_subst.erase(var_name);
+                }
+            };
+
+            expand(0);
+            return result;
         }
     }
 

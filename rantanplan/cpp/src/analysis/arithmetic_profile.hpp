@@ -44,15 +44,45 @@ inline std::string arithmetic_profile_to_string(ArithmeticProfile p) {
  * nla::solver handles nonlinear constraints automatically. QF_NRA would
  * trigger NLSAT which is incompatible with incremental solving.
  *
+ * When has_arrays is true (the problem contains array or set fluents encoded
+ * natively as Z3 Array sort variables), the array theory fragment is added.
+ * The SMT-LIB2 convention is the prefix "A" before the arithmetic fragment:
+ *   QF_LIA  → QF_ALIA,  QF_LRA → QF_ALRA
+ *   no arithmetic → QF_AX  (pure array extensionality)
+ * Difference logic + arrays also maps to QF_ALIA/QF_ALRA: "QF_AIDL"/"QF_ARDL"
+ * are not real SMT-LIB logics, and Z3 does not error on unknown strings — it
+ * silently selects the GENERIC solver, wasting exactly the tuned-tactic
+ * benefit the hint exists for.
+ *
+ * When uf_arrays is true (--array-encoding uf), array/set reads are
+ * uninterpreted function applications (plus Theory-array leaves for
+ * array-of-sets), so the logic must include UF too: QF_AUFLIA — which has a
+ * dedicated Z3 tactic — for the all-integer case. Z3 ships no QF_AUFLRA
+ * tactic, so the mixed-real UF case returns nullptr (default solver) instead
+ * of a fake string.
+ *
  * @return Logic string, or nullptr if no logic hint is appropriate.
  */
-inline const char* recommended_logic(ArithmeticProfile p, bool all_integer = false) {
+// [XTS] all_integer/has_arrays/uf_arrays parameters added; array logic selection is XTS.
+inline const char* recommended_logic(ArithmeticProfile p, bool all_integer = false,
+                                     bool has_arrays = false, bool uf_arrays = false) {
+    if (has_arrays && uf_arrays) {
+        return all_integer ? "QF_AUFLIA" : nullptr;  // [XTS-UnFun]
+    }
     switch (p) {
-        case ArithmeticProfile::NONE:             return nullptr;
-        case ArithmeticProfile::DIFFERENCE_LOGIC: return all_integer ? "QF_IDL" : "QF_RDL";
-        case ArithmeticProfile::LINEAR:           return all_integer ? "QF_LIA" : "QF_LRA";
-        case ArithmeticProfile::NONLINEAR:        return all_integer ? "QF_LIA" : "QF_LRA";
-        default:                                  return nullptr;
+        case ArithmeticProfile::NONE:
+            return has_arrays ? "QF_AX" : nullptr;
+        case ArithmeticProfile::DIFFERENCE_LOGIC:
+            return all_integer ? (has_arrays ? "QF_ALIA" : "QF_IDL")   // [XTS]
+                               : (has_arrays ? "QF_ALRA" : "QF_RDL");  // [XTS]
+        case ArithmeticProfile::LINEAR:
+            return all_integer ? (has_arrays ? "QF_ALIA" : "QF_LIA")   // [XTS]
+                               : (has_arrays ? "QF_ALRA" : "QF_LRA");  // [XTS]
+        case ArithmeticProfile::NONLINEAR:
+            return all_integer ? (has_arrays ? "QF_ALIA" : "QF_LIA")   // [XTS]
+                               : (has_arrays ? "QF_ALRA" : "QF_LRA");  // [XTS]
+        default:
+            return nullptr;
     }
 }
 

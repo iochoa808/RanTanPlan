@@ -1,5 +1,6 @@
 #include "achievers_analysis.hpp"
 #include "../analysis/numeric_relaxed_planning_graph.hpp"
+#include "../util/ipar_names.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/logger.hpp"
 #include <iostream>
@@ -121,6 +122,30 @@ void AchieversAnalysis::analyze(const Problem& problem) {
     stats.set("achievers_analysis.total_goal_conditions", goal_conditions_.size());
     stats.set("achievers_analysis.total_actions", problem.actions().size());
 
+    // Register conditional-effect guards so the SMT pass computes their achievers.
+    // condition_to_achievers_ is otherwise built only from preconditions and goals, but
+    // a `when` guard is a real dependency too — goal-relevance pruning must know who can
+    // make it true, or it deletes the only action that can:
+    //   (:action activate :effect (flag-b))
+    //   (:action process  :effect (when (flag-b) (assign (cell-b) 0)))   goal: cell-b = 0
+    // process achieves the goal and has no preconditions, so the backward walk stops there
+    // and prunes activate, leaving the goal unreachable. Only bites when a guard appears
+    // nowhere else; in most domains it is also some action's precondition and gets
+    // registered for free. Consumed by compute_goal_relevant_action_indices() below —
+    // neither half works alone. Test: xts/benchmarks/unit/multi_when.
+    for (const auto& action : problem.actions()) {
+        for (const Effect& eff : action.effects()) {
+            if (!eff.is_conditional()) continue;
+            std::vector<ExprID> cond_literals;
+            extract_cnf_literals(eff.effect_expression().condition_id(), cond_literals);
+            for (ExprID eid : cond_literals) {
+                if (!condition_to_achievers_.contains(eid)) {
+                    condition_to_achievers_[eid] = std::unordered_set<Action>();
+                }
+            }
+        }
+    }
+
     // Perform semantic achiever analysis using SMT
     analyze_semantic_achievers();
 }
@@ -160,7 +185,7 @@ void AchieversAnalysis::process_goal_conditions(const Goal& goal) {
 // Since we use semantic SMT-based analysis for achievers, we can handle disjunctions
 // naturally by preserving OR expressions as single literals. The SMT solver will
 // properly evaluate disjunctive conditions without needing to split them.
-void AchieversAnalysis::extract_cnf_literals(ExprID eid, std::vector<ExprID>& literals) {
+void AchieversAnalysis::extract_cnf_literals(ExprID eid, std::vector<ExprID>& literals) const {
     const auto& pool = problem_->pool();
     if (pool.is_and(eid)) {
         // AND expression - extract literals from each conjunct recursively
@@ -204,6 +229,13 @@ void AchieversAnalysis::analyze_semantic_achievers() {
     // Collect all goal conditions
     for (const auto& goal_eid : goal_conditions_) {
         all_conditions.insert(goal_eid);
+    }
+
+    // Collect conditional-effect conditions registered by analyze() — these are
+    // conditions that appear only as effect guards (not as preconditions or goals)
+    // and must have their achievers computed so the BFS doesn't prune their enablers.
+    for (const auto& [condition_eid, _] : condition_to_achievers_) {
+        all_conditions.insert(condition_eid);
     }
 
     stats.set("achievers_analysis.conditions_to_analyze", all_conditions.size());
@@ -381,11 +413,88 @@ std::unordered_set<ExprID> AchieversAnalysis::collect_fluents_in_expression(Expr
 
 std::unordered_set<ExprID> AchieversAnalysis::get_action_modified_fluents(const Action& action) {
     std::unordered_set<ExprID> modified_fluents;
+    const ExprPool& pool = problem_->pool();
+
+    // [XTS] Build lookup: "base[k]" name → ExprID for IPAR cell SVs in grounded_fluents.
+    // ARRAY_WRITE(base_sv, k) effects must also be considered as modifying the
+    // corresponding IPAR cell SV "base[k]", so that the fluent-intersection check
+    // correctly detects that reset_all achieves the goal cells[0]=0.
+    std::unordered_map<std::string, ExprID> ipar_cell_sv_by_name;
+    for (ExprID gf : problem_->grounded_fluents()) {
+        if (!pool.is_state_variable(gf)) continue;
+        if (pool.argument_count(gf) != 0) continue;
+        ExprID h = pool.head_symbol_id(gf);
+        if (!pool.payload_is_string(h)) continue;
+        const std::string& nm = pool.payload_string(h);
+        if (nm.find('[') != std::string::npos) ipar_cell_sv_by_name.emplace(nm, gf);
+    }
+
     for (const auto& effect_wrapper : action.effects()) {
         const EffectExpression& effect = effect_wrapper.effect_expression();
         ExprID eid = effect.fluent_id();
         if (eid.valid()) {
             modified_fluents.insert(eid);
+            // For ARRAY_WRITE effects, also mark the base SV as modified.
+            // Walk through ARRAY_WRITE chains; if the chain ends in an ARRAY_READ
+            // (2D write case: ARRAY_WRITE(ARRAY_READ(SV(board), i), j)),
+            // continue into the ARRAY_READ to find the base SV.
+            // [XTS] For an N-D cell write with all-constant indices, also mark the
+            // matching IPAR cell SV ("base[i0][i1]...") as modified so the achiever
+            // intersection check can link this effect to goals that reference cell SVs.
+            // Indices are collected innermost-first while peeling (the ARRAY_WRITE
+            // node carries the outermost index), then reversed for the name.
+            if (pool.is_function_application(eid) &&
+                pool.op(eid) == ExprOperator::ARRAY_WRITE &&
+                pool.argument_count(eid) >= 2) {
+                std::vector<int64_t> rev_idxs;
+                bool all_const = true;
+                ExprID idx_arg = pool.argument(eid, 1);
+                if (pool.is_constant(idx_arg) && pool.payload_is_int(idx_arg)) {
+                    rev_idxs.push_back(pool.payload_int(idx_arg));
+                } else {
+                    all_const = false;
+                }
+                ExprID cell_base = pool.argument(eid, 0);
+                while (all_const && pool.is_function_application(cell_base) &&
+                       pool.op(cell_base) == ExprOperator::ARRAY_READ &&
+                       pool.argument_count(cell_base) >= 2) {
+                    ExprID inner_idx = pool.argument(cell_base, 1);
+                    if (pool.is_constant(inner_idx) && pool.payload_is_int(inner_idx)) {
+                        rev_idxs.push_back(pool.payload_int(inner_idx));
+                    } else {
+                        all_const = false;
+                    }
+                    cell_base = pool.argument(cell_base, 0);
+                }
+                if (all_const && pool.is_state_variable(cell_base)) {
+                    ExprID bh = pool.head_symbol_id(cell_base);
+                    if (pool.payload_is_string(bh)) {
+                        std::vector<int64_t> idxs(rev_idxs.rbegin(), rev_idxs.rend());
+                        auto it = ipar_cell_sv_by_name.find(
+                            make_ipar_cell_name(pool.payload_string(bh), idxs));
+                        if (it != ipar_cell_sv_by_name.end())
+                            modified_fluents.insert(it->second);
+                    }
+                }
+            }
+
+            ExprID base = eid;
+            while (pool.is_function_application(base) &&
+                   pool.op(base) == ExprOperator::ARRAY_WRITE &&
+                   pool.argument_count(base) >= 1) {
+                base = pool.argument(base, 0);
+                modified_fluents.insert(base);
+            }
+            // Peel any remaining ARRAY_READ chain to reach the root SV.
+            // A 2D write ends at ARRAY_READ(SV, i); a 3D write ends at
+            // ARRAY_READ(ARRAY_READ(SV, i), j), so we loop rather than
+            // checking for a single ARRAY_READ.
+            while (pool.is_function_application(base) &&
+                   pool.op(base) == ExprOperator::ARRAY_READ &&
+                   pool.argument_count(base) >= 1) {
+                base = pool.argument(base, 0);
+                modified_fluents.insert(base);
+            }
         }
     }
     return modified_fluents;
@@ -437,12 +546,116 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
 
     // Step 1: Encode action effects
     bool has_effects = false;
+    const ExprPool& pool = problem_->pool();
+
+    // Multiple effects on the same array (e.g. forall-expanded writes) must be
+    // chained: each write's result feeds into the next as the "current" value.
+    // Adding separate arr_next == store(arr_cur, i, v) constraints for each
+    // effect creates conflicting equalities that are only jointly satisfiable
+    // when all writes land at the same index or the array is trivially uniform.
+    // Instead we track the intermediate value after each write and emit a single
+    // arr_next == final_intermediate constraint at the end.
+    std::unordered_map<ExprID, z3::expr> array_intermediates;
+    auto get_array_intermediate = [&](ExprID sv_id) -> z3::expr {
+        auto it = array_intermediates.find(sv_id);
+        if (it != array_intermediates.end()) return it->second;
+        return visitor_->convert_from_pool(sv_id, 0);
+    };
+
     for (const auto& effect_wrapper : action.effects()) {
         const EffectExpression& effect = effect_wrapper.effect_expression();
 
-        z3::expr fluent_current = visitor_->convert_from_pool(effect.fluent_id(), 0);
-        z3::expr fluent_next = visitor_->convert_from_pool(effect.fluent_id(), 1);
-        z3::expr value_z3 = visitor_->convert_from_pool(effect.value_id(), 0);
+        ExprID fluent_id = effect.fluent_id();
+        ExprID value_id  = effect.value_id();
+
+        // N-D array write: ARRAY_WRITE(ARRAY_READ(...ARRAY_READ(SV,i)...,j),k) := val
+        // Peel the ARRAY_READ chain to find the root SV and all indices (outermost-first),
+        // then build a nested store chain. Works for 1D, 2D, 3D, and any higher dimension.
+        if (pool.is_function_application(fluent_id) &&
+            pool.op(fluent_id) == ExprOperator::ARRAY_WRITE &&
+            pool.argument_count(fluent_id) >= 2) {
+
+            // Collect indices innermost-first by walking the ARRAY_READ chain.
+            std::vector<ExprID> rev_indices;
+            rev_indices.push_back(pool.argument(fluent_id, 1));  // outermost index
+            ExprID cur = pool.argument(fluent_id, 0);
+            while (pool.is_function_application(cur) &&
+                   pool.op(cur) == ExprOperator::ARRAY_READ &&
+                   pool.argument_count(cur) >= 2) {
+                rev_indices.push_back(pool.argument(cur, 1));
+                cur = pool.argument(cur, 0);
+            }
+            ExprID base_sv = cur;  // root STATE_VARIABLE
+
+            // Reverse to outermost-first order.
+            std::vector<z3::expr> z3_indices;
+            z3_indices.reserve(rev_indices.size());
+            for (auto it = rev_indices.rbegin(); it != rev_indices.rend(); ++it)
+                z3_indices.push_back(visitor_->convert_from_pool(*it, 0));
+            z3::expr arr_cur = get_array_intermediate(base_sv);
+
+            // [XTS] Array-of-sets cell mutation: bins[src] := SetRemove(item, bins[src]).
+            // SET_ADD/SET_REMOVE aren't standalone-convertible expressions (they only
+            // mean something as an effect delta) — same reasoning as the plain-set-fluent
+            // branch below, just needing the cell's *current* set value first since the
+            // target here is a compound array-write, not a bare fluent.
+            z3::expr val = [&]() -> z3::expr {
+                if (pool.is_function_application(value_id) && pool.argument_count(value_id) >= 1 &&
+                    (pool.op(value_id) == ExprOperator::SET_ADD ||
+                     pool.op(value_id) == ExprOperator::SET_REMOVE)) {
+                    z3::expr current_set = arr_cur;
+                    for (const z3::expr& idx : z3_indices) current_set = z3::select(current_set, idx);
+                    z3::expr elem = visitor_->convert_from_pool(pool.argument(value_id, 0), 0);
+                    bool adding = (pool.op(value_id) == ExprOperator::SET_ADD);
+                    return z3::store(current_set, elem, ctx_->bool_val(adding));
+                }
+                return visitor_->convert_from_pool(value_id, 0);
+            }();
+
+            // Build nested store: store(arr, i, store(select(arr,i), j, ... val ...))
+            std::function<z3::expr(const z3::expr&, size_t)> build_store =
+                [&](const z3::expr& arr, size_t from) -> z3::expr {
+                if (from == z3_indices.size() - 1)
+                    return z3::store(arr, z3_indices[from], val);
+                return z3::store(arr, z3_indices[from],
+                                 build_store(z3::select(arr, z3_indices[from]), from + 1));
+            };
+            z3::expr new_arr = build_store(arr_cur, 0);
+
+            if (effect.is_conditional()) {
+                z3::expr cond = visitor_->convert_from_pool(effect.condition_id(), 0);
+                new_arr = z3::ite(cond, new_arr, get_array_intermediate(base_sv));
+            }
+            array_intermediates.insert_or_assign(base_sv, new_arr);
+            has_effects = true;
+            continue;
+        }
+
+        // Set write: value_id is SET_ADD(elem) or SET_REMOVE(elem) →
+        //   set_1 = store(set_0, elem, true/false)
+        if (pool.is_function_application(value_id) &&
+            pool.argument_count(value_id) >= 1) {
+            ExprOperator val_op = pool.op(value_id);
+            if (val_op == ExprOperator::SET_ADD || val_op == ExprOperator::SET_REMOVE) {
+                z3::expr set_current = visitor_->convert_from_pool(fluent_id, 0);
+                z3::expr set_next    = visitor_->convert_from_pool(fluent_id, 1);
+                z3::expr elem = visitor_->convert_from_pool(pool.argument(value_id, 0), 0);
+                bool adding = (val_op == ExprOperator::SET_ADD);
+                z3::expr effect_constraint = (set_next == z3::store(set_current, elem, ctx_->bool_val(adding)));
+                if (effect.is_conditional()) {
+                    z3::expr cond = visitor_->convert_from_pool(effect.condition_id(), 0);
+                    effect_constraint = z3::implies(cond, effect_constraint);
+                }
+                persistent_solver_->add(effect_constraint);
+                has_effects = true;
+                continue;
+            }
+        }
+
+        // Scalar / whole-array-assign path
+        z3::expr fluent_current = visitor_->convert_from_pool(fluent_id, 0);
+        z3::expr fluent_next = visitor_->convert_from_pool(fluent_id, 1);
+        z3::expr value_z3 = visitor_->convert_from_pool(value_id, 0);
 
         // Handle different effect kinds
         z3::expr effect_constraint = ctx_->bool_val(true);
@@ -466,6 +679,13 @@ bool AchieversAnalysis::check_action_achieves_condition_with_pushpop(const Actio
 
         persistent_solver_->add(effect_constraint);
         has_effects = true;
+    }
+
+    // Flush chained array writes: add arr_next == final_intermediate for each
+    // array that received at least one write effect.
+    for (auto& [sv_id, final_arr] : array_intermediates) {
+        z3::expr arr_next = visitor_->convert_from_pool(sv_id, 1);
+        persistent_solver_->add(arr_next == final_arr);
     }
 
     // If action has no effects, it cannot achieve anything
@@ -817,6 +1037,21 @@ std::unordered_set<size_t> AchieversAnalysis::compute_goal_relevant_action_indic
                             }
                         }
                     }
+                    // Also chase conditional-effect guards: the effect only fires
+                    // if its guard holds, so whoever achieves the guard is relevant
+                    // too. Depends on the guard registration in analyze() — without
+                    // it these lookups miss above and this loop is a no-op.
+                    const Action* act_ptr = ptr_it->second;
+                    for (const Effect& eff : act_ptr->effects()) {
+                        if (!eff.is_conditional()) continue;
+                        std::vector<ExprID> cond_literals;
+                        extract_cnf_literals(eff.effect_expression().condition_id(), cond_literals);
+                        for (ExprID clit : cond_literals) {
+                            if (visited_conditions.insert(clit).second) {
+                                next_frontier.push_back(clit);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -892,6 +1127,69 @@ std::unordered_set<size_t> AchieversAnalysis::compute_goal_relevant_action_indic
                         }
                         break;  // This action is now relevant, move to next
                     }
+                }
+            }
+        }
+    }
+
+    // Phase 3: effect-value dependency tracking for set/array fluents.
+    // The BFS above only follows precondition chains. For set/array effects whose
+    // *value* reads other fluents (e.g. result = union(bucket_a, bucket_b)),
+    // the actions that write those read-fluents are also relevant — without them
+    // the effect value is wrong, not just blocked by a precondition.
+    // Example: merge_all writes result via union(bucket_a,...); add_to_a writes
+    // bucket_a but has no precondition in the frontier, so Phase 1 misses it.
+    {
+        bool changed = true;
+        while (changed) {
+            changed = false;
+
+            // Collect all fluents read by effect *values* of currently-relevant actions.
+            std::unordered_set<ExprID> effect_value_fluents;
+            for (const Action* a : relevant_actions) {
+                for (const Effect& eff : a->effects()) {
+                    const EffectExpression& ee = eff.effect_expression();
+                    if (!ee.value_id().valid()) continue;
+                    FluentCollector collector(problem);
+                    collector.collect_from_id(ee.value_id());
+                    for (ExprID f : collector.get_fluents())
+                        effect_value_fluents.insert(f);
+                }
+            }
+            if (effect_value_fluents.empty()) break;
+
+            // Any action that writes to one of those fluents is also relevant.
+            for (const Action& action : problem.actions()) {
+                auto ptr_it = action_id_to_ptr.find(action.id());
+                if (ptr_it == action_id_to_ptr.end()) continue;
+                if (relevant_actions.count(ptr_it->second)) continue;
+
+                bool writes_needed = false;
+                for (const Effect& eff : action.effects()) {
+                    ExprID fid = eff.effect_expression().fluent_id();
+                    // Peel any ARRAY_WRITE wrapper to get the root SV.
+                    while (fid.valid() &&
+                           problem.pool().is_function_application(fid) &&
+                           problem.pool().op(fid) == ExprOperator::ARRAY_WRITE &&
+                           problem.pool().argument_count(fid) >= 1) {
+                        fid = problem.pool().argument(fid, 0);
+                    }
+                    // Also peel ARRAY_READ for 2-D+ writes.
+                    while (fid.valid() &&
+                           problem.pool().is_function_application(fid) &&
+                           problem.pool().op(fid) == ExprOperator::ARRAY_READ &&
+                           problem.pool().argument_count(fid) >= 1) {
+                        fid = problem.pool().argument(fid, 0);
+                    }
+                    if (fid.valid() && effect_value_fluents.count(fid)) {
+                        writes_needed = true;
+                        break;
+                    }
+                }
+
+                if (writes_needed) {
+                    relevant_actions.insert(ptr_it->second);
+                    changed = true;
                 }
             }
         }
