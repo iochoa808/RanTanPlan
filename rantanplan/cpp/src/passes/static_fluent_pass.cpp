@@ -700,40 +700,13 @@ void StaticFluentPass::apply(PipelineResult& result) const {
         new_goals.push_back(std::move(new_goal));
     }
 
-    // Step 6: Filter initial state.
-    // Problems WITHOUT array/set fluents (standard PDDL): remove static fluent
-    // assignments — their values were fully substituted in Steps 4/5 (pre-XTS
-    // behavior, keeps encodings unchanged for standard problems).
-    // [XTS] Problems WITH array/set fluents: keep static assignments. They stay
-    // load-bearing after substitution — expand_object_sv_arg's ITE expansion
-    // references simple static fluents (e.g. is-smooth(surface_A)) by NAME at
-    // encoding time, not through ExprID
-    // substitution, so dropping them makes goals falsely unreachable.  Only
-    // IPAR-generated cell SVs (e.g. "card_at[0][0]") are dropped: they have no
-    // declared fluent, and keeping them would crash the encoder's fluent lookup.
-    bool problem_has_arrays = false;
-    for (ExprID gf : problem.grounded_fluents()) {
-        const Type* vt = problem.type_for_id(gf);
-        if (vt && (vt->is_array() || vt->is_set())) { problem_has_arrays = true; break; }
-    }
-
+    // Step 6: Filter initial state (remove static fluent assignments).
     std::vector<Assignment> new_initial_state;
     new_initial_state.reserve(problem.initial_state().size());
     for (const auto& assignment : problem.initial_state()) {
-        ExprID fid = assignment.fluent_id();
-        if (static_fluent_set.count(fid)) {
-            if (!problem_has_arrays) {
-                continue;  // static fluent — substituted away (pre-XTS behavior)
-            }
-            if (pool.is_state_variable(fid) && pool.argument_count(fid) == 0) {
-                ExprID head = pool.head_symbol_id(fid);
-                if (pool.payload_is_string(head) &&
-                    pool.payload_string(head).find('[') != std::string::npos) {
-                    continue;  // [XTS] IPAR cell SV — fully substituted away
-                }
-            }
+        if (!static_fluent_set.count(assignment.fluent_id())) {
+            new_initial_state.push_back(assignment);
         }
-        new_initial_state.push_back(assignment);
     }
 
     // Step 7: Build new problem (re-collects grounded fluents automatically)

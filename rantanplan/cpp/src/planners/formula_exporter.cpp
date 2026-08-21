@@ -50,6 +50,12 @@ std::string FormulaExporter::export_formula(int max_timestep) {
         if (symmetries) {
             formula_solver.add(*symmetries);
         }
+
+        // Add declared type bounds at every state (nullptr when no bounded types,
+        // which keeps exported formulas byte-identical to pre-XTS for standard PDDL).
+        if (auto tb = encoder_.encode_type_bounds(t)) {
+            formula_solver.add(*tb);
+        }
     }
 
     // Add goal constraints at the final timestep

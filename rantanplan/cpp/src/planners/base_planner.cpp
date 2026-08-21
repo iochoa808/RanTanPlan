@@ -79,7 +79,11 @@ void BasePlanner::set_propagator_strategy(std::unique_ptr<PropagatorStrategy> pr
     // selection, restarts, etc.) without changing the arithmetic backend.
     // When the problem is all-integer, use integer logics (QF_IDL/QF_LIA)
     // for tighter integer-specific reasoning.
-    const char* logic = recommended_logic(arithmetic_profile_, problem_.all_integer());
+    // [XTS] has_arrays/uf_arrays select the array/UF logic fragments — this is
+    // the call that reaches the solver (main.cpp's identical call only logs).
+    const char* logic = recommended_logic(
+        arithmetic_profile_, problem_.all_integer(), problem_.has_arrays(),
+        Config::instance().global.array_encoding == "uf");
     if (logic) {
         p.set("logic", logic);
     }

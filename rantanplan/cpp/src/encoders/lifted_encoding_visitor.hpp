@@ -69,6 +69,7 @@ private:
     z3::expr handle_minus(const std::vector<z3::expr>& args);
     z3::expr handle_multiply(const std::vector<z3::expr>& args);
     z3::expr handle_divide(const std::vector<z3::expr>& args);
+    z3::expr handle_count(const std::vector<z3::expr>& args);
     z3::expr handle_uninterpreted_function(const std::string& name, const std::vector<z3::expr>& args, const z3::sort& return_sort);
 };
 

@@ -1,4 +1,5 @@
 #include "z3_variable_factory.hpp"
+#include "array_domain_utils.hpp"  // [XTS-UnFun] descend_array_levels
 #include "../problem/action.hpp"
 #include "../problem/problem.hpp"
 #include <iostream>
@@ -190,9 +191,6 @@ z3::expr Z3VariableFactory::create_new_fluent_variable(const Fluent& fluent, con
     if (fluent.is_bool_fluent()) {
         return create_bool_variable(var_name);
     } else if (fluent.is_int_fluent() || fluent.is_real_fluent()) {
-        // Use Int sort when the entire problem is proven integer-safe
-        // (all numeric fluents int-typed, no division, all constants integer).
-        // Otherwise use Real to avoid mixed int/real type issues.
         return numeric_is_int()
             ? create_int_variable(var_name) : create_real_variable(var_name);
     } else if (vt && vt->is_array()) {
@@ -405,7 +403,7 @@ z3::sort Z3VariableFactory::resolve_elem_sort_for_type(const Type* t) const {
     if (t->is_bool()) return ctx_.bool_sort();
     if (t->is_real() && !numeric_is_int()) return ctx_.real_sort();
     if (t->is_array()) {
-        // [XTS] Nested array (e.g. up:array[4, up:array[4, up:int]]): recurse.
+        // Nested array (e.g. up:array[4, up:array[4, up:int]]): recurse.
         z3::sort inner = resolve_elem_sort(t->array_element_type_name());
         return ctx_.array_sort(ctx_.int_sort(), inner);
     }
@@ -440,15 +438,12 @@ z3::sort Z3VariableFactory::resolve_elem_sort_at_depth(const Type* t, int depth)
     // Handles depth<=1 to also match this function's own depth=0 contract above.
     if (t && t->is_set() && depth <= 1) return ctx_.bool_sort();
 
-    const Type* cur = t;
-    for (int i = 0; i < depth; ++i) {
-        if (!cur || !cur->is_array()) break; // defensive: shouldn't happen for well-formed arities
-        const std::string& en = cur->array_element_type_name();
-        const Type* next = problem_ ? problem_->find_type(en) : nullptr;
-        if (!next && problem_) next = problem_->find_type("up:" + en);
-        cur = next;
-    }
-    return resolve_elem_sort_for_type(cur);
+    // Shared array descent — see array_domain_utils.hpp. It stops early on a non-array
+    // element type, which is the same defensive break the hand-rolled loop had (it should
+    // not happen for a well-formed arity). Clamp: a negative depth means "no descent"
+    // here, not descend_array_levels' "run to the leaf".
+    const int levels = depth > 0 ? depth : 0;
+    return resolve_elem_sort_for_type(descend_array_levels(t, problem_, levels).second);
 }
 
 // ===========================================================================
@@ -496,23 +491,32 @@ const z3::func_decl& Z3VariableFactory::get_array_uf(const Fluent& fluent, int t
     return *stored;
 }
 
+// [XTS-UnFun] See header for the contract. Index values are always Int literals: object
+// elements were already lowered to their global object index by the caller (that is the
+// same convention create_object_variable and enumerate_array_domain use), so there is no
+// object-sort case to handle here.
+z3::expr_vector Z3VariableFactory::cell_args(const std::vector<int64_t>& cell) const {
+    z3::expr_vector args(ctx_);
+    for (int64_t c : cell) args.push_back(ctx_.int_val(c));
+    return args;
+}
+
 // [XTS-UnFun] See header for the contract. Arity is derived by counting array
 // nesting levels directly from the type (not domain[0].size(), which would force
 // callers to enumerate the whole domain just to learn its dimensionality).
+//
+// The count and the leaf come out of one descend_array_levels() walk (the same one
+// leaf_element_type uses), so this no longer traverses the type chain twice — once to
+// count, then again inside resolve_elem_sort_at_depth to land on the very same leaf.
+// Sets returned above never reach the walk, which is why calling resolve_elem_sort_for_type
+// directly is safe here: resolve_elem_sort_at_depth's is_set()/depth<=1 guard existed for
+// callers that pass a set type, and this one cannot.
 std::pair<unsigned, z3::sort> Z3VariableFactory::resolve_uf_shape(const Type* t) const {
     if (!t) return {1u, ctx_.int_sort()}; // defensive fallback
     if (t->is_set()) return {1u, ctx_.bool_sort()};
 
-    unsigned arity = 0;
-    const Type* cur = t;
-    while (cur && cur->is_array()) {
-        ++arity;
-        const std::string& en = cur->array_element_type_name();
-        const Type* next = problem_ ? problem_->find_type(en) : nullptr;
-        if (!next && problem_) next = problem_->find_type("up:" + en);
-        cur = next;
-    }
-    return {arity, resolve_elem_sort_at_depth(t, static_cast<int>(arity))};
+    auto [arity, leaf] = descend_array_levels(t, problem_);
+    return {arity, resolve_elem_sort_for_type(leaf)};
 }
 
 } // namespace rantanplan

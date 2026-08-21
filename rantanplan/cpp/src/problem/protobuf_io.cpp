@@ -193,7 +193,8 @@ Problem load_problem_from_protobuf(const ::Problem& pb_problem) {
         // [XTS] Store element type and size so array_element_type_name() /
         // array_size() / set_element_type_name() work without string parsing.
         if (!pb_type.element_type().empty()) {
-            problem.types_->back().set_element_info(pb_type.element_type(), static_cast<int64_t>(pb_type.size()));
+            problem.types_->back().set_element_info(pb_type.element_type(),
+                static_cast<int64_t>(pb_type.size()));
         }
     }
 

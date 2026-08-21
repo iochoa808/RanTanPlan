@@ -88,6 +88,24 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
                 throw std::invalid_argument("--horizon-schedule requires a value (linear|arithmetic|geometric|doubling)");
             }
         }
+        // [XTS] Array/set frame-axiom encoding: disequality (default, unified with
+        // scalars) or ite (total-update ITE chain, ported from branch z3-proves).
+        else if (arg == "--array-frame-mode") {
+            if (i + 1 < argc) {
+                config.global.array_frame_mode = argv[++i];
+            } else {
+                throw std::invalid_argument("--array-frame-mode requires a value (disequality|ite)");
+            }
+        }
+        // [XTS-UnFun] Array/set encoding backend: uf (default, uninterpreted functions) or theory (Z3 Array sort)
+        else if (arg == "--array-encoding") {
+            if (i + 1 < argc) {
+                config.global.array_encoding = argv[++i];
+                config.global.array_encoding_explicit = true;
+            } else {
+                throw std::invalid_argument("--array-encoding requires a value (theory|uf)");
+            }
+        }
         // Grounding options
         else if (arg == "--up-grounding") {
             // Use Unified Planning grounding (Python side) instead of C++ grounding.
@@ -147,6 +165,10 @@ void CLIParser::parse(Config& config, int argc, char* argv[]) {
         // Local reasoning options
         else if (arg == "--no-local-reasoning") {
             config.local_reasoning.enabled = false;
+        }
+        // Problem dump (after pipeline passes)
+        else if (arg == "--dump-problem") {
+            config.global.dump_problem = true;
         }
     }
 

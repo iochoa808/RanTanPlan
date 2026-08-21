@@ -38,9 +38,41 @@ void Config::validate() const {
             "'. Valid values: linear, arithmetic, geometric, doubling");
     }
 
+    // [XTS] Validate array/set frame-axiom mode name (catches typos before search begins).
+    const auto& afm = global.array_frame_mode;
+    if (afm != "disequality" && afm != "ite") {
+        throw std::invalid_argument(
+            "Unknown array-frame-mode: '" + afm + "'. Valid values: disequality, ite");
+    }
+
+    // [XTS-UnFun] Validate array/set encoding backend name (catches typos before search begins).
+    const auto& aenc = global.array_encoding;
+    if (aenc != "theory" && aenc != "uf") {
+        throw std::invalid_argument(
+            "Unknown array-encoding: '" + aenc + "'. Valid values: theory, uf");
+    }
+
     // Validate search mode and resolve planner kind (may throw if mode
     // is incompatible with the strategy, e.g. optimal + double-tail).
     auto spec = StrategyRegistry::get(planner.strategy);
+
+    // [XTS-UnFun] UF array encoding is only implemented by the plain grounded
+    // encoder's effect paths; Chained/R2E would emit Theory store equations that
+    // never link to the UF frame axioms (silently unsound). Reject here so the
+    // error surfaces as a "Configuration error" instead of a late terminate
+    // (StrategyFactory::create_encoder keeps the same check as a backstop).
+    // Only an explicit --array-encoding uf is an error here: "uf" is also the
+    // default, and a chained/R2E strategy must stay usable without the caller
+    // having to opt out of a default they never chose. In that case
+    // StrategyFactory::create_encoder falls back to Theory and logs it.
+    if (aenc == "uf" && global.array_encoding_explicit &&
+        spec.encoder != EncoderFamily::Grounded) {
+        throw std::invalid_argument(
+            "--array-encoding uf is only supported by the grounded encoder family; "
+            "strategy '" + planner.strategy + "' uses a chained/R2E encoder. "
+            "Use a grounded-encoder strategy or --array-encoding theory.");
+    }
+
     SearchMode mode = parse_search_mode(planner.mode);
     spec.planner = resolve_planner_kind(mode, spec);
 

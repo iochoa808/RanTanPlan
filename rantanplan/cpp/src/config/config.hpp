@@ -27,6 +27,27 @@ public:
         double epsilon = 1e-6;        // Numerical tolerance for floating-point comparisons
         bool reachability_grounding = true;  // --up-grounding disables this
         bool numeric_grounding = true;       // --no-numeric-grounding disables this
+        bool dump_problem = false;    // --dump-problem: print Problem::to_string() after pipeline and exit
+        // [XTS] --array-frame-mode: which frame-axiom shape array/set fluents use.
+        // Applies under both array_encoding backends below (Theory and UF each
+        // implement both shapes, pointwise in the UF case since UF has no whole-
+        // function equality to compare with !=.
+        //   "disequality" (default) — (f^t != f^{t+1}) -> disjunction(actions), same shape as scalars.
+        //   "ite"                   — total-update ITE chain (ported from branch z3-proves).
+        std::string array_frame_mode = "disequality";
+        // [XTS-UnFun] --array-encoding: which Z3 theory backs array/set fluents.
+        //   "uf" (default)  — uninterpreted functions, one per (fluent, timestep), with
+        //                     reads/writes/frame axioms built by pointwise domain
+        //                     enumeration instead of select/store/extensionality.
+        //   "theory"        — Z3 Array sort (select/store), see docs/z3_encoding_rationale.md.
+        // Only the plain Grounded encoder implements the UF write paths, so a
+        // chained/R2E strategy falls back to "theory" unless "uf" was asked for
+        // explicitly (see array_encoding_explicit below and Config::validate).
+        std::string array_encoding = "uf";
+        // [XTS-UnFun] True once --array-encoding is passed on the command line.
+        // Distinguishes "the user demanded uf" (hard error when the strategy cannot
+        // provide it) from "uf is merely the default" (silent, logged fallback).
+        bool array_encoding_explicit = false;
     } global;
 
     /// Numeric Relaxed Planning Graph settings.

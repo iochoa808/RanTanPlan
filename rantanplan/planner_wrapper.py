@@ -7,12 +7,16 @@ from unified_planning.engines.mixins import OneshotPlannerMixin
 from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
 from unified_planning.engines.mixins.anytime_planner import AnytimePlannerMixin, AnytimeGuarantee
 from unified_planning.engines import PlanGenerationResultStatus, Engine, CompilationKind, ValidationResultStatus
-from unified_planning.engines.compilers import Grounder, QuantifiersRemover
+from unified_planning.engines.compilers import (
+    Grounder, QuantifiersRemover,
+    BoundedTypesRemover, NegativeConditionsRemover,
+    DisjunctiveConditionsRemover, ConditionalEffectsRemover,
+)
+from unified_planning.engines.compilers.usertype_fluents_remover import UsertypeFluentsRemover
 from unified_planning.grpc.proto_writer import ProtobufWriter
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.exceptions import UPException
 from .cnf_condition_compiler import CNFConditionCompiler
-from .bounded_types_simplifier import BoundedTypesSimplifier
 from unified_planning.model import ProblemKind, Problem
 from unified_planning.plans import SequentialPlan, ActionInstance
 from unified_planning.shortcuts import get_environment
@@ -48,6 +52,7 @@ class _RantanPlanBase(Engine):
         self._symmetries = options.get('symmetries', False)
         self._stats_file = options.get('stats_file')
         self._no_cnf_normalization = options.get('no_cnf_normalization', False)
+        self._compile_usertype_fluents = options.get('compile_usertype_fluents', False)
         self._smt_rpg_checker = options.get('smt_rpg_checker', False)
         self._no_goal_relevance = options.get('no_goal_relevance', False)
         self._horizon_schedule = options.get('horizon_schedule')
@@ -57,6 +62,16 @@ class _RantanPlanBase(Engine):
         self._mode = options.get('mode')
         self._output_plan = options.get('output_plan')
         self._no_local_reasoning = options.get('no_local_reasoning', False)
+        self._array_frame_mode = options.get('array_frame_mode')
+        self._array_encoding = options.get('array_encoding')
+        # Default IPAR,QR,CNF — the pre-XTS pipeline (QR + CNF, grounding left to
+        # the C++ backend unless GR is listed or up_grounding=True). IPAR is
+        # additive: its supports() check skips standard problems. QR expands
+        # object-typed forall/exists Python-side
+        raw = options.get('up_compilers', ['IPAR', 'QR', 'CNF'])
+        if isinstance(raw, str):
+            raw = [] if raw.lower() == 'none' else [c.strip() for c in raw.split(',') if c.strip()]
+        self._up_compilers = [c.upper() for c in raw]
 
     # ── Verbosity helpers ────────────────────────────────────────────────
 
@@ -141,6 +156,18 @@ class _RantanPlanBase(Engine):
         supported_kind.set_fluents_type('REAL_FLUENTS')
         supported_kind.set_fluents_type('INT_FLUENTS')
         supported_kind.set_fluents_type('OBJECT_FLUENTS')
+        try:
+            supported_kind.set_fluents_type('ARRAY_FLUENTS')  # [XTS]
+            supported_kind.set_fluents_type('SET_FLUENTS')     # [XTS]
+        except AssertionError:
+            pass  # older UP versions don't have these features
+        supported_kind.set_parameters('BOUNDED_INT_ACTION_PARAMETERS')  # [XTS]
+        supported_kind.set_parameters('BOUNDED_INT_FLUENT_PARAMETERS')  # [XTS]
+        for _ck in ('COUNTING', 'RANGE_VARIABLES', 'MEMBERING'):  # [XTS]
+            try:
+                supported_kind.set_conditions_kind(_ck)
+            except AssertionError:
+                pass
         supported_kind.set_initial_state('UNDEFINED_INITIAL_NUMERIC')
         supported_kind.set_conditions_kind('NEGATIVE_CONDITIONS')
         supported_kind.set_conditions_kind('DISJUNCTIVE_CONDITIONS')
@@ -224,6 +251,10 @@ class _RantanPlanBase(Engine):
             command.extend(["--mode", self._mode])
         if self._output_plan is not None:
             command.extend(["--output-plan", self._output_plan])
+        if self._array_frame_mode is not None:
+            command.extend(["--array-frame-mode", self._array_frame_mode])
+        if self._array_encoding is not None:
+            command.extend(["--array-encoding", self._array_encoding])
         if timeout:
             command.extend(["--timeout", str(int(timeout))])
 
@@ -231,7 +262,7 @@ class _RantanPlanBase(Engine):
 
     # ── Problem preparation ──────────────────────────────────────────────
 
-    def _validate_plan(self, problem: Problem, plan: SequentialPlan) -> bool:
+    def _validate_plan(self, problem: Problem, plan: SequentialPlan) -> Optional[bool]:
         try:
             with PlanValidator(problem_kind=problem.kind, plan_kind=plan.kind) as validator:
                 validation_result = validator.validate(problem, plan)  # type: ignore[attr-defined]
@@ -250,6 +281,10 @@ class _RantanPlanBase(Engine):
                     return False
 
         except Exception as e:
+            msg = str(e)
+            if "No available engine" in msg:
+                self._log_verbose("  Plan validation skipped: no UP validator supports this problem's features (e.g. arrays).")
+                return None
             self._log_error(f"Plan validation failed with error: {e}")
             return False
 
@@ -281,7 +316,7 @@ class _RantanPlanBase(Engine):
 
         real_int_fluents_to_init = []
         for fe in unintialized_fluents:
-            if fe.type == _tm.RealType() or fe.type == _tm.IntType():
+            if fe.type.is_real_type() or fe.type.is_int_type():
                 real_int_fluents_to_init.append(fe)
 
         if real_int_fluents_to_init:
@@ -295,55 +330,89 @@ class _RantanPlanBase(Engine):
     def _compile_problem(self, problem: Problem):
         current_problem = problem
         compilation_maps = []
+        step_names = []
+        enabled = set(self._up_compilers)
 
-        self._log_verbose("Starting problem compilation pipeline...")
+        self._log_verbose(
+            f"UP compiler pipeline: {', '.join(enabled) if enabled else 'none'}")
 
-        # Step 1: Remove quantifiers if present
-        quantifier_remover = QuantifiersRemover()
+        def _run(label, make_compiler, compilation_kind, wrap_exc=False):
+            nonlocal current_problem
+            compiler = make_compiler()
+            if not compiler.supports(current_problem.kind):
+                self._log_verbose(f"  {label}: not needed for this problem kind.")
+                return
+            self._log_verbose(f"  Applying {label}...")
+            try:
+                result = compiler.compile(current_problem, compilation_kind)
+            except Exception as exc:
+                if wrap_exc:
+                    self._log_warning(f"  {label} skipped due to error: {exc}")
+                    return
+                raise
+            current_problem = result.problem
+            compilation_maps.append(result)
+            step_names.append(label)
+            self._log_verbose(f"  {label} completed.")
 
-        if quantifier_remover.supports(current_problem.kind):
-            self._log_verbose("  Applying quantifier removal...")
-            quantifier_result = quantifier_remover.compile(current_problem, CompilationKind.QUANTIFIERS_REMOVING)
-            current_problem = quantifier_result.problem
-            compilation_maps.append(quantifier_result)
-            self._log_verbose("  Quantifier removal completed.")
-        else:
-            self._log_verbose("  Quantifier removal not needed for this problem type.")
+        # [XTS] IPAR: expands bounded-int action/fluent params and handles array fluents.
+        # This compiler is the XTS extension point; the others below are stock UP compilers.
+        if 'IPAR' in enabled:
+            from unified_planning.engines.compilers.int_parameter_actions_remover import IntParameterActionsRemover
+            _run("IntParameterActionsRemover",
+                 IntParameterActionsRemover,
+                 CompilationKind.INT_PARAMETER_ACTIONS_REMOVING)
 
-        # Step 2: CNF normalization of goals and preconditions
-        try:
-            if not self._no_cnf_normalization:
-                cnf_compiler = CNFConditionCompiler()
-                if cnf_compiler.supports(current_problem.kind):
-                    self._log_verbose("  Applying CNF normalization (goals and preconditions)...")
-                    cnf_result = cnf_compiler.compile(current_problem, CompilationKind.GROUNDING)
-                    current_problem = cnf_result.problem
-                    compilation_maps.append(cnf_result)
-                    self._log_verbose("  CNF normalization completed.")
-                else:
-                    self._log_verbose("  CNF normalization not needed for this problem type.")
-            else:
-                self._log_verbose("  CNF normalization disabled by configuration.")
-        except Exception as e:
-            self._log_warning(f"  CNF normalization skipped due to error: {e}")
+        # QR: removes existential/universal quantifiers
+        if 'QR' in enabled:
+            _run("QuantifiersRemover",
+                 QuantifiersRemover,
+                 CompilationKind.QUANTIFIERS_REMOVING)
 
-        # Step 3: Ground the problem (unless C++ backend will handle it)
-        if self._up_grounding:
-            self._log_verbose("  Applying UP grounder ...")
-            grounder = Grounder()
-            grounding_result = grounder.compile(current_problem, CompilationKind.GROUNDING)
-            current_problem = grounding_result.problem
-            compilation_maps.append(grounding_result)
-            self._log_verbose("  Grounding completed.")
-        else:
-            self._log_verbose("  Skipping Python-side grounding (the backend will ground).")
+        # CNF: normalizes disjunctive goals/preconditions into CNF
+        if 'CNF' in enabled and not self._no_cnf_normalization:
+            _run("CNFConditionCompiler",
+                 CNFConditionCompiler,
+                 CompilationKind.GROUNDING,
+                 wrap_exc=True)
+
+        # BTR: removes bounded types
+        if 'BTR' in enabled:
+            _run("BoundedTypesRemover",
+                 BoundedTypesRemover,
+                 CompilationKind.BOUNDED_TYPES_REMOVING)
+
+        # NCR: removes negative conditions
+        if 'NCR' in enabled:
+            _run("NegativeConditionsRemover",
+                 NegativeConditionsRemover,
+                 CompilationKind.NEGATIVE_CONDITIONS_REMOVING)
+
+        # DCR: removes all disjunctive conditions
+        if 'DCR' in enabled:
+            _run("DisjunctiveConditionsRemover",
+                 DisjunctiveConditionsRemover,
+                 CompilationKind.DISJUNCTIVE_CONDITIONS_REMOVING)
+
+        # CER: removes conditional effects
+        if 'CER' in enabled:
+            _run("ConditionalEffectsRemover",
+                 ConditionalEffectsRemover,
+                 CompilationKind.CONDITIONAL_EFFECTS_REMOVING)
+
+        # GR: grounds actions (also triggered by legacy _up_grounding flag)
+        if 'GR' in enabled or self._up_grounding:
+            _run("Grounder",
+                 Grounder,
+                 CompilationKind.GROUNDING)
 
         self._log_verbose("Problem compilation pipeline completed.")
 
         class CombinedCompilationResult:
-            def __init__(self, problem, compilation_maps):
+            def __init__(self, problem, compilation_maps, step_names):
                 self.problem = problem
                 self.compilation_maps = compilation_maps
+                self.step_names = step_names
 
             def map_back_action_instance(self, action_instance):
                 current_ai = action_instance
@@ -354,7 +423,7 @@ class _RantanPlanBase(Engine):
                             return None
                 return current_ai
 
-        combined_result = CombinedCompilationResult(current_problem, compilation_maps)
+        combined_result = CombinedCompilationResult(current_problem, compilation_maps, step_names)
         return current_problem, combined_result
 
     # ── Protobuf result reading ──────────────────────────────────────────
@@ -419,23 +488,30 @@ class _RantanPlanBase(Engine):
         """
         self._check_no_nested_fluents(problem)
 
-        # Strip bounded types before _initialize_fluents, which cannot handle
-        # bounded int/real types in defaults or fluent parameter enumeration.
         pre_compilation_maps = []
-        if BoundedTypesSimplifier._has_bounded_types(problem):
-            self._log_verbose("  Stripping bounded integer/real types...")
-            bounded_simplifier = BoundedTypesSimplifier()
-            bounded_result = bounded_simplifier.compile(
-                problem, CompilationKind.BOUNDED_TYPES_REMOVING
-            )
-            problem = bounded_result.problem
-            pre_compilation_maps.append(bounded_result)
-            self._log_verbose("  Bounded types simplified.")
+
+        # Optionally compile away usertype (object) fluents
+        if self._compile_usertype_fluents and problem.kind.has_object_fluents():
+            self._log_verbose("  Removing usertype fluents (UP compilation)...")
+            try:
+                utf_result = UsertypeFluentsRemover().compile(
+                    problem, CompilationKind.USERTYPE_FLUENTS_REMOVING
+                )
+            except Exception as exc:
+                raise UPException(
+                    f"UsertypeFluentsRemover failed — this domain likely uses "
+                    f"hierarchical typing, which is a known UP limitation. "
+                    f"Use compile_usertype_fluents=False (the default) instead. "
+                    f"Original error: {exc}"
+                ) from exc
+            problem = utf_result.problem
+            pre_compilation_maps.append(utf_result)
+            self._log_verbose("  Usertype fluents removed.")
 
         self._initialize_fluents(problem)
         compiled_problem, compilation_result = self._compile_problem(problem)
 
-        # Prepend bounded-types maps so map_back_action_instance unwinds them last
+        # Prepend any pre-compilation maps so map_back_action_instance unwinds them last
         compilation_result.compilation_maps = pre_compilation_maps + compilation_result.compilation_maps
 
         pb_problem_msg = self._pb_writer.convert(compiled_problem)
@@ -497,6 +573,12 @@ class _RantanPlanBase(Engine):
                 validation_log = LogMessage(
                     level=LogLevel.WARNING,
                     message="Plan validation failed - the plan may not be correct"
+                )
+                result_log_messages = list(result_from_protobuf.log_messages) + [validation_log]
+            elif plan_is_valid is None:
+                validation_log = LogMessage(
+                    level=LogLevel.WARNING,
+                    message="Plan validation skipped - no UP validator supports this problem's features"
                 )
                 result_log_messages = list(result_from_protobuf.log_messages) + [validation_log]
             else:

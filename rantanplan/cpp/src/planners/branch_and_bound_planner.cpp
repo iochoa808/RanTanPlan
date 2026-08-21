@@ -159,6 +159,10 @@ Plan BranchAndBoundPlanner::search() {
         std::string goal_name = "goal_at_" + std::to_string(h);
         z3::expr goal_lit = ctx_.bool_const(goal_name.c_str());
         solver_.add(z3::implies(goal_lit, *encoder_.encode_goal(h)));
+        // Declared type bounds at the goal state (nullptr when no bounded types).
+        if (auto tb = encoder_.encode_type_bounds(h)) {
+            solver_.add(*tb);
+        }
 
         // 5. Inner B&B loop at this horizon
         bool advance_horizon = false;

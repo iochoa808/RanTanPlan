@@ -119,6 +119,12 @@ Plan SequentialPlanner::search() {
         std::string goal_var_name = "goal_at_" + std::to_string(h);
         z3::expr goal_literal = ctx_.bool_const(goal_var_name.c_str());
         solver_.add(z3::implies(goal_literal, *encoder_.encode_goal(h)));
+        // State h is never covered by add_timestep_constraints (which runs t < h).
+        // Apply declared type bounds at the goal state itself; nullptr (no bounded
+        // types) keeps the pre-XTS encoding unchanged.
+        if (auto tb = encoder_.encode_type_bounds(h)) {
+            solver_.add(*tb);
+        }
 
         z3::expr_vector assumptions(ctx_);
         assumptions.push_back(goal_literal);

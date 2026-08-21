@@ -101,6 +101,25 @@ Use --list-strategies to see available strategies and their descriptions.
     parser.add_argument('--no-numeric-grounding', action='store_true',
                         help='Disable numeric interval bounds in reachability '
                              'grounder (enabled by default)')
+    parser.add_argument('--array-encoding', choices=['theory', 'uf'], default=None,
+                        help='Z3 backend for array/set fluents: "uf" (default) uses one '
+                             'uninterpreted function per (fluent, timestep) with '
+                             'pointwise reads/writes over the enumerated domain; '
+                             '"theory" uses the Array sort (select/store). Chained/R2E '
+                             'strategies only implement "theory" and fall back to it')
+    parser.add_argument('--array-frame-mode', choices=['disequality', 'ite'], default=None,
+                        help='Frame-axiom shape for array/set fluents: "disequality" '
+                             '(default) uses (f^t != f^t+1) -> actions, same shape as '
+                             'scalars; "ite" uses a total-update if-then-else chain')
+    parser.add_argument('--up-compilers', default='IPAR,QR,CNF', metavar='LIST',
+                        help=('Comma-separated UP-side compilers to run before protobuf '
+                              'serialisation (default: IPAR,QR,CNF). Use "none" to skip all. '
+                              'QR expands object-typed forall/exists Python-side '
+                              '(the C++ backend currently mis-handles them; see docs/TODO.md). '
+                              'IPAR=int-params/arrays  QR=quantifiers  '
+                              'CNF=disjunctions(CNF)  BTR=bounded-types  '
+                              'NCR=neg-conditions  DCR=disjunctions(all)  '
+                              'CER=cond-effects  GR=grounding'))
 
     parser.add_argument(
         "--version",
@@ -149,6 +168,17 @@ def _build_planner_params(args) -> Dict[str, object]:
         planner_params['up_grounding'] = True
     if args.no_numeric_grounding:
         planner_params['numeric_grounding'] = False
+    # [XTS] Left unset when not given so the C++ defaults (uf / disequality)
+    # stay the single source of truth for what "default" means.
+    if args.array_encoding is not None:
+        planner_params['array_encoding'] = args.array_encoding
+    if args.array_frame_mode is not None:
+        planner_params['array_frame_mode'] = args.array_frame_mode
+    # The UP compiler pipeline lives in planner_wrapper._compile_problem;
+    # hand it the raw --up-compilers string (it parses 'none' and comma
+    # lists itself). Running it there rather than here also keeps the
+    # compilation maps, so plans map back to the original problem's actions.
+    planner_params['up_compilers'] = args.up_compilers
     if args.mode is not None:
         planner_params['mode'] = args.mode
     if args.output_plan:
@@ -254,7 +284,7 @@ def main():
         print(f"Error parsing PDDL files: {e}")
         sys.exit(1)
 
-    # Solve
+    # Solve (the wrapper runs the UP compiler pipeline)
     result = solve_problem(problem, args)
     if not result:
         sys.exit(1)

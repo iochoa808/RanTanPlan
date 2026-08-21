@@ -22,6 +22,7 @@
 #include "../planners/propagators/modules/forall_mutex_module.hpp"
 #include "../planners/propagators/modules/frame_axiom_module.hpp"
 #include "../util/logger.hpp"
+#include "config.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -125,15 +126,58 @@ void StrategyFactory::configure_planner(BasePlanner& planner, const StrategySpec
 
 std::unique_ptr<BaseEncoder> StrategyFactory::create_encoder(
     const StrategySpec& spec, const Problem& problem, z3::context& ctx) {
+    // [XTS] Array/set fluents are encoded for sequential semantics only.
+    if (spec.semantics != SemanticsKind::Sequential) {
+        for (ExprID gf : problem.grounded_fluents()) {
+            const Type* vt = problem.type_for_id(gf);
+            if (!vt || (!vt->is_array() && !vt->is_set())) continue;
+            throw std::invalid_argument(
+                "array/set fluents require a sequential strategy; '"
+                + Config::instance().planner.strategy + "' uses "
+                + (spec.semantics == SemanticsKind::Forall ? "forall" : "exists")
+                + "-step semantics. Use --strategy seq or seq-dt.");
+        }
+    }
+
+    std::unique_ptr<BaseEncoder> encoder;
     switch (spec.encoder) {
         case EncoderFamily::Grounded:
-            return std::make_unique<GroundedEncoder>(problem, ctx);
+            encoder = std::make_unique<GroundedEncoder>(problem, ctx);
+            break;
         case EncoderFamily::Chained:
-            return std::make_unique<ChainedGroundedEncoder>(problem, ctx);
+            encoder = std::make_unique<ChainedGroundedEncoder>(problem, ctx);
+            break;
         case EncoderFamily::R2E:
-            return std::make_unique<R2EGroundedEncoder>(problem, ctx);
+            encoder = std::make_unique<R2EGroundedEncoder>(problem, ctx);
+            break;
+        default:
+            throw std::invalid_argument("Unknown encoder family");
     }
-    throw std::invalid_argument("Unknown encoder family");
+
+    // [XTS] Apply --array-frame-mode (default: disequality) to every grounded-family encoder.
+    if (auto* grounded = dynamic_cast<GroundedEncoder*>(encoder.get())) {
+        const auto& mode = Config::instance().global.array_frame_mode;
+        grounded->set_array_frame_mode(mode == "ite"
+            ? GroundedEncoder::ArrayFrameMode::Ite
+            : GroundedEncoder::ArrayFrameMode::Disequality);
+
+        // [XTS-UnFun] Apply --array-encoding (default: uf). Under "uf",
+        // array_frame_mode above still applies: encode_frames implements both
+        // shapes pointwise (per enumerated cell) rather than over whole Array
+        // terms, since UF func_decls have no first-class (dis)equality.
+        const auto& array_enc = Config::instance().global.array_encoding;
+        if (array_enc == "uf" && spec.encoder != EncoderFamily::Grounded) {
+            throw std::invalid_argument(
+                "--array-encoding uf is only supported by the grounded encoder "
+                "family; the chained/R2E encoders' effect encodings do not "
+                "implement UF array semantics. Use a grounded-encoder strategy "
+                "or --array-encoding theory.");
+        }
+        grounded->set_array_encoding_mode(array_enc == "uf"
+            ? Z3VariableFactory::ArrayEncodingMode::UF
+            : Z3VariableFactory::ArrayEncodingMode::Theory);
+    }
+    return encoder;
 }
 
 std::unique_ptr<ParallelismStrategy> StrategyFactory::create_parallelism(

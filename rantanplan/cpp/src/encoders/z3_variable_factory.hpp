@@ -61,12 +61,15 @@ public:
     //   UF (default) — one uninterpreted function per (fluent, timestep); reads are
     //                  direct function application, writes/frame axioms are asserted
     //                  pointwise over the fluent's enumerated static domain.
-    //   Theory       — Z3 Array sort, select/store (see z3_encoding_rationale.md).
+    //   Theory       — Z3 Array sort, select/store
     enum class ArrayEncodingMode { Theory, UF };
 
     // [XTS-UnFun] Select the array/set encoding backend (see ArrayEncodingMode above).
     void set_array_encoding_mode(ArrayEncodingMode mode) { array_encoding_mode_ = mode; }
     ArrayEncodingMode array_encoding_mode() const { return array_encoding_mode_; }
+
+    // [XTS-UnFun] Gates every array/set code path in the encoder and visitor.
+    bool uf_mode() const { return array_encoding_mode_ == ArrayEncodingMode::UF; }
 
     // =====================================================================
     // [1] Construction & wiring
@@ -184,10 +187,21 @@ public:
     const z3::func_decl& get_array_uf(const Fluent& fluent, int timestep,
                                       unsigned arity, z3::sort elem_sort);
 
+    // [XTS-UnFun] Turn one enumerate_array_domain() index tuple into the argument vector
+    // for a UF function application. Pure plumbing (int64 -> Z3 Int literal), but it was
+    // open-coded identically at every pointwise call site — initial state, whole-array
+    // assign, both frame-axiom branches, and per-cell value evaluation.
+    //
+    //   cell_args({2})      ->  (2)        e.g. fn(2)      for board[2]
+    //   cell_args({1, 0})   ->  (1, 0)     e.g. fn(1, 0)   for grid[1][0]
+    //   cell_args({})       ->  ()         (degenerate; no caller does this today)
+    z3::expr_vector cell_args(const std::vector<int64_t>& cell) const;
+
     // [XTS-UnFun] Bundles the two values every UF call site needs together: a
     // fluent's UF function arity (1 for sets; array nesting depth for arrays) and
-    // its elem_sort (via resolve_elem_sort_at_depth above). Saves callers from
-    // re-deriving arity via domain[0].size() or repeating the is_set() special case.
+    // its elem_sort. Both fall out of a single descend_array_levels() walk
+    // (array_domain_utils.hpp) — the same descent leaf_element_type performs. Saves
+    // callers from re-deriving arity via domain[0].size() or repeating the is_set() case.
     std::pair<unsigned, z3::sort> resolve_uf_shape(const Type* t) const;
 
 private:
@@ -208,8 +222,9 @@ private:
     z3::sort resolve_elem_sort(const std::string& type_name) const;
 
     // [XTS-UnFun] Same dispatch as resolve_elem_sort, but takes a resolved Type* directly
-    // instead of re-parsing a type name via find_type(). Factored out so
-    // resolve_elem_sort_at_depth() can walk a chain of Type* without repeated lookups.
+    // instead of re-parsing a type name via find_type(). Factored out so the callers that
+    // walk a chain of Type* (resolve_elem_sort_at_depth, resolve_uf_shape) can hand over
+    // the Type* they already landed on rather than round-tripping through its name.
     z3::sort resolve_elem_sort_for_type(const Type* t) const;
 
     // =====================================================================

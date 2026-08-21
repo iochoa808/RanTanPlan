@@ -236,6 +236,12 @@ endif()
 # ==============================================================================
 install(TARGETS rantanplan DESTINATION ${OUTPUT_DIR})
 
+# Copy binary to bin/ after every build so solve.py always gets the latest version.
+add_custom_command(TARGET rantanplan POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:rantanplan> "${CMAKE_CURRENT_SOURCE_DIR}/../bin/rantanplan"
+    COMMENT "Copying rantanplan to bin/"
+)
+
 # ==============================================================================
 # Set RPATH for Z3 if found manually
 # ==============================================================================

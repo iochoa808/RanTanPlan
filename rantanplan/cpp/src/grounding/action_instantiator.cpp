@@ -27,6 +27,11 @@ static ExprID make_object_constant(ExprPool& pool,
     return pool.intern(node);
 }
 
+// Helper: build an integer-constant ExprID from a value.
+static ExprID make_int_constant(ExprPool& pool, int64_t value) {
+    return pool.intern_int_constant(value);
+}
+
 // ---------------------------------------------------------------------------
 // Helper: build a Substitution (param_name → constant ExprID).
 // ---------------------------------------------------------------------------
@@ -36,9 +41,16 @@ static Substitution build_substitution(ExprPool& pool,
                                         const Action& lifted_action,
                                         const PartialBinding& binding) {
     Substitution subst;
-    for (const auto& [param_idx, obj_idx] : binding) {
+    for (const auto& [param_idx, obj_or_int_val] : binding) {
         const std::string& param_name = lifted_action.parameter(param_idx).name();
-        ExprID constant_id = make_object_constant(pool, problem, obj_idx);
+        const Type* ptype = lifted_action.parameter(param_idx).type();
+
+        ExprID constant_id;
+        if (ptype && ptype->bounded_int_ancestor()) {
+            constant_id = make_int_constant(pool, static_cast<int64_t>(obj_or_int_val));
+        } else {
+            constant_id = make_object_constant(pool, problem, obj_or_int_val);
+        }
         subst[param_name] = constant_id;
     }
     return subst;
@@ -64,8 +76,15 @@ Action instantiate_action(ExprPool& pool,
     for (size_t i = 0; i < lifted_action.parameter_count(); ++i) {
         auto it = binding.find(static_cast<int>(i));
         if (it != binding.end()) {
-            const Object& obj = problem.object(it->second);
-            ground.add_parameter(Parameter(obj.name(), obj.type()));
+            const Parameter& lparam = lifted_action.parameter(i);
+            const Type* ptype = lparam.type();
+            if (ptype && ptype->bounded_int_ancestor()) {
+                // Bounded-int parameter: name is the integer value as a string.
+                ground.add_parameter(Parameter(std::to_string(it->second), ptype));
+            } else {
+                const Object& obj = problem.object(it->second);
+                ground.add_parameter(Parameter(obj.name(), obj.type()));
+            }
         }
     }
 

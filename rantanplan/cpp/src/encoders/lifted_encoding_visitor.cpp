@@ -110,6 +110,17 @@ z3::expr LiftedEncodingVisitor::handle_divide(const std::vector<z3::expr>& args)
     return args[0] / args[1];
 }
 
+z3::expr LiftedEncodingVisitor::handle_count(const std::vector<z3::expr>& args) {
+    if (args.empty()) {
+        return ctx_.int_val(0);
+    }
+    z3::expr result = ctx_.int_val(0);
+    for (const auto& arg : args) {
+        result = result + z3::ite(arg, ctx_.int_val(1), ctx_.int_val(0));
+    }
+    return result;
+}
+
 z3::expr LiftedEncodingVisitor::handle_uninterpreted_function(
     const std::string& function_name,
     const std::vector<z3::expr>& args,
@@ -294,6 +305,7 @@ z3::expr LiftedEncodingVisitor::convert_node_pool(ExprID id) {
             case ExprOperator::MINUS:         return handle_minus(z3_args);
             case ExprOperator::MULTIPLY:      return handle_multiply(z3_args);
             case ExprOperator::DIVIDE:        return handle_divide(z3_args);
+            case ExprOperator::COUNT:         return handle_count(z3_args);
             default: {
                 // Get function name from head symbol
                 const ExprNode& func_sym = pool.head_symbol_node(id);

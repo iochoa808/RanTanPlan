@@ -336,19 +336,56 @@ int main(int argc, char* argv[]) {
     auto pipeline_result = rantanplan::run_pipeline(std::move(initial_result), passes);
     config.planner.start_timestep = pipeline_result.lower_bound;
 
+    // [XTS] Show protobuf
+    if (config.global.dump_problem) {
+        std::cout << pipeline_result.problem.to_string() << std::flush;
+        google::protobuf::ShutdownProtobufLibrary();
+        return 0;
+    }
+
     // Analyze numeric constraint structure for Z3 solver tuning
     auto constraint_analysis = rantanplan::NumericConstraintAnalyzer::analyze(pipeline_result.problem);
     pipeline_result.arithmetic_profile = constraint_analysis.profile;
     pipeline_result.problem.set_all_integer(constraint_analysis.all_integer);
 
-    const char* logic_hint = rantanplan::recommended_logic(constraint_analysis.profile, constraint_analysis.all_integer);
+    // [XTS] NumericConstraintAnalyzer only classifies arithmetic structure; it does not
+    // track array/set fluents.  Scan grounded fluents here to determine has_arrays so
+    // recommended_logic can select the array-theory logic fragment (QF_ALIA / QF_ALRA).
+    bool has_arrays = false;
+    for (rantanplan::ExprID eid : pipeline_result.problem.grounded_fluents()) {
+        const rantanplan::Type* vt = pipeline_result.problem.type_for_id(eid);
+        if (vt && (vt->is_array() || vt->is_set())) { has_arrays = true; break; }
+    }
+    
+    pipeline_result.problem.set_has_arrays(has_arrays);
+    const char* logic_hint = rantanplan::recommended_logic(
+        pipeline_result.arithmetic_profile, pipeline_result.problem.all_integer(),
+        pipeline_result.problem.has_arrays(), config.global.array_encoding == "uf");
     rantanplan::Logger::instance().component(rantanplan::VerbosityLevel::INFO, "ArithProfile", {
         {"class", rantanplan::arithmetic_profile_to_string(constraint_analysis.profile)},
         {"numeric fluents", std::to_string(constraint_analysis.num_numeric_fluents)},
         {"integer", constraint_analysis.num_numeric_fluents > 0
             ? (constraint_analysis.all_integer ? "yes" : "no") : "n/a"},
+        {"arrays", has_arrays ? "yes" : "no"},                                      // [XTS]
         {"logic", logic_hint ? logic_hint : "default"}
     });
+
+    // [XTS] Array/set encoding is only validated on the sequential planner (and on
+    // branch-and-bound, which sequential strategies reach via --mode optimal|anytime).
+    // DoubleTail and PDLA never assert declared type bounds at their goal state, so
+    // they can return a plan whose final state violates a bounded-int or array-cell
+    // range.  Reject the combination rather than emit an unsound plan.
+    if (has_arrays && (rantanplan::uses_double_tail(pipeline_result.resolved_spec) ||
+                       rantanplan::uses_pdla(pipeline_result.resolved_spec))) {
+        rantanplan::Logger::instance().error(
+            "Array/set problems are supported only by sequential strategies; '" +
+            config.planner.strategy + "' uses the " +
+            (rantanplan::uses_double_tail(pipeline_result.resolved_spec)
+                 ? std::string("double-tail") : std::string("PDLA")) +
+            " planner. Use a non-dt, non-pdla strategy (e.g. 'seq').");
+        google::protobuf::ShutdownProtobufLibrary();
+        return 1;
+    }
 
     // Record final action count after all pipeline passes (used for grounding analysis).
     rantanplan::Stats::instance().set("pipeline.final_actions",

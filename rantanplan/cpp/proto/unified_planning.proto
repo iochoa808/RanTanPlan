@@ -11,6 +11,8 @@ syntax = "proto3";
 //  - "up:bool"
 //  - "up:integer"
 //  - "up:real"
+//  - "up:array"
+//  - "up:set"
 //  - "up:time"
 //
 // Any other string (e.g. "location") refers to a symbolic type and must have been declared in the problem definition.
@@ -95,6 +97,17 @@ message TypeDeclaration {
     // If set, the parent type must have been previously declared (i.e. should appear earlier in the problem's type declarations.
     // feature: HIERARCHICAL_TYPING
     string parent_type = 2;
+
+    // [XTS] Extension: structural information for composite types.
+    // These fields are only meaningful when type_name is "up:array" or "up:set".
+
+    // For ArrayType and SetType: proto_type() string of the element type.
+    // e.g. "Color" for an array/set of Color objects, "up:integer[0,2]" for bounded ints.
+    string element_type = 3; // [XTS]
+
+    // For ArrayType only: number of elements in the array dimension.
+    // Zero means this field is not set (proto3 default).
+    int32 size = 4; // [XTS]
 }
 
 // Parameter of a fluent or of an action
@@ -384,6 +397,14 @@ message Hierarchy {
 
 // ============= Scheduling =======================
 
+// A constraint expression with a scope (list of boolean guards).
+// feature: SCOPED_CONSTRAINTS
+message ScopedConstraint {
+    Expression constraint = 1;
+    // If all scope expressions are true, the constraint must hold.
+    repeated Expression scope = 2;
+}
+
 // Activity in a scheduling problem.
 message Activity {
     // Name of the activity that must uniquely identify it.
@@ -403,6 +424,10 @@ message Activity {
 
     // Conjunction of static constraints that must hold if the activity is present.
     repeated Expression constraints = 6;
+
+    // If true, the activity is optional and may be absent from a solution.
+    // feature: OPTIONAL_ACTIVITIES
+    bool optional = 7;
 }
 
 // Extension of `Problem` for scheduling
@@ -413,8 +438,12 @@ message SchedulingExtension {
     // All variables in the base problem
     repeated Parameter variables = 2;
 
-    // All constraints in the base problem.
+    // All mandatory constraints in the base problem.
     repeated Expression constraints = 5;
+
+    // All constraints with a scope definition.
+    // feature: SCOPED_CONSTRAINTS
+    repeated ScopedConstraint scoped_constraints = 6;
 }
 
 message Schedule {
@@ -509,7 +538,7 @@ message Metric {
     // Empty, if the `kind` is not {MIN/MAX}IMIZE_EXPRESSION_ON_FINAL_STATE
     Expression expression = 2;
 
-    // If `kind == MINIMIZE_ACTION_COSTS``, then each action is associated to a cost expression.
+    // If `kind == MINIMIZE_ACTION_COSTS`, then each action is associated to a cost expression.
     //
     // TODO: Document what is allowed in the expression. See issue #134
     // In particular, for this metric to be useful in many practical problems, the cost expression
@@ -610,6 +639,7 @@ enum Feature {
     EQUALITIES = 11;
     EXISTENTIAL_CONDITIONS = 12;
     UNIVERSAL_CONDITIONS = 13;
+    COUNTING = 75;
     // EFFECTS_KIND
     CONDITIONAL_EFFECTS = 14;
     INCREASE_EFFECTS = 15;
@@ -629,6 +659,10 @@ enum Feature {
     OBJECT_FLUENTS = 20;
     INT_FLUENTS = 60;
     REAL_FLUENTS = 61;
+    ARRAY_FLUENTS = 74;
+    SET_FLUENTS = 72;
+    // CONDITIONS_KIND (set)
+    MEMBERING = 73;
     // PARAMETERS
     BOOL_FLUENT_PARAMETERS = 50;
     BOUNDED_INT_FLUENT_PARAMETERS = 51;
@@ -666,6 +700,9 @@ enum Feature {
     // INITIAL_STATE
     UNDEFINED_INITIAL_NUMERIC = 68;
     UNDEFINED_INITIAL_SYMBOLIC = 69;
+    // SCHEDULING
+    OPTIONAL_ACTIVITIES = 70;
+    SCOPED_CONSTRAINTS = 71;
 }
 
 // =================== Plan ================
@@ -749,6 +786,9 @@ message PlanRequest {
 
     // Engine specific options to be passed to the engine
     map<string, string> engine_options = 4;
+
+    // Optional plan used to warm-start the search.
+    Plan warm_start_plan = 5;
 }
 
 message ValidationRequest {
