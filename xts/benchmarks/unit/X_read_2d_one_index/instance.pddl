@@ -1,0 +1,10 @@
+(define (problem X-read-2d-one-index-01)
+    (:domain X-read-2d-one-index)
+    (:init
+        (= (board)  (array.mk ((1 2 3)
+                               (4 5 6)
+                               (7 8 9))))
+        (= (result) 0)
+    )
+    (:goal (= (result) 5))
+)

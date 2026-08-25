@@ -1,0 +1,22 @@
+;; PDDL-XTS translation of pddl/test/gripper-round-1-adl/problem.pddl.
+
+(define (problem gripper-x-1-xts)
+    (:domain gripper-typed-xts)
+    (:objects
+        rooma roomb - room
+        ball4 ball3 ball2 ball1 - ball
+    )
+    (:init
+        (= (robby-at) rooma)
+        (free left)
+        (free right)
+        (at ball4 rooma)
+        (at ball3 rooma)
+        (at ball2 rooma)
+        (at ball1 rooma)
+    )
+    (:goal (and (at ball4 roomb)
+                (at ball3 roomb)
+                (at ball2 roomb)
+                (at ball1 roomb)))
+)

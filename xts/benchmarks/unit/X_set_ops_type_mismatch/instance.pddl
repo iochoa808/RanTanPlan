@@ -1,0 +1,10 @@
+(define (problem X-set-ops-type-mismatch-01)
+    (:domain X-set-ops-type-mismatch)
+    (:init
+        (= (obj_bag)     (set.mk (item_a item_b)))
+        (= (int_bag)     (set.mk (1 3 5)))
+        (= (result_obj)  (set.mk ()))
+        (= (result_int)  (set.mk ()))
+    )
+    (:goal ())
+)

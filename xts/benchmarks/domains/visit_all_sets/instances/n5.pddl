@@ -1,0 +1,40 @@
+(define (problem visit_all_sets_5x5)
+    (:domain visit-all-sets)
+    (:objects
+        x0y0 x0y1 x0y2 x0y3 x0y4
+        x1y0 x1y1 x1y2 x1y3 x1y4
+        x2y0 x2y1 x2y2 x2y3 x2y4
+        x3y0 x3y1 x3y2 x3y3 x3y4
+        x4y0 x4y1 x4y2 x4y3 x4y4 - place
+    )
+    (:init
+        (= (robot_at) x0y0)
+        (= (visited) (set.mk (x0y0)))
+        (= (connects x0y0) (set.mk (x0y1 x1y0)))
+        (= (connects x0y1) (set.mk (x0y2 x0y0 x1y1)))
+        (= (connects x0y2) (set.mk (x0y3 x0y1 x1y2)))
+        (= (connects x0y3) (set.mk (x0y4 x0y2 x1y3)))
+        (= (connects x0y4) (set.mk (x0y3 x1y4)))
+        (= (connects x1y0) (set.mk (x1y1 x2y0 x0y0)))
+        (= (connects x1y1) (set.mk (x1y2 x1y0 x2y1 x0y1)))
+        (= (connects x1y2) (set.mk (x1y3 x1y1 x2y2 x0y2)))
+        (= (connects x1y3) (set.mk (x1y4 x1y2 x2y3 x0y3)))
+        (= (connects x1y4) (set.mk (x1y3 x2y4 x0y4)))
+        (= (connects x2y0) (set.mk (x2y1 x3y0 x1y0)))
+        (= (connects x2y1) (set.mk (x2y2 x2y0 x3y1 x1y1)))
+        (= (connects x2y2) (set.mk (x2y3 x2y1 x3y2 x1y2)))
+        (= (connects x2y3) (set.mk (x2y4 x2y2 x3y3 x1y3)))
+        (= (connects x2y4) (set.mk (x2y3 x3y4 x1y4)))
+        (= (connects x3y0) (set.mk (x3y1 x4y0 x2y0)))
+        (= (connects x3y1) (set.mk (x3y2 x3y0 x4y1 x2y1)))
+        (= (connects x3y2) (set.mk (x3y3 x3y1 x4y2 x2y2)))
+        (= (connects x3y3) (set.mk (x3y4 x3y2 x4y3 x2y3)))
+        (= (connects x3y4) (set.mk (x3y3 x4y4 x2y4)))
+        (= (connects x4y0) (set.mk (x4y1 x3y0)))
+        (= (connects x4y1) (set.mk (x4y2 x4y0 x3y1)))
+        (= (connects x4y2) (set.mk (x4y3 x4y1 x3y2)))
+        (= (connects x4y3) (set.mk (x4y4 x4y2 x3y3)))
+        (= (connects x4y4) (set.mk (x4y3 x3y4)))
+    )
+    (:goal (= (cardinality (visited)) 25))
+)

@@ -1,0 +1,10 @@
+(define (problem X-2d-write-on-1d-array-01)
+    (:domain X-2d-write-on-1d-array)
+    (:init
+        (= (row)  (array.mk (0 0 0)))
+        (= (grid) (array.mk ((0 0 0)
+                             (0 0 0)
+                             (0 0 0))))
+    )
+    (:goal ())
+)

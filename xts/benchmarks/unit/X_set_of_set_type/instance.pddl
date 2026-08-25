@@ -1,0 +1,5 @@
+(define (problem X-set-of-set-type-01)
+    (:domain X-set-of-set-type)
+    (:init)
+    (:goal ())
+)

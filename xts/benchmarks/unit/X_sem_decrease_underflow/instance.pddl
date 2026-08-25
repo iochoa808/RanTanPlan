@@ -1,0 +1,5 @@
+(define (problem X-sem-decrease-underflow-01)
+    (:domain X-sem-decrease-underflow)
+    (:init (= (altitude) 9))
+    (:goal (= (altitude) 3))
+)
