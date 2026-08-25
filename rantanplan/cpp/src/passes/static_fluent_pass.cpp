@@ -1,5 +1,4 @@
 #include "static_fluent_pass.hpp"
-#include "../util/ipar_names.hpp"
 #include "../util/logger.hpp"
 #include "../util/scoped_timer.hpp"
 #include "../util/stats.hpp"
@@ -567,76 +566,6 @@ void StaticFluentPass::apply(PipelineResult& result) const {
     for (const auto& assignment : problem.initial_state()) {
         if (static_fluent_set.count(assignment.fluent_id())) {
             static_values[assignment.fluent_id()] = assignment.value_id();
-        }
-    }
-
-    // [XTS] Step 3a: Replace CWA sentinel values for IPAR-generated cell fluents
-    // with the actual element values from the parent array.
-    //
-    // IPAR creates arity-0 scalar fluents for every concrete cell it accesses:
-    //   card_at[0][0], card_at[0][1], card_at[1][0], ...
-    // Only card_at as a whole has an explicit initial assignment (an ARRAY_CONSTANT).
-    // The cell SVs got the CWA sentinel -1 (object type, no real value assigned).
-    //
-    // If we substitute -1 into preconditions, e.g.:
-    //   (= card_at[0][0] card_A)  →  (= -1 card_A)  →  FALSE
-    // ... actions that should be enabled at the first step get pruned away.
-    //
-    // Fix: for each cell SV with sentinel -1, index into the parent ARRAY_CONSTANT:
-    //   card_at = ARRAY_CONSTANT(card_A, card_B, card_C, ...)
-    //   card_at[0] → card_A   (replaces -1 with the correct object index)
-
-    // Build base-name → (head_sym_id, array_constant_id) map.
-    std::unordered_map<std::string, ExprID> arr_basename_to_val;
-    for (const auto& [sid, vid] : static_values) {
-        if (!pool.is_state_variable(sid)) continue;
-        if (pool.argument_count(sid) != 0) continue;   // arity-0 only
-        if (!pool.is_function_application(vid)) continue;
-        if (pool.op(vid) != ExprOperator::ARRAY_CONSTANT) continue;
-        // The head symbol carries the fluent name string.
-        ExprID head = pool.head_symbol_id(sid);
-        if (!pool.payload_is_string(head)) continue;
-        arr_basename_to_val[pool.payload_string(head)] = vid;
-    }
-
-    // Helper: walk nested ARRAY_CONSTANTs with an integer index list.
-    auto index_into_array = [&](ExprID arr_val, const std::vector<int64_t>& idxs) -> ExprID {
-        ExprID cur = arr_val;
-        for (int64_t idx : idxs) {
-            if (!pool.is_function_application(cur)) return EXPR_NULL;
-            if (pool.op(cur) != ExprOperator::ARRAY_CONSTANT) return EXPR_NULL;
-            size_t n = pool.argument_count(cur);
-            if (idx < 0 || static_cast<size_t>(idx) >= n) return EXPR_NULL;
-            cur = pool.argument(cur, static_cast<size_t>(idx));
-        }
-        return cur;
-    };
-
-    if (!arr_basename_to_val.empty()) {
-        for (auto& [sv_id, val_id] : static_values) {
-            if (!pool.is_state_variable(sv_id)) continue;
-            if (pool.argument_count(sv_id) != 0) continue;  // arity-0 cell SVs only
-
-            // Value must be the CWA object sentinel int -1.
-            if (!pool.is_constant(val_id) || !pool.payload_is_int(val_id)) continue;
-            if (pool.payload_int(val_id) != -1) continue;
-
-            // Name must follow "base[i][j]..." notation.
-            ExprID head = pool.head_symbol_id(sv_id);
-            if (!pool.payload_is_string(head)) continue;
-            const std::string& name = pool.payload_string(head);
-
-            auto parsed = parse_ipar_cell_name(name);
-            if (!parsed) continue;
-            auto& [base, idxs] = *parsed;
-
-            auto arr_it = arr_basename_to_val.find(base);
-            if (arr_it == arr_basename_to_val.end()) continue;
-
-            ExprID actual_val = index_into_array(arr_it->second, idxs);
-            if (actual_val.valid()) {
-                val_id = actual_val;  // replace CWA sentinel with real cell value
-            }
         }
     }
 

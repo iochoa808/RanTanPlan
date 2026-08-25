@@ -1,6 +1,5 @@
 #include "achievers_analysis.hpp"
 #include "../analysis/numeric_relaxed_planning_graph.hpp"
-#include "../util/ipar_names.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/logger.hpp"
 #include <iostream>
@@ -415,20 +414,6 @@ std::unordered_set<ExprID> AchieversAnalysis::get_action_modified_fluents(const 
     std::unordered_set<ExprID> modified_fluents;
     const ExprPool& pool = problem_->pool();
 
-    // [XTS] Build lookup: "base[k]" name → ExprID for IPAR cell SVs in grounded_fluents.
-    // ARRAY_WRITE(base_sv, k) effects must also be considered as modifying the
-    // corresponding IPAR cell SV "base[k]", so that the fluent-intersection check
-    // correctly detects that reset_all achieves the goal cells[0]=0.
-    std::unordered_map<std::string, ExprID> ipar_cell_sv_by_name;
-    for (ExprID gf : problem_->grounded_fluents()) {
-        if (!pool.is_state_variable(gf)) continue;
-        if (pool.argument_count(gf) != 0) continue;
-        ExprID h = pool.head_symbol_id(gf);
-        if (!pool.payload_is_string(h)) continue;
-        const std::string& nm = pool.payload_string(h);
-        if (nm.find('[') != std::string::npos) ipar_cell_sv_by_name.emplace(nm, gf);
-    }
-
     for (const auto& effect_wrapper : action.effects()) {
         const EffectExpression& effect = effect_wrapper.effect_expression();
         ExprID eid = effect.fluent_id();
@@ -438,46 +423,6 @@ std::unordered_set<ExprID> AchieversAnalysis::get_action_modified_fluents(const 
             // Walk through ARRAY_WRITE chains; if the chain ends in an ARRAY_READ
             // (2D write case: ARRAY_WRITE(ARRAY_READ(SV(board), i), j)),
             // continue into the ARRAY_READ to find the base SV.
-            // [XTS] For an N-D cell write with all-constant indices, also mark the
-            // matching IPAR cell SV ("base[i0][i1]...") as modified so the achiever
-            // intersection check can link this effect to goals that reference cell SVs.
-            // Indices are collected innermost-first while peeling (the ARRAY_WRITE
-            // node carries the outermost index), then reversed for the name.
-            if (pool.is_function_application(eid) &&
-                pool.op(eid) == ExprOperator::ARRAY_WRITE &&
-                pool.argument_count(eid) >= 2) {
-                std::vector<int64_t> rev_idxs;
-                bool all_const = true;
-                ExprID idx_arg = pool.argument(eid, 1);
-                if (pool.is_constant(idx_arg) && pool.payload_is_int(idx_arg)) {
-                    rev_idxs.push_back(pool.payload_int(idx_arg));
-                } else {
-                    all_const = false;
-                }
-                ExprID cell_base = pool.argument(eid, 0);
-                while (all_const && pool.is_function_application(cell_base) &&
-                       pool.op(cell_base) == ExprOperator::ARRAY_READ &&
-                       pool.argument_count(cell_base) >= 2) {
-                    ExprID inner_idx = pool.argument(cell_base, 1);
-                    if (pool.is_constant(inner_idx) && pool.payload_is_int(inner_idx)) {
-                        rev_idxs.push_back(pool.payload_int(inner_idx));
-                    } else {
-                        all_const = false;
-                    }
-                    cell_base = pool.argument(cell_base, 0);
-                }
-                if (all_const && pool.is_state_variable(cell_base)) {
-                    ExprID bh = pool.head_symbol_id(cell_base);
-                    if (pool.payload_is_string(bh)) {
-                        std::vector<int64_t> idxs(rev_idxs.rbegin(), rev_idxs.rend());
-                        auto it = ipar_cell_sv_by_name.find(
-                            make_ipar_cell_name(pool.payload_string(bh), idxs));
-                        if (it != ipar_cell_sv_by_name.end())
-                            modified_fluents.insert(it->second);
-                    }
-                }
-            }
-
             ExprID base = eid;
             while (pool.is_function_application(base) &&
                    pool.op(base) == ExprOperator::ARRAY_WRITE &&

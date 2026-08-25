@@ -1,7 +1,6 @@
 #include "numeric_relaxed_planning_graph.hpp"
 #include "../config/config.hpp"
 #include "../problem/substitution.hpp"
-#include "../util/ipar_names.hpp"
 #include "../util/memory_tracker.hpp"
 #include "../util/scoped_timer.hpp"
 #include "../util/logger.hpp"
@@ -224,20 +223,7 @@ void NumericRelaxedPlanningGraph::build_epc_index() {
         epc_index_[eid] = std::vector<std::pair<const Action*, const EffectExpression*>>();
     }
 
-    // [XTS] Build lookup: "base[i0][i1]..." name -> ExprID for IPAR cell SVs.
-    // IPAR cell SVs are arity-0 STATE_VARIABLEs whose name follows the shared
-    // parse_ipar_cell_name convention (any dimension count)
     const auto& pool = problem_.pool();
-    std::unordered_map<std::string, ExprID> ipar_cell_sv_by_name;
-    for (ExprID eid : problem_.grounded_fluents()) {
-        if (!pool.is_state_variable(eid)) continue;
-        if (pool.argument_count(eid) != 0) continue;
-        ExprID h = pool.head_symbol_id(eid);
-        if (!pool.payload_is_string(h)) continue;
-        const std::string& nm = pool.payload_string(h);
-        if (parse_ipar_cell_name(nm)) ipar_cell_sv_by_name[nm] = eid;
-    }
-
     // Add action effects to the fluents that can be modified.
     for (const Action& action : problem_.actions()) {
         for (const Effect& effect : action.effects()) {
@@ -248,45 +234,6 @@ void NumericRelaxedPlanningGraph::build_epc_index() {
             ExprID fluent_eid = eff_expr.fluent_id();
             epc_index_[fluent_eid].emplace_back(&action, &eff_expr);
 
-            // [XTS] N-D array cell write with all-constant indices -> also register
-            // for the matching IPAR cell SV. Peel the ARRAY_READ chain (outermost
-            // index sits on the ARRAY_WRITE node) down to the root SV, collecting
-            // indices outermost-first: ARRAY_WRITE(ARRAY_READ(sv,i),j) → "sv[i][j]".
-            if (pool.is_function_application(fluent_eid) &&
-                pool.op(fluent_eid) == ExprOperator::ARRAY_WRITE &&
-                pool.argument_count(fluent_eid) >= 2) {
-                std::vector<int64_t> rev_idxs;
-                bool all_const = true;
-                ExprID idx_arg = pool.argument(fluent_eid, 1);
-                if (pool.is_constant(idx_arg) && pool.payload_is_int(idx_arg)) {
-                    rev_idxs.push_back(pool.payload_int(idx_arg));
-                } else {
-                    all_const = false;
-                }
-                ExprID base_arg = pool.argument(fluent_eid, 0);
-                while (all_const && pool.is_function_application(base_arg) &&
-                       pool.op(base_arg) == ExprOperator::ARRAY_READ &&
-                       pool.argument_count(base_arg) >= 2) {
-                    ExprID inner_idx = pool.argument(base_arg, 1);
-                    if (pool.is_constant(inner_idx) && pool.payload_is_int(inner_idx)) {
-                        rev_idxs.push_back(pool.payload_int(inner_idx));
-                    } else {
-                        all_const = false;
-                    }
-                    base_arg = pool.argument(base_arg, 0);
-                }
-                if (all_const && pool.is_state_variable(base_arg)) {
-                    ExprID bh = pool.head_symbol_id(base_arg);
-                    if (pool.payload_is_string(bh)) {
-                        std::vector<int64_t> idxs(rev_idxs.rbegin(), rev_idxs.rend());
-                        auto it = ipar_cell_sv_by_name.find(
-                            make_ipar_cell_name(pool.payload_string(bh), idxs));
-                        if (it != ipar_cell_sv_by_name.end()) {
-                            epc_index_[it->second].emplace_back(&action, &eff_expr);
-                        }
-                    }
-                }
-            }
         }
     }
 

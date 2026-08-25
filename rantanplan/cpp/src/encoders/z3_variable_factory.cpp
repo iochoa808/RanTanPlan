@@ -474,20 +474,37 @@ z3::expr Z3VariableFactory::create_set_variable(const std::string& name) {
 // naming ("read_" prefix keeps it visually and namespace-distinct from any plain
 // Bool/Int constant that might otherwise share the fluent's base name).
 const z3::func_decl& Z3VariableFactory::get_array_uf(const Fluent& fluent, int timestep,
-                                                     unsigned arity, z3::sort elem_sort) {
-    std::string var_name = "read_" + get_fluent_var_name(fluent, timestep);
+                                                     unsigned arity, z3::sort elem_sort,
+                                                     unsigned canonical_arity) {
+    const std::string base = "read_" + get_fluent_var_name(fluent, timestep);
+
+    // A partial read -- fewer indices than the array nests -- is a different function
+    // from the whole-fluent one: different arity, and an array-valued range instead of
+    // the leaf sort. Give it its own name so both can exist at once. Same-name /
+    // different-signature decls are distinct objects inside Z3, but to_smt2() emits
+    // them as duplicate declare-funs, which is not valid SMT-LIB.
+    const bool partial = (canonical_arity != 0 && arity != canonical_arity);
+    const std::string var_name = partial ? base + "_d" + std::to_string(arity) : base;
+
+    // Key on the whole signature rather than the name: callers legitimately ask for
+    // different arities of the same (fluent, timestep) -- encode_frames uses the
+    // type-derived depth, a read/write uses however many indices it holds -- and a
+    // name-only key returns the first-registered arity to everyone after it, which
+    // then blows up in fn(args) with "invalid number of arguments".
+    const std::string key =
+        var_name + "|" + std::to_string(arity) + "|" + elem_sort.to_string();
 
     ensure_timestep_capacity(timestep);
 
     auto& timestep_fns = uf_fns_[timestep];
-    auto it = timestep_fns.find(var_name);
+    auto it = timestep_fns.find(key);
     if (it != timestep_fns.end()) return *(it->second);
 
     z3::sort_vector domain(ctx_);
     for (unsigned i = 0; i < arity; ++i) domain.push_back(ctx_.int_sort());
     z3::func_decl fn = ctx_.function(var_name.c_str(), domain, elem_sort);
     auto stored = std::make_shared<z3::func_decl>(fn);
-    timestep_fns[var_name] = stored;
+    timestep_fns[key] = stored;
     return *stored;
 }
 

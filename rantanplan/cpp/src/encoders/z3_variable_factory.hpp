@@ -184,8 +184,15 @@ public:
     // Signature: Int^arity -> elem_sort — one Int argument per array dimension (arity=1
     // for sets and 1-D arrays). Cached the same way get_fluent_variable caches z3::expr,
     // just keyed by func_decl instead since a bare array/set fluent has no single "value".
+    //
+    // `canonical_arity` is the fluent type's own nesting depth (0 = "same as arity").
+    // A read holding fewer indices than the array nests is a *different* function from
+    // the whole-fluent one -- different arity, array-valued range -- so it gets its own
+    // name ("..._d<arity>") and its own cache entry. Keying on the name alone handed
+    // whichever caller ran second a func_decl of the first one's arity.
     const z3::func_decl& get_array_uf(const Fluent& fluent, int timestep,
-                                      unsigned arity, z3::sort elem_sort);
+                                      unsigned arity, z3::sort elem_sort,
+                                      unsigned canonical_arity = 0);
 
     // [XTS-UnFun] Turn one enumerate_array_domain() index tuple into the argument vector
     // for a UF function application. Pure plumbing (int64 -> Z3 Int literal), but it was
@@ -257,10 +264,14 @@ private:
     std::unordered_map<std::string, std::pair<std::shared_ptr<Action>, int>> action_var_name_to_action_;
 
     // --- [11] UF storage --------------------------------------------------
-    // [XTS-UnFun] uf_fns_[t]["read_<fluent_var_name>"] -> the uninterpreted function
-    // standing in for that array/set fluent's contents at timestep t. Only populated
-    // when array_encoding_mode_ == UF; parallels state_vars_ but for func_decl instead
-    // of expr, since a bare array/set fluent no longer has a single Z3 "value" to cache.
+    // [XTS-UnFun] uf_fns_[t]["<name>|<arity>|<elem sort>"] -> the uninterpreted function
+    // standing in for that array/set fluent's contents at timestep t. The key is the
+    // whole signature, not just the name, because one fluent can need several (see
+    // get_array_uf); the name itself is "read_<fluent_var_name>" for a whole-fluent
+    // function and "read_<fluent_var_name>_d<arity>" for a partial read.
+    // Only populated when array_encoding_mode_ == UF; parallels state_vars_ but for
+    // func_decl instead of expr, since a bare array/set fluent no longer has a single
+    // Z3 "value" to cache.
     std::vector<std::unordered_map<std::string, std::shared_ptr<z3::func_decl>>> uf_fns_;
 };
 

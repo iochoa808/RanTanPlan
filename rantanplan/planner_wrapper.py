@@ -569,16 +569,16 @@ class _RantanPlanBase(Engine):
                 PlanGenerationResultStatus.SOLVED_OPTIMALLY):
             plan_is_valid = self._validate_plan(original_problem, final_plan)
 
-            if not plan_is_valid:
+            if plan_is_valid is None:
                 validation_log = LogMessage(
                     level=LogLevel.WARNING,
-                    message="Plan validation failed - the plan may not be correct"
+                    message="Plan validation skipped"
                 )
                 result_log_messages = list(result_from_protobuf.log_messages) + [validation_log]
-            elif plan_is_valid is None:
+            elif not plan_is_valid:
                 validation_log = LogMessage(
                     level=LogLevel.WARNING,
-                    message="Plan validation skipped - no UP validator supports this problem's features"
+                    message="Plan validation failed"
                 )
                 result_log_messages = list(result_from_protobuf.log_messages) + [validation_log]
             else:
